@@ -10,9 +10,13 @@ PanelSlider {
   // dragging, but route wheel input to the owning Flickable instead.
   property var scrollTarget: null
 
-  WheelHandler {
-    target: null
-    blocking: true
+  // PanelSlider uses a legacy MouseArea for both dragging and wheel changes.
+  // A WheelHandler cannot block that MouseArea reliably, so place a wheel-only
+  // MouseArea above it. With no accepted buttons, presses still reach the
+  // native slider and intentional pointer dragging remains unchanged.
+  MouseArea {
+    anchors.fill: parent
+    acceptedButtons: Qt.NoButton
 
     onWheel: function(event) {
       event.accepted = true

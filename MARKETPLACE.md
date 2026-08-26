@@ -17,10 +17,10 @@ approval.
 - No symlinks, bundled binaries, submodules, install hooks, or privileged files
 - Optional root preview image only if one is later created and reviewed
 
-The planned public repository URL is
-<https://github.com/SurreptitiousFabric/omarchy-sonarchy>; it does not exist
-yet. Re-check the live registry for an ID collision immediately before
-publishing because marketplace acceptance makes the ID effectively permanent.
+The public source repository is
+<https://github.com/SurreptitiousFabric/omarchy-sonarchy>. Re-check the live
+registry for an ID collision immediately before publishing because marketplace
+acceptance makes the ID effectively permanent.
 
 ## Declared review outcome
 
@@ -44,12 +44,13 @@ Run from the repository root:
 ```bash
 omarchy plugin validate .
 bash -n sonarchy-backend.sh
+bash tests/qml/run-slider-test.sh
 shellcheck sonarchy-backend.sh
-python -m pytest -q
-python -m ruff check .
-python -m ruff format --check .
-python -m coverage run -m pytest -q
-python -m coverage report
+mise exec -- python -m pytest -q
+mise exec -- python -m ruff check .
+mise exec -- python -m ruff format --check .
+mise exec -- python -m coverage run -m pytest -q
+mise exec -- python -m coverage report
 /usr/lib/qt6/bin/qmllint BarWidget.qml LiveService.qml Service.qml SonarchyNowPage.qml SonarchyBrowsePage.qml SonarchyRoomsPage.qml SonarchySoundPage.qml SonarchySystemPage.qml
 ```
 

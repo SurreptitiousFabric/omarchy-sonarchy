@@ -62,6 +62,9 @@ def test_marketplace_root_has_one_manifest_and_required_docs():
     assert "<public-repository-url>" not in readme
     assert "USER_GUIDE.md" in readme
     assert "github.com/SoCo/SoCo" in readme
+    marketplace = (ROOT / "MARKETPLACE.md").read_text()
+    assert "The public source repository is" in marketplace
+    assert "it does not exist" not in marketplace
 
 
 def test_generated_python_artifacts_are_ignored():
@@ -84,8 +87,7 @@ def test_marketplace_release_is_held_until_live_acceptance_and_owner_signoff():
     assert "- [ ] Owner release sign-off" in acceptance
     assert "remains a local beta" in acceptance
     assert "current status is **HOLD**" in marketplace
-    assert "The planned public repository URL" in marketplace
-    assert "it does not exist" in marketplace
+    assert "The public source repository is" in marketplace
 
 
 def test_tree_has_no_symlinks_or_unexpected_executables():
@@ -409,15 +411,22 @@ def test_protocol_requests_keep_background_and_action_state_correlated():
 def test_page_sliders_scroll_the_page_without_wheel_mutations():
     pages = "\n".join(path.read_text() for path in sorted(ROOT.glob("Sonarchy*Page.qml")))
     slider = (ROOT / "SonarchySlider.qml").read_text()
+    runtime_test = (ROOT / "tests/qml/tst_SonarchySlider.qml").read_text()
+    runtime_runner = (ROOT / "tests/qml/run-slider-test.sh").read_text()
 
     assert "PanelSlider {" not in pages
     assert pages.count("SonarchySlider {") == 5
     assert pages.count("scrollTarget:") == 5
-    assert "WheelHandler {" in slider
-    assert "blocking: true" in slider
+    assert "MouseArea {" in slider
+    assert "acceptedButtons: Qt.NoButton" in slider
     assert "event.accepted = true" in slider
     assert "view.contentY =" in slider
     assert "root.value" not in slider
+    assert "mouseWheel(slider" in runtime_test
+    assert "compare(movedCount, 0)" in runtime_test
+    assert "test_pointer_drag_still_uses_native_slider" in runtime_test
+    assert "/usr/share/omarchy/shell/Ui/PanelSlider.qml" in runtime_runner
+    assert "QT_QPA_PLATFORM=offscreen" in runtime_runner
 
 
 def test_every_manifest_setting_is_documented_and_read_by_qml():

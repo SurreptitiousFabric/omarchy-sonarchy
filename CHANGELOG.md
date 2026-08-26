@@ -16,7 +16,9 @@
 - Kept background request results from clearing unrelated errors or pending
   mutations, and atomically clears pending UI requests after backend loss.
 - Prevented vertical page scrolling over a slider from changing playback,
-  room, sound, or alarm values; intentional pointer dragging remains available.
+  room, sound, or alarm values; a headless real-event test now proves the page
+  scrolls without a slider mutation and intentional pointer dragging remains
+  available.
 
 ## 4.1.0 — 2026-08-26
 

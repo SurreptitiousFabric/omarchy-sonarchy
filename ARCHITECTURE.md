@@ -132,4 +132,5 @@ service component remains below 800 lines and has one named responsibility.
 - Destructive and topology-sensitive paths reach at least 90% branch coverage;
   overall branch coverage remains at least 80%.
 - Omarchy validation, Python/QML static checks, installation, hot reload,
-  degraded network behavior, and the documented Sonos acceptance suite pass.
+  real-event shared-control tests, degraded network behavior, and the
+  documented Sonos acceptance suite pass.

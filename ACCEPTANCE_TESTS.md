@@ -13,6 +13,9 @@ recorded; it must not be called tested.
 - [x] All 241 automated tests pass with 82% branch coverage.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
+- [x] A headless real-event QML test loads Omarchy's installed `PanelSlider`,
+  proves wheel input scrolls the page without emitting a slider mutation, and
+  proves intentional pointer dragging still reaches the native control.
 - [x] The marketplace v3 deterministic baseline reports no findings and only
   the disclosed, non-blocking `package-manager` review capability.
 - [x] The exact 12-package runtime environment is internally consistent and a
