@@ -29,19 +29,30 @@ from soco.music_services import MusicService
 from soco.plugins.sharelink import ShareLinkPlugin
 
 from sonarchy_backend.apple_catalog import APPLE_RESPONSE_LIMIT as CATALOG_RESPONSE_LIMIT
+from sonarchy_backend.apple_catalog import apple_search_results as catalog_search_results
 from sonarchy_backend.apple_catalog import (
-    apple_artwork_url,
     public_apple_album_url,
     public_apple_music_url,
 )
-from sonarchy_backend.apple_catalog import apple_search_results as catalog_search_results
 from sonarchy_backend.apple_catalog import resolve_apple_artwork as catalog_resolve_artwork
 from sonarchy_backend.domains.browse import (
     album_art_url,
     browse_content,
 )
 from sonarchy_backend.domains.browse import apple_content as browse_apple_content
+from sonarchy_backend.domains.browse import didl_item_payload as browse_didl_item_payload
+from sonarchy_backend.domains.browse import favorite_reference as browse_favorite_reference
+from sonarchy_backend.domains.browse import favorites_content as browse_favorites_content
+from sonarchy_backend.domains.browse import global_content as browse_global_content
+from sonarchy_backend.domains.browse import global_results as browse_global_results
+from sonarchy_backend.domains.browse import item_attr as browse_item_attr
+from sonarchy_backend.domains.browse import library_content as browse_library_content
+from sonarchy_backend.domains.browse import playlist_content as browse_playlist_content
+from sonarchy_backend.domains.browse import playlists_content as browse_playlists_content
 from sonarchy_backend.domains.browse import public_artwork_url as browse_public_artwork_url
+from sonarchy_backend.domains.browse import queue_content as browse_queue_content
+from sonarchy_backend.domains.browse import validate_identifier as browse_validate_identifier
+from sonarchy_backend.domains.browse import validate_playlist_id as browse_validate_playlist_id
 from sonarchy_backend.domains.devices import project_device_details
 from sonarchy_errors import user_facing_error
 
@@ -114,7 +125,6 @@ TV_AUTOPLAY_SETTING = "tv-autoplay"
 DEVICE_SETTINGS = frozenset({*DEVICE_BOOLEAN_SETTINGS, TV_AUTOPLAY_SETTING})
 ALARM_RECURRENCES = {"ONCE", "DAILY", "WEEKDAYS", "WEEKENDS"}
 ALARM_DURATIONS = {0, 15, 30, 45, 60, 90, 120}
-PLAYLIST_ID_PATTERN = re.compile(r"SQ:\d+")
 ALARM_ID_PATTERN = re.compile(r"\d+")
 CLI_COMMANDS = frozenset(
     {
@@ -440,82 +450,28 @@ def details_snapshot(ip: str) -> dict[str, Any]:
     return project_device_details(SoCo(validate_ip(ip)))
 
 
-def result_total(result: Any) -> int:
-    return safe_index(safe_call(lambda: result.total_matches, len(result)), len(result))
-
-
 def item_attr(item: Any, name: str, fallback: Any = "") -> Any:
-    try:
-        return getattr(item, name)
-    except Exception:  # noqa: BLE001 - third-party metadata properties are optional
-        return fallback
+    return browse_item_attr(item, name, fallback)
 
 
 def queue_content(coordinator: Any, limit: int) -> dict[str, Any]:
-    result = coordinator.get_queue(max_items=limit, full_album_art_uri=False)
-    coordinator_ip = clean(getattr(coordinator, "ip_address", ""))
-    current = safe_call(coordinator.get_current_track_info, {}) or {}
-    current_index = max(-1, safe_index(current.get("playlist_position"), 0) - 1)
-    items = []
-    for index, item in enumerate(result):
-        artist = clean(item_attr(item, "creator"))
-        album = clean(item_attr(item, "album"))
-        items.append(
-            {
-                "id": clean(item_attr(item, "item_id")) or str(index),
-                "index": index,
-                "title": clean(item_attr(item, "title")) or f"Queue item {index + 1}",
-                "subtitle": " · ".join(part for part in (artist, album) if part),
-                "album_art": album_art_url(item_attr(item, "album_art_uri"), coordinator_ip),
-                "playable": True,
-                "current": index == current_index,
-            }
-        )
-    return {"ok": True, "kind": "queue", "items": items, "total": result_total(result)}
+    return browse_queue_content(coordinator, limit)
 
 
 def favorite_reference(item: Any) -> Any:
-    reference = item.reference
-    if not getattr(reference, "resources", None):
-        raise ValueError("This Sonos Favorite is not directly playable")
-    return reference
+    return browse_favorite_reference(item)
 
 
 def favorites_content(coordinator: Any, limit: int) -> dict[str, Any]:
-    result = coordinator.music_library.get_sonos_favorites(max_items=limit)
-    coordinator_ip = clean(getattr(coordinator, "ip_address", ""))
-    items = []
-    for item in result:
-        playable = bool(safe_call(lambda item=item: favorite_reference(item), None))
-        items.append(
-            {
-                "id": clean(item_attr(item, "item_id")),
-                "title": clean(item_attr(item, "title")) or "Untitled favorite",
-                "subtitle": clean(item_attr(item, "description")),
-                "album_art": album_art_url(item_attr(item, "album_art_uri"), coordinator_ip),
-                "playable": playable,
-            }
-        )
-    return {
-        "ok": True,
-        "kind": "favorites",
-        "items": items,
-        "total": result_total(result),
-    }
+    return browse_favorites_content(coordinator, limit)
 
 
 def validate_identifier(raw: Any, label: str, maximum: int = 512) -> str:
-    value = clean(raw)
-    if not value or len(value) > maximum or any(ord(character) < 32 for character in value):
-        raise ValueError(f"Invalid {label}")
-    return value
+    return browse_validate_identifier(raw, label, maximum)
 
 
 def validate_playlist_id(raw: Any) -> str:
-    value = validate_identifier(raw, "Sonos playlist identifier", 32)
-    if not PLAYLIST_ID_PATTERN.fullmatch(value):
-        raise ValueError("Invalid Sonos playlist identifier")
-    return value
+    return browse_validate_playlist_id(raw)
 
 
 def didl_item_payload(
@@ -523,94 +479,19 @@ def didl_item_payload(
     index: int,
     coordinator_ip: str,
 ) -> dict[str, Any]:
-    creator = clean(item_attr(item, "creator"))
-    album = clean(item_attr(item, "album"))
-    resources = item_attr(item, "resources", []) or []
-    return {
-        "id": clean(item_attr(item, "item_id")) or str(index),
-        "index": index,
-        "title": clean(item_attr(item, "title")) or f"Item {index + 1}",
-        "subtitle": " · ".join(part for part in (creator, album) if part),
-        "album_art": album_art_url(item_attr(item, "album_art_uri"), coordinator_ip),
-        "playable": bool(resources),
-    }
+    return browse_didl_item_payload(item, index, coordinator_ip)
 
 
 def library_content(coordinator: Any, term: str, limit: int) -> dict[str, Any]:
-    query = validate_search_term(term)
-    library = coordinator.music_library
-    shares = safe_call(library.list_library_shares, []) or []
-    updating = bool(safe_call(lambda: library.library_updating, False))
-    if not query:
-        return {
-            "ok": True,
-            "kind": "library",
-            "items": [],
-            "total": 0,
-            "shares": [clean(share)[:512] for share in shares[:32]],
-            "updating": updating,
-        }
-    result = library.get_music_library_information(
-        "tracks",
-        max_items=limit,
-        search_term=query,
-    )
-    coordinator_ip = clean(getattr(coordinator, "ip_address", ""))
-    items = [didl_item_payload(item, index, coordinator_ip) for index, item in enumerate(result)]
-    return {
-        "ok": True,
-        "kind": "library",
-        "items": items,
-        "total": result_total(result),
-        "shares": [clean(share)[:512] for share in shares[:32]],
-        "updating": updating,
-    }
+    return browse_library_content(coordinator, term, limit)
 
 
 def playlists_content(coordinator: Any, limit: int) -> dict[str, Any]:
-    result = coordinator.get_sonos_playlists(max_items=limit)
-    items = []
-    for index, item in enumerate(result):
-        item_id = clean(item_attr(item, "item_id"))
-        if not PLAYLIST_ID_PATTERN.fullmatch(item_id):
-            continue
-        items.append(
-            {
-                "id": item_id,
-                "index": index,
-                "title": clean(item_attr(item, "title")) or f"Playlist {index + 1}",
-                "subtitle": "Sonos playlist",
-                "album_art": "",
-                "playable": True,
-            }
-        )
-    return {
-        "ok": True,
-        "kind": "playlists",
-        "items": items,
-        "total": result_total(result),
-    }
+    return browse_playlists_content(coordinator, limit)
 
 
 def playlist_content(coordinator: Any, playlist_id: str, limit: int) -> dict[str, Any]:
-    item_id = validate_playlist_id(playlist_id)
-    playlist = coordinator.get_sonos_playlist_by_attr("item_id", item_id)
-    result = coordinator.music_library.browse(ml_item=playlist, max_items=limit)
-    coordinator_ip = clean(getattr(coordinator, "ip_address", ""))
-    items = [didl_item_payload(item, index, coordinator_ip) for index, item in enumerate(result)]
-    return {
-        "ok": True,
-        "kind": "playlist",
-        "playlist_id": item_id,
-        "playlist_title": clean(item_attr(playlist, "title")) or "Sonos playlist",
-        "items": items,
-        "total": result_total(result),
-    }
-
-
-def format_duration(milliseconds: Any) -> str:
-    seconds = max(0, safe_index(milliseconds, 0) // 1000)
-    return f"{seconds // 60}:{seconds % 60:02d}" if seconds else ""
+    return browse_playlist_content(coordinator, playlist_id, limit)
 
 
 def apple_search_results(term: str, limit: int) -> list[dict[str, Any]]:
@@ -618,70 +499,19 @@ def apple_search_results(term: str, limit: int) -> list[dict[str, Any]]:
 
 
 def apple_content(term: str, limit: int) -> dict[str, Any]:
-    items = []
-    for item in apple_search_results(term, limit):
-        url = public_apple_music_url(item.get("trackViewUrl"))
-        if not url:
-            continue
-        album_url = public_apple_album_url(
-            item.get("collectionViewUrl"),
-            item.get("collectionId"),
-        )
-        artist = clean(item.get("artistName"))
-        album = clean(item.get("collectionName"))
-        duration = format_duration(item.get("trackTimeMillis"))
-        items.append(
-            {
-                "id": clean(item.get("trackId")),
-                "title": clean(item.get("trackName")) or "Untitled track",
-                "subtitle": " · ".join(part for part in (artist, album, duration) if part),
-                "album_art": apple_artwork_url(item.get("artworkUrl100")),
-                "url": url,
-                "album_url": album_url,
-                "playable": True,
-            }
-        )
-    return {"ok": True, "kind": "apple", "items": items, "total": len(items)}
+    return browse_apple_content(term, limit, request_get=requests.get, country=APPLE_COUNTRY)
 
 
 def resolve_apple_artwork(title: str, artist: str) -> dict[str, Any]:
     return catalog_resolve_artwork(title, artist, request_get=requests.get, country=APPLE_COUNTRY)
 
 
-def global_service(coordinator: Any) -> MusicService:
-    return MusicService("Global Player", device=coordinator)
-
-
 def global_results(coordinator: Any, term: str, limit: int) -> Any:
-    query = validate_search_term(term)
-    if not query:
-        return []
-    return global_service(coordinator).search("stations", query, count=limit)
+    return browse_global_results(coordinator, term, limit, music_service_factory=MusicService)
 
 
 def global_content(coordinator: Any, term: str, limit: int) -> dict[str, Any]:
-    result = global_results(coordinator, term, limit)
-    items = []
-    for item in result:
-        items.append(
-            {
-                "id": clean(item_attr(item, "item_id")),
-                "title": clean(item_attr(item, "title")) or "Untitled station",
-                "subtitle": "Global Player",
-                "album_art": album_art_url(
-                    item_attr(item, "album_art_uri"),
-                    clean(getattr(coordinator, "ip_address", "")),
-                ),
-                "playable": bool(item_attr(item, "can_play", False))
-                and bool(item_attr(item, "resources", [])),
-            }
-        )
-    return {
-        "ok": True,
-        "kind": "global",
-        "items": items,
-        "total": result_total(result) if result else 0,
-    }
+    return browse_global_content(coordinator, term, limit)
 
 
 def content_snapshot(ip: str, kind: str, term: str = "", limit: int = 30) -> dict[str, Any]:
