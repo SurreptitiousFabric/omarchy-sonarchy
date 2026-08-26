@@ -49,6 +49,7 @@ PROTOCOL_OPERATIONS = frozenset(
         "volume.room.adjust",
         "mute.room.set",
         "topology.members.set",
+        "devices.details.get",
     }
 )
 
@@ -165,9 +166,10 @@ class ProtocolServer:
             )
             return
 
+        refresh_after = self.application.mutates(op)
         try:
-            self.application.execute(op, args)
-            self._emit(result_payload(request_id, revision=self.revision), output)
+            value = self.application.execute(op, args)
+            self._emit(result_payload(request_id, revision=self.revision, value=value), output)
         except (ControllerError, ValueError, TypeError, OSError) as exc:
             LOG.warning("Sonos command %s failed: %s", op, exc)
             if isinstance(exc, (ValueError, TypeError)):
@@ -200,7 +202,8 @@ class ProtocolServer:
         finally:
             # Mutations are followed by authoritative state, including partial
             # failures, so the QML never has to pretend its optimistic view won.
-            self.emit_snapshot(output, rediscover=False)
+            if refresh_after:
+                self.emit_snapshot(output, rediscover=False)
 
     def _emit_error(
         self,

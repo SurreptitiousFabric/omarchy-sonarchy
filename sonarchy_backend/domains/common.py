@@ -8,18 +8,18 @@ from typing import Any
 
 @dataclass(frozen=True)
 class DomainService:
-    handlers: dict[str, Callable[[dict[str, Any]], None]]
+    handlers: dict[str, Callable[[dict[str, Any]], Any]]
+    mutates: bool = True
 
     @property
     def operations(self) -> frozenset[str]:
         return frozenset(self.handlers)
 
-    def execute(self, operation: str, args: dict[str, Any]) -> bool:
+    def execute(self, operation: str, args: dict[str, Any]) -> Any:
         handler = self.handlers.get(operation)
         if handler is None:
-            return False
-        handler(args)
-        return True
+            raise KeyError(operation)
+        return handler(args)
 
 
 def string_arg(args: dict[str, Any], name: str) -> str:

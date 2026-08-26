@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from .content import content_service
+from .devices import devices_service
 from .mixer import mixer_service
 from .playback import playback_service
 from .ports import SonarchyBackendPort
@@ -20,14 +21,27 @@ class SonarchyApplication:
             content_service(backend),
             topology_service(backend),
             mixer_service(backend),
+            devices_service(backend),
         )
         operations = [operation for service in self.services for operation in service.operations]
         if len(operations) != len(set(operations)):
             raise RuntimeError("A protocol operation has more than one domain owner")
         self.operations = frozenset(operations)
+        self.mutating_operations = frozenset(
+            operation
+            for service in self.services
+            if service.mutates
+            for operation in service.operations
+        )
 
-    def execute(self, operation: str, args: dict[str, Any]) -> bool:
-        return any(service.execute(operation, args) for service in self.services)
+    def execute(self, operation: str, args: dict[str, Any]) -> Any:
+        for service in self.services:
+            if operation in service.operations:
+                return service.execute(operation, args)
+        raise KeyError(operation)
+
+    def mutates(self, operation: str) -> bool:
+        return operation in self.mutating_operations
 
     def refresh(self, *, rediscover: bool = True) -> dict[str, Any]:
         return self.backend.refresh(rediscover=rediscover)

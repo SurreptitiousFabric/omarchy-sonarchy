@@ -71,7 +71,8 @@ Item {
   property string actionFallback: "Sonos control failed"
   property bool detailsQueued: false
 
-  property string detailsRequestIp: ""
+  property string detailsRequestId: ""
+  property string detailsRequestRoomUid: ""
   property string contentRequestIp: ""
   property string contentRequestKind: ""
   property string contentRequestTerm: ""
@@ -435,15 +436,18 @@ Item {
   }
 
   function refreshDetails() {
-    if (selectedIp === "") return
-    if (detailsProcess.running) {
+    if (!selectedDevice || !live.hasCapability("devices.details.get")) return
+    if (detailsRequestId !== "") {
       detailsQueued = true
       return
     }
     detailsLoading = true
-    detailsRequestIp = selectedIp
-    detailsProcess.command = [pythonPath, "-B", helperPath, "details", detailsRequestIp]
-    detailsProcess.running = true
+    detailsRequestRoomUid = String(selectedDevice.uid || "")
+    detailsRequestId = live.requestDeviceDetails(detailsRequestRoomUid)
+    if (detailsRequestId === "") {
+      detailsLoading = false
+      detailsRequestRoomUid = ""
+    }
   }
 
   function syncLiveFavorites() {
@@ -806,6 +810,35 @@ Item {
   Connections {
     target: live
     function onSnapshotChanged() { root.applyLiveSnapshot() }
+    function onCommandResult(message) {
+      if (String(message.id || "") !== root.detailsRequestId) return
+      var requestedRoomUid = root.detailsRequestRoomUid
+      root.detailsLoading = false
+      root.detailsRequestId = ""
+      root.detailsRequestRoomUid = ""
+      var stillCurrent = root.selectedDevice
+        && requestedRoomUid === String(root.selectedDevice.uid || "")
+      if (message.ok === true && message.value && message.value.ok === true && stillCurrent) {
+        root.details = message.value
+        root.requestError = ""
+      } else if (stillCurrent) {
+        root.setRequestError(live.errorMessage(message.error), "Could not read Sonos settings")
+      }
+      if (root.detailsQueued) {
+        root.detailsQueued = false
+        Qt.callLater(root.refreshDetails)
+      }
+    }
+    function onBackendReadyChanged() {
+      if (!live.backendReady) {
+        root.detailsLoading = false
+        root.detailsRequestId = ""
+        root.detailsRequestRoomUid = ""
+        root.detailsQueued = false
+      } else if (root.panelOpen) {
+        Qt.callLater(root.refreshDetails)
+      }
+    }
   }
 
   Timer {
@@ -856,30 +889,6 @@ Item {
     interval: 140
     repeat: false
     onTriggered: root.flushVolume()
-  }
-
-  Process {
-    id: detailsProcess
-    command: []
-    clearEnvironment: true
-    environment: root.helperEnvironment
-    stdout: StdioCollector { id: detailsStdout; waitForEnd: true }
-    stderr: StdioCollector { id: detailsStderr; waitForEnd: true }
-    onExited: function(exitCode) {
-      root.detailsLoading = false
-      var payload = root.parsePayload(detailsStdout.text)
-      if (exitCode === 0 && payload && payload.ok === true
-          && String(payload.ip || "") === root.selectedIp) {
-        root.details = payload
-        root.requestError = ""
-      } else if (String(root.detailsRequestIp) === root.selectedIp) {
-        root.processFailure(detailsStdout.text, detailsStderr.text, "Could not read Sonos settings")
-      }
-      if (root.detailsQueued) {
-        root.detailsQueued = false
-        Qt.callLater(root.refreshDetails)
-      }
-    }
   }
 
   Process {

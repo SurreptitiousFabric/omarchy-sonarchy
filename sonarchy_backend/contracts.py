@@ -9,6 +9,7 @@ CAPABILITY_NAMES = frozenset(
     {
         "content.favorite.play",
         "content.favorites.refresh",
+        "devices.details.get",
         "mute.group.set",
         "mute.room.set",
         "playback.next",
@@ -160,6 +161,7 @@ def snapshot_capabilities(snapshot: dict[str, Any]) -> list[str]:
     if rooms:
         capabilities.update(
             {
+                "devices.details.get",
                 "mute.room.set",
                 "selection.room.set",
                 "volume.room.adjust",

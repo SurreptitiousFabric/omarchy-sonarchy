@@ -59,6 +59,7 @@ Item {
   property string favoriteError: ""
   property string moveRequestId: ""
   property string moveError: ""
+  signal commandResult(var message)
 
   readonly property bool ready: backendReady && snapshot && snapshot.status && snapshot.status.state === "ready"
   readonly property var playback: snapshot && snapshot.playback ? snapshot.playback : ({})
@@ -90,14 +91,14 @@ Item {
 
   readonly property string backendPath: localPath(Qt.resolvedUrl("sonarchy-backend.sh"))
 
-  function sendCommand(op, args) {
+  function sendCommand(op, args, clearErrors) {
     if (!backend.running) {
       setCommandError("Sonos backend is not running")
       return ""
     }
     requestCounter += 1
     var id = String(requestCounter)
-    if (op !== "session.panel_open.set") clearTransientErrors()
+    if (op !== "session.panel_open.set" && clearErrors !== false) clearTransientErrors()
     var payload = { version: 1, id: id, op: op, args: args || ({}) }
     backend.write(JSON.stringify(payload) + "\n")
     return id
@@ -165,6 +166,9 @@ Item {
   function setRoomVolume(roomUid, volume) { sendCommand("volume.room.set", { roomUid: roomUid, volume: volume }) }
   function setRoomMute(roomUid, mute) { sendCommand("mute.room.set", { roomUid: roomUid, mute: !!mute }) }
   function applyMembers(roomUids) { sendCommand("topology.members.set", { roomUids: roomUids }) }
+  function requestDeviceDetails(roomUid) {
+    return sendCommand("devices.details.get", { roomUid: roomUid }, false)
+  }
 
   function errorMessage(error) {
     if (error && typeof error === "object" && error.message)
@@ -230,6 +234,7 @@ Item {
         favoriteAwaitingSnapshot = true
       }
     }
+    if (message.type === "result") commandResult(message)
   }
 
   Process {

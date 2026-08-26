@@ -56,5 +56,11 @@ class MixerPort(Protocol):
     def set_room_mute(self, room_uid: str, mute: Any) -> None: ...
 
 
-class SonarchyBackendPort(StatePort, PlaybackPort, ContentPort, TopologyPort, MixerPort, Protocol):
+class DevicesPort(Protocol):
+    def device_details(self, room_uid: str) -> dict[str, Any]: ...
+
+
+class SonarchyBackendPort(
+    StatePort, PlaybackPort, ContentPort, TopologyPort, MixerPort, DevicesPort, Protocol
+):
     """Temporary adapter port implemented by the legacy controller."""

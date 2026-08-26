@@ -30,6 +30,7 @@ from soco.music_services import MusicService
 from soco.plugins.sharelink import ShareLinkPlugin
 
 from sonarchy_backend.artwork import select_artwork_match
+from sonarchy_backend.domains.devices import project_device_details
 from sonarchy_errors import user_facing_error
 
 config.REQUEST_TIMEOUT = 3.0
@@ -214,48 +215,6 @@ def optional_property(target: Any, name: str) -> Any:
         return getattr(target, name)
     except Exception:  # noqa: BLE001 - unsupported SoCo properties are optional
         return None
-
-
-def optional_bool(target: Any, name: str) -> bool | None:
-    value = optional_property(target, name)
-    return None if value is None else bool(value)
-
-
-def optional_int(target: Any, name: str) -> int | None:
-    value = optional_property(target, name)
-    try:
-        return None if value is None else int(value)
-    except TypeError, ValueError:
-        return None
-
-
-def balance_value(target: Any) -> int | None:
-    """Project SoCo's two-channel tuple onto a -100..100 balance scale."""
-
-    value = optional_property(target, "balance")
-    if not isinstance(value, (list, tuple)) or len(value) != 2:
-        return None
-    try:
-        left = max(0, min(100, int(value[0])))
-        right = max(0, min(100, int(value[1])))
-    except TypeError, ValueError:
-        return None
-    if left == right:
-        return 0
-    return -(100 - right) if left > right else 100 - left
-
-
-def battery_snapshot(speaker: Any) -> dict[str, Any] | None:
-    raw = safe_call(lambda: speaker.get_battery_info(timeout=1.5), None)
-    if not isinstance(raw, dict) or not raw:
-        return None
-    level = safe_index(raw.get("Level"), -1)
-    return {
-        "level": level if 0 <= level <= 100 else None,
-        "health": clean(raw.get("Health"))[:40],
-        "temperature": clean(raw.get("Temperature"))[:40],
-        "power_source": clean(raw.get("PowerSource"))[:80],
-    }
 
 
 def cached_visible_zones(cache_path: Path = CACHE_PATH) -> set[Any]:
@@ -492,14 +451,6 @@ def discover_snapshot(timeout: float) -> dict[str, Any]:
     return {"ok": True, "devices": snapshot_from_speakers(speakers)}
 
 
-def repeat_label(raw: Any) -> str | None:
-    if raw is None:
-        return None
-    if clean(raw).upper() == "ONE":
-        return "one"
-    return "all" if bool(raw) else "off"
-
-
 def tv_autoplay_enabled(speaker: Any) -> bool | None:
     """Return the home-theater autoplay state without exposing its room UUID."""
 
@@ -527,85 +478,7 @@ def queue_transport_active(coordinator: Any) -> bool | None:
 
 
 def details_snapshot(ip: str) -> dict[str, Any]:
-    speaker = SoCo(validate_ip(ip))
-    coordinator = coordinator_for(speaker)
-    coordinator_ip = clean(getattr(coordinator, "ip_address", ip))
-    speaker_info = safe_call(speaker.get_speaker_info, {}) or {}
-    repeat_value = safe_call(lambda: coordinator.repeat, None)
-    sleep_timer = safe_call(coordinator.get_sleep_timer, None)
-    source = clean(optional_property(coordinator, "music_source")) or "UNKNOWN"
-    selected_tv_autoplay = tv_autoplay_enabled(speaker)
-    coordinator_tv_autoplay = (
-        selected_tv_autoplay if coordinator is speaker else tv_autoplay_enabled(coordinator)
-    )
-
-    speech = optional_bool(speaker, "speech_enhance_enabled")
-    if speech is None:
-        speech = optional_bool(speaker, "dialog_mode")
-
-    members = []
-    for member in group_members_for(speaker):
-        member_ip = clean(getattr(member, "ip_address", ""))
-        members.append(
-            {
-                "uid": clean(safe_call(lambda member=member: member.uid, "")) or member_ip,
-                "name": clean(safe_call(lambda member=member: member.player_name, "")) or member_ip,
-                "ip": member_ip,
-                "is_coordinator": member_ip == coordinator_ip,
-            }
-        )
-
-    return {
-        "ok": True,
-        "ip": validate_ip(ip),
-        "playback": {
-            "play_mode": clean(safe_call(lambda: coordinator.play_mode, "")),
-            "shuffle": safe_call(lambda: bool(coordinator.shuffle), None),
-            "repeat": repeat_label(repeat_value),
-            "crossfade": safe_call(lambda: bool(coordinator.cross_fade), None),
-            "sleep_timer": None if sleep_timer is None else int(sleep_timer),
-            "play_mode_supported": queue_transport_active(coordinator) is True,
-            "tv_autoplay_risk": source.upper() == "TV" and coordinator_tv_autoplay is True,
-        },
-        "sound": {
-            "bass": optional_int(speaker, "bass"),
-            "treble": optional_int(speaker, "treble"),
-            "balance": balance_value(speaker),
-            "loudness": optional_bool(speaker, "loudness"),
-            "night_mode": optional_bool(speaker, "night_mode"),
-            "speech_enhancement": speech,
-            "sub_enabled": optional_bool(speaker, "sub_enabled"),
-            "sub_gain": optional_int(speaker, "sub_gain"),
-            "sub_crossover": optional_int(speaker, "sub_crossover"),
-            "surround_enabled": optional_bool(speaker, "surround_enabled"),
-            "surround_mode": optional_bool(speaker, "surround_mode"),
-            "surround_tv": optional_int(speaker, "surround_volume_tv"),
-            "surround_music": optional_int(speaker, "surround_volume_music"),
-            "audio_delay": optional_int(speaker, "audio_delay"),
-        },
-        "device": {
-            "name": clean(safe_call(lambda: speaker.player_name, "")),
-            "model": clean(speaker_info.get("model_name")),
-            "model_number": clean(speaker_info.get("model_number")),
-            "serial_number": clean(speaker_info.get("serial_number")),
-            "software_version": clean(speaker_info.get("software_version")),
-            "hardware_version": clean(speaker_info.get("hardware_version")),
-            "channel": clean(optional_property(speaker, "channel")),
-            "source": source,
-            "is_soundbar": bool(safe_call(lambda: speaker.is_soundbar, False)),
-            "tv_autoplay": selected_tv_autoplay,
-            "status_light": optional_bool(speaker, "status_light"),
-            "buttons_enabled": optional_bool(speaker, "buttons_enabled"),
-            "trueplay": optional_bool(speaker, "trueplay"),
-            "mic_enabled": optional_bool(speaker, "mic_enabled"),
-            "voice_service_configured": optional_bool(speaker, "voice_service_configured"),
-            "battery": battery_snapshot(speaker),
-        },
-        "group": {
-            "coordinator_ip": coordinator_ip,
-            "members": members,
-        },
-    }
+    return project_device_details(SoCo(validate_ip(ip)))
 
 
 def result_total(result: Any) -> int:

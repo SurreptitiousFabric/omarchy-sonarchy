@@ -144,6 +144,16 @@ def test_errors_are_keyboard_dismissible_and_expire():
     assert "interval: 10000" in live_service
 
 
+def test_device_details_use_the_persistent_backend_not_a_one_shot_process():
+    service = (ROOT / "Service.qml").read_text()
+    live_service = (ROOT / "LiveService.qml").read_text()
+
+    assert "detailsProcess" not in service
+    assert "live.requestDeviceDetails(detailsRequestRoomUid)" in service
+    assert 'sendCommand("devices.details.get", { roomUid: roomUid }, false)' in live_service
+    assert len(re.findall(r"\bProcess\s*\{", service)) == 4
+
+
 def test_page_navigation_follows_the_now_playing_content():
     widget = (ROOT / "BarWidget.qml").read_text()
     navigation = (ROOT / "SonarchyNavigation.qml").read_text()

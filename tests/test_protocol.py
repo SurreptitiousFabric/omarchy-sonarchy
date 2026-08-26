@@ -44,6 +44,10 @@ class FakeController:
     def select_room(self, room_uid):
         self.calls.append(("selectRoom", room_uid))
 
+    def device_details(self, room_uid):
+        self.calls.append(("deviceDetails", room_uid))
+        return {"ok": True, "ip": "device-address", "device": {"name": "Office"}}
+
 
 def decoded(output):
     return [json.loads(line) for line in output.getvalue().splitlines()]
@@ -243,7 +247,37 @@ class RecordingController:
 
 
 def test_protocol_action_cases_cover_every_operation():
-    assert {case[0] for case in PROTOCOL_ACTION_CASES} == PROTOCOL_OPERATIONS
+    assert {case[0] for case in PROTOCOL_ACTION_CASES} == PROTOCOL_OPERATIONS - {
+        "devices.details.get"
+    }
+
+
+def test_device_details_query_returns_value_without_snapshot_refresh():
+    controller = FakeController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "details",
+            "op": "devices.details.get",
+            "args": {"roomUid": "R1"},
+        },
+        output,
+    )
+
+    assert controller.calls == [("deviceDetails", "R1")]
+    assert decoded(output) == [
+        {
+            "type": "result",
+            "version": 1,
+            "id": "details",
+            "ok": True,
+            "revision": 0,
+            "value": {"ok": True, "ip": "device-address", "device": {"name": "Office"}},
+        }
+    ]
 
 
 @pytest.mark.parametrize(("operation", "arguments", "expected"), PROTOCOL_ACTION_CASES)

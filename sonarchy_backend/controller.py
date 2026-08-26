@@ -14,6 +14,7 @@ from urllib.parse import unquote, urlsplit
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 
+from .domains.devices import project_device_details
 from .model import (
     choose_target_group,
     clamp_volume,
@@ -1297,6 +1298,9 @@ class SonosController:
                     self._save_state_quietly()
                     return
         raise ControllerError(f"Unknown Sonos group: {group_uid}")
+
+    def device_details(self, room_uid: str) -> dict[str, Any]:
+        return project_device_details(self._zone(room_uid))
 
     def select_room(self, room_uid: str) -> None:
         """Remember one exact room without changing its group or playback."""
