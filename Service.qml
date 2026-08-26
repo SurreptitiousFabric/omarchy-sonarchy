@@ -693,17 +693,21 @@ Item {
   }
 
   function playContent(item) {
-    if (!item || selectedIp === "" || item.playable === false) return
+    if (!item || !selectedDevice || item.playable === false) return
+    if (contentKind !== "favorites" && actionBusy) return
     if (contentKind === "favorites") {
       live.playFavorite(String(item.id), String(item.title || "Favorite"))
     } else if (contentKind === "queue") {
-      startAction(["play-queue", selectedIp, String(item.index), String(item.id)],
-                  "Could not play queue item")
+      trackProtocolAction(live.playQueueItem(
+        String(selectedDevice.uid), Number(item.index), String(item.id)),
+        "Could not play queue item")
     } else if (contentKind === "apple") {
-      startAction(["play-apple", selectedIp, String(item.url)], "Could not play Apple Music result")
+      trackProtocolAction(live.playApple(
+        String(selectedDevice.uid), String(item.url)), "Could not play Apple Music result")
     } else if (contentKind === "global") {
-      startAction(["play-global", selectedIp, String(item.id), contentTerm],
-                  "Could not play Global Player result")
+      trackProtocolAction(live.playGlobal(
+        String(selectedDevice.uid), String(item.id), contentTerm),
+        "Could not play Global Player result")
     } else if (contentKind === "library" || contentKind === "playlist") {
       enqueueContent(item, "play")
     } else if (contentKind === "playlists") {
@@ -712,37 +716,38 @@ Item {
   }
 
   function playAppleAlbum(item) {
-    if (!item || selectedIp === "" || String(item.album_url || "") === "") return
-    startAction(["play-apple-album", selectedIp, String(item.album_url)],
-                "Could not play Apple Music album")
+    if (!item || !selectedDevice || actionBusy || String(item.album_url || "") === "") return
+    trackProtocolAction(live.playAppleAlbum(
+      String(selectedDevice.uid), String(item.album_url)), "Could not play Apple Music album")
   }
 
   function enqueueContent(item, mode) {
-    if (!item || selectedIp === "" || item.playable === false) return
+    if (!item || !selectedDevice || actionBusy || item.playable === false) return
     if (contentKind !== "library" && contentKind !== "playlist") return
-    startAction([
-      "queue-content", selectedIp, contentKind, contentTerm,
-      String(item.id), String(Number(item.index || 0)), String(mode)
-    ], "Could not add item to the Sonos queue")
+    trackProtocolAction(live.enqueueContent(
+      String(selectedDevice.uid), contentKind, contentTerm,
+      String(item.id), Number(item.index || 0), String(mode)),
+      "Could not add item to the Sonos queue")
   }
 
   function playlistAction(action, value) {
-    if (selectedIp === "") return
-    startAction(["playlist", selectedIp, String(action), String(value || "")],
-                "Could not update Sonos playlist")
+    if (!selectedDevice || actionBusy) return
+    trackProtocolAction(live.mutatePlaylist(
+      String(selectedDevice.uid), String(action), String(value || "")),
+      "Could not update Sonos playlist")
   }
 
   function playlistTrackAction(action, item) {
-    if (!item || selectedIp === "" || contentKind !== "playlist") return
-    startAction([
-      "playlist-track", selectedIp, String(action), contentTerm,
-      String(Number(item.index || 0)), String(item.id)
-    ], "Could not update Sonos playlist")
+    if (!item || !selectedDevice || actionBusy || contentKind !== "playlist") return
+    trackProtocolAction(live.mutatePlaylistTrack(
+      String(selectedDevice.uid), String(action), contentTerm,
+      Number(item.index || 0), String(item.id)), "Could not update Sonos playlist")
   }
 
   function startLibraryUpdate() {
-    if (selectedIp !== "")
-      startAction(["library-update", selectedIp], "Could not update the music library")
+    if (selectedDevice && !actionBusy)
+      trackProtocolAction(live.startLibraryUpdate(String(selectedDevice.uid)),
+                          "Could not update the music library")
   }
 
   function loadAlarms() {
@@ -786,14 +791,16 @@ Item {
   }
 
   function removeQueueItem(index, itemId) {
-    if (selectedIp !== "")
-      startAction(["remove-queue", selectedIp, String(index), String(itemId)],
-                  "Could not remove queue item")
+    if (selectedDevice && !actionBusy)
+      trackProtocolAction(live.removeQueueItem(
+        String(selectedDevice.uid), Number(index), String(itemId)),
+        "Could not remove queue item")
   }
 
   function clearQueue() {
-    if (selectedIp !== "")
-      startAction(["clear-queue", selectedIp], "Could not clear Sonos queue")
+    if (selectedDevice && !actionBusy)
+      trackProtocolAction(live.clearQueue(String(selectedDevice.uid)),
+                          "Could not clear Sonos queue")
   }
 
   function requestVolume(value) {
@@ -856,6 +863,12 @@ Item {
         }
         if (completedAction !== "rename" || !actionPayload || actionPayload.ok !== true)
           delayedRefresh.restart()
+        if (completedAction === "playlist-delete")
+          Qt.callLater(function() { root.loadContent("playlists", "") })
+        else if (completedAction.indexOf("playlist-") === 0
+                 || completedAction.indexOf("queue-") === 0
+                 || completedAction === "library-update")
+          Qt.callLater(root.reloadContent)
         return
       }
       if (String(message.id || "") === root.artworkRequestId) {

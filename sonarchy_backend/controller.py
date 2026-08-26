@@ -16,7 +16,15 @@ from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 
 from .domains.alarms import project_alarms
 from .domains.browse import browse_content
+from .domains.content import (
+    play_apple,
+    play_apple_album,
+    play_global,
+    start_library_update,
+)
 from .domains.devices import project_device_details
+from .domains.playlists import playlist_action, playlist_track_action
+from .domains.queue import enqueue_content_item, queue_action
 from .domains.settings import (
     rename_room as rename_sonos_room,
 )
@@ -1331,6 +1339,36 @@ class SonosController:
 
     def list_alarms(self, room_uid: str) -> dict[str, Any]:
         return project_alarms(self._zone(room_uid))
+
+    def queue_action(
+        self, room_uid: str, action: str, index: int | None = None, item_id: str = ""
+    ) -> dict[str, Any]:
+        return queue_action(self._zone(room_uid), action, index, item_id)
+
+    def enqueue_content_item(
+        self, room_uid: str, kind: str, context: str, item_id: str, index: int, mode: str
+    ) -> dict[str, Any]:
+        return enqueue_content_item(self._zone(room_uid), kind, context, item_id, index, mode)
+
+    def playlist_action(self, room_uid: str, action: str, value: str) -> dict[str, Any]:
+        return playlist_action(self._zone(room_uid), action, value)
+
+    def playlist_track_action(
+        self, room_uid: str, action: str, playlist_id: str, index: int, item_id: str
+    ) -> dict[str, Any]:
+        return playlist_track_action(self._zone(room_uid), action, playlist_id, index, item_id)
+
+    def play_apple(self, room_uid: str, url: str) -> dict[str, Any]:
+        return play_apple(self._zone(room_uid), url)
+
+    def play_apple_album(self, room_uid: str, url: str) -> dict[str, Any]:
+        return play_apple_album(self._zone(room_uid), url)
+
+    def play_global(self, room_uid: str, item_id: str, term: str) -> dict[str, Any]:
+        return play_global(self._zone(room_uid), item_id, term)
+
+    def start_library_update(self, room_uid: str) -> dict[str, Any]:
+        return start_library_update(self._zone(room_uid))
 
     def stop_room(self, room_uid: str) -> dict[str, Any]:
         return stop_playback(self._zone(room_uid))

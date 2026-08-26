@@ -10,7 +10,9 @@ from .content import content_service
 from .devices import devices_service
 from .mixer import mixer_service
 from .playback import playback_service
+from .playlists import playlists_service
 from .ports import SonarchyBackendPort
+from .queue import queue_service
 from .settings import settings_service
 from .topology import topology_service
 
@@ -30,6 +32,8 @@ class SonarchyApplication:
             browse_service(backend),
             alarms_service(backend),
             settings_service(backend),
+            queue_service(backend),
+            playlists_service(backend),
         )
         operations = [operation for service in self.services for operation in service.operations]
         if len(operations) != len(set(operations)):

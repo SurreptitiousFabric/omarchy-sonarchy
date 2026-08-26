@@ -83,6 +83,9 @@ def _tv_autoplay(speaker: Any) -> bool | None:
     return bool(_clean(response.get("RoomUUID")))
 
 
+tv_autoplay_enabled = _tv_autoplay
+
+
 def stop_playback(speaker: Any) -> dict[str, Any]:
     coordinator = _coordinator(speaker)
     coordinator.stop()

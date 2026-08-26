@@ -54,7 +54,20 @@ from sonarchy_backend.domains.browse import public_artwork_url as browse_public_
 from sonarchy_backend.domains.browse import queue_content as browse_queue_content
 from sonarchy_backend.domains.browse import validate_identifier as browse_validate_identifier
 from sonarchy_backend.domains.browse import validate_playlist_id as browse_validate_playlist_id
+from sonarchy_backend.domains.content import play_apple as play_sonos_apple
+from sonarchy_backend.domains.content import play_apple_album as play_sonos_apple_album
+from sonarchy_backend.domains.content import play_global as play_sonos_global
+from sonarchy_backend.domains.content import start_library_update as start_sonos_library_update
 from sonarchy_backend.domains.devices import project_device_details
+from sonarchy_backend.domains.playlists import playlist_action as mutate_sonos_playlist
+from sonarchy_backend.domains.playlists import playlist_track_action as mutate_sonos_playlist_track
+from sonarchy_backend.domains.playlists import (
+    validate_playlist_title as validate_sonos_playlist_title,
+)
+from sonarchy_backend.domains.queue import enqueue_content_item as enqueue_sonos_content_item
+from sonarchy_backend.domains.queue import find_library_item as find_sonos_library_item
+from sonarchy_backend.domains.queue import find_playlist_track as find_sonos_playlist_track
+from sonarchy_backend.domains.queue import queue_action as mutate_sonos_queue
 from sonarchy_backend.domains.settings import (
     BOOLEAN_SETTINGS,
     DEVICE_BOOLEAN_SETTINGS,  # noqa: F401 - compatibility export for callers/tests
@@ -637,44 +650,11 @@ def queue_action(
     index: int | None = None,
     expected_item_id: str = "",
 ) -> dict[str, Any]:
-    coordinator = coordinator_for(SoCo(validate_ip(ip)))
-    if action in {"play-queue", "remove-queue"}:
-        if index is None or index < 0:
-            raise ValueError("Queue index is required")
-        expected = validate_identifier(expected_item_id, "queue item identifier")
-        result = coordinator.get_queue(max_items=100, full_album_art_uri=False)
-        if index >= len(result):
-            raise ValueError("The queue changed; refresh it and try again")
-        actual = clean(item_attr(result[index], "item_id")) or str(index)
-        if actual != expected:
-            raise ValueError("The queue changed; refresh it and try again")
-
-    if action == "play-queue":
-        coordinator.play_from_queue(index)
-        message = "Playing queue item"
-    elif action == "remove-queue":
-        coordinator.remove_from_queue(index)
-        message = "Removed from queue"
-    elif action == "clear-queue":
-        coordinator.clear_queue()
-        message = "Queue cleared"
-    else:
-        raise ValueError(f"Unsupported queue action: {action}")
-    return {"ok": True, "action": action, "message": message}
+    return mutate_sonos_queue(SoCo(validate_ip(ip)), action, index, expected_item_id)
 
 
 def find_library_item(coordinator: Any, item_id: str, term: str) -> Any:
-    expected_id = validate_identifier(item_id, "library item identifier")
-    query = validate_search_term(term, allow_empty=False)
-    result = coordinator.music_library.get_music_library_information(
-        "tracks",
-        max_items=100,
-        search_term=query,
-    )
-    for item in result:
-        if clean(item_attr(item, "item_id")) == expected_id:
-            return item
-    raise ValueError("The library item is no longer available")
+    return find_sonos_library_item(coordinator, item_id, term)
 
 
 def find_playlist_track(
@@ -683,18 +663,7 @@ def find_playlist_track(
     index: int,
     item_id: str,
 ) -> tuple[Any, Any, int]:
-    sonos_playlist = coordinator.get_sonos_playlist_by_attr(
-        "item_id", validate_playlist_id(playlist_id)
-    )
-    result = coordinator.music_library.browse(ml_item=sonos_playlist, max_items=100)
-    position = int(index)
-    if position < 0 or position >= len(result):
-        raise ValueError("The playlist changed; refresh it and try again")
-    track = result[position]
-    expected_id = validate_identifier(item_id, "playlist item identifier")
-    if clean(item_attr(track, "item_id")) != expected_id:
-        raise ValueError("The playlist changed; refresh it and try again")
-    return sonos_playlist, track, len(result)
+    return find_sonos_playlist_track(coordinator, playlist_id, index, item_id)
 
 
 def enqueue_content_item(
@@ -705,42 +674,11 @@ def enqueue_content_item(
     index: int,
     mode: str,
 ) -> dict[str, Any]:
-    coordinator = coordinator_for(SoCo(validate_ip(ip)))
-    if kind == "library":
-        item = find_library_item(coordinator, item_id, context)
-    elif kind == "playlist":
-        _, item, _ = find_playlist_track(coordinator, context, index, item_id)
-    else:
-        raise ValueError("Only library and playlist items can be queued here")
-    if not item_attr(item, "resources", []):
-        raise ValueError("This item does not contain a playable resource")
-    if mode not in {"play", "next", "end"}:
-        raise ValueError("Unsupported queue position")
-    if mode == "next":
-        current = safe_call(coordinator.get_current_track_info, {}) or {}
-        current_position = max(0, safe_index(current.get("playlist_position"), 0))
-        queue_position = coordinator.add_to_queue(
-            item,
-            position=current_position + 1 if current_position else 1,
-        )
-        message = "Added next"
-    else:
-        queue_position = coordinator.add_to_queue(item)
-        if mode == "play":
-            coordinator.play_from_queue(max(0, int(queue_position) - 1))
-            message = "Playing from the queue"
-        else:
-            message = "Added to the queue"
-    return {"ok": True, "action": f"queue-{mode}", "message": message}
+    return enqueue_sonos_content_item(SoCo(validate_ip(ip)), kind, context, item_id, index, mode)
 
 
 def validate_playlist_title(raw: Any) -> str:
-    title = clean(raw)
-    if not title:
-        raise ValueError("Playlist name cannot be empty")
-    if len(title) > 80 or any(ord(character) < 32 for character in title):
-        raise ValueError("Playlist name is too long or contains control characters")
-    return title
+    return validate_sonos_playlist_title(raw)
 
 
 def playlist_action(
@@ -749,32 +687,8 @@ def playlist_action(
     playlist_id: str = "",
     title: str = "",
 ) -> dict[str, Any]:
-    coordinator = coordinator_for(SoCo(validate_ip(ip)))
-    if action == "create":
-        playlist = coordinator.create_sonos_playlist(validate_playlist_title(title))
-        message = f"Created {clean(item_attr(playlist, 'title'))}"
-    elif action == "save-queue":
-        if not safe_index(optional_property(coordinator, "queue_size"), 0):
-            raise ValueError("The current queue is empty")
-        playlist = coordinator.create_sonos_playlist_from_queue(validate_playlist_title(title))
-        message = f"Saved queue as {clean(item_attr(playlist, 'title'))}"
-    elif action == "play":
-        playlist = coordinator.get_sonos_playlist_by_attr(
-            "item_id", validate_playlist_id(playlist_id)
-        )
-        position = coordinator.add_to_queue(playlist)
-        coordinator.play_from_queue(max(0, int(position) - 1))
-        message = f"Playing {clean(item_attr(playlist, 'title'))}"
-    elif action == "delete":
-        playlist = coordinator.get_sonos_playlist_by_attr(
-            "item_id", validate_playlist_id(playlist_id)
-        )
-        playlist_title = clean(item_attr(playlist, "title")) or "Sonos playlist"
-        coordinator.remove_sonos_playlist(playlist)
-        message = f"Deleted {playlist_title}"
-    else:
-        raise ValueError("Unsupported playlist action")
-    return {"ok": True, "action": f"playlist-{action}", "message": message}
+    value = playlist_id if action in {"play", "delete"} else title
+    return mutate_sonos_playlist(SoCo(validate_ip(ip)), action, value)
 
 
 def playlist_track_action(
@@ -784,37 +698,13 @@ def playlist_track_action(
     index: int,
     item_id: str,
 ) -> dict[str, Any]:
-    coordinator = coordinator_for(SoCo(validate_ip(ip)))
-    playlist, _, count = find_playlist_track(coordinator, playlist_id, int(index), item_id)
-    position = int(index)
-    if action == "remove":
-        coordinator.remove_from_sonos_playlist(playlist, position)
-        message = "Removed from playlist"
-    elif action == "up":
-        if position <= 0:
-            raise ValueError("This item is already first")
-        coordinator.move_in_sonos_playlist(playlist, position, position - 1)
-        message = "Moved up"
-    elif action == "down":
-        if position >= count - 1:
-            raise ValueError("This item is already last")
-        coordinator.move_in_sonos_playlist(playlist, position, position + 1)
-        message = "Moved down"
-    else:
-        raise ValueError("Unsupported playlist track action")
-    return {"ok": True, "action": f"playlist-track-{action}", "message": message}
+    return mutate_sonos_playlist_track(
+        SoCo(validate_ip(ip)), action, playlist_id, int(index), item_id
+    )
 
 
 def start_library_update(ip: str) -> dict[str, Any]:
-    coordinator = coordinator_for(SoCo(validate_ip(ip)))
-    if bool(safe_call(lambda: coordinator.music_library.library_updating, False)):
-        return {
-            "ok": True,
-            "action": "library-update",
-            "message": "Library update is already running",
-        }
-    coordinator.music_library.start_library_update()
-    return {"ok": True, "action": "library-update", "message": "Library update started"}
+    return start_sonos_library_update(SoCo(validate_ip(ip)))
 
 
 def alarms_snapshot(ip: str) -> dict[str, Any]:
@@ -955,46 +845,25 @@ def validate_apple_album_url(url: str) -> str:
 
 
 def play_apple(ip: str, url: str) -> dict[str, Any]:
-    coordinator = coordinator_for(SoCo(validate_ip(ip)))
-    plugin = ShareLinkPlugin(coordinator)
-    queue_position = plugin.add_share_link_to_queue(validate_apple_url(url))
-    coordinator.play_from_queue(max(0, int(queue_position) - 1))
-    return {"ok": True, "action": "play-apple", "message": "Playing from Apple Music"}
+    return play_sonos_apple(SoCo(validate_ip(ip)), url, share_link_factory=ShareLinkPlugin)
 
 
 def play_apple_album(ip: str, url: str) -> dict[str, Any]:
     album_url = validate_apple_album_url(url)
-    coordinator = coordinator_for(SoCo(validate_ip(ip)))
-    if (
-        clean(optional_property(coordinator, "music_source")).upper() == "TV"
-        and tv_autoplay_enabled(coordinator) is True
-    ):
-        raise ValueError(
-            "TV Autoplay is on while TV audio is active. Select the home-theater room, "
-            "turn off TV Autoplay in System, then play the album again."
-        )
-    plugin = ShareLinkPlugin(coordinator)
-    queue_position = plugin.add_share_link_to_queue(album_url)
-    coordinator.play_from_queue(max(0, int(queue_position) - 1))
-    return {
-        "ok": True,
-        "action": "play-apple-album",
-        "message": "Playing Apple Music album",
-    }
+    return play_sonos_apple_album(
+        SoCo(validate_ip(ip)), album_url, share_link_factory=ShareLinkPlugin
+    )
 
 
 def play_global(ip: str, item_id: str, term: str) -> dict[str, Any]:
-    coordinator = coordinator_for(SoCo(validate_ip(ip)))
-    expected_item_id = validate_identifier(item_id, "Global Player item identifier")
-    for item in global_results(coordinator, term, 50):
-        if clean(item_attr(item, "item_id")) != expected_item_id:
-            continue
-        resources = item_attr(item, "resources", [])
-        if not item_attr(item, "can_play", False) or not resources:
-            raise ValueError("This Global Player result is not directly playable")
-        coordinator.play_uri(resources[0].uri, meta=to_didl_string(item))
-        return {"ok": True, "action": "play-global", "message": f"Playing {clean(item.title)}"}
-    raise ValueError("Global Player result no longer exists")
+    return play_sonos_global(
+        SoCo(validate_ip(ip)),
+        item_id,
+        term,
+        music_service_factory=MusicService,
+        results_fn=global_results,
+        metadata_fn=to_didl_string,
+    )
 
 
 def parser() -> argparse.ArgumentParser:

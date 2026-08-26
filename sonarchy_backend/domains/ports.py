@@ -33,6 +33,14 @@ class ContentPort(Protocol):
 
     def refresh_favorites(self) -> None: ...
 
+    def play_apple(self, room_uid: str, url: str) -> dict[str, Any]: ...
+
+    def play_apple_album(self, room_uid: str, url: str) -> dict[str, Any]: ...
+
+    def play_global(self, room_uid: str, item_id: str, term: str) -> dict[str, Any]: ...
+
+    def start_library_update(self, room_uid: str) -> dict[str, Any]: ...
+
 
 class TopologyPort(Protocol):
     def select_group(self, group_uid: str) -> None: ...
@@ -84,6 +92,24 @@ class SettingsPort(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class QueuePort(Protocol):
+    def queue_action(
+        self, room_uid: str, action: str, index: int | None = None, item_id: str = ""
+    ) -> dict[str, Any]: ...
+
+    def enqueue_content_item(
+        self, room_uid: str, kind: str, context: str, item_id: str, index: int, mode: str
+    ) -> dict[str, Any]: ...
+
+
+class PlaylistsPort(Protocol):
+    def playlist_action(self, room_uid: str, action: str, value: str) -> dict[str, Any]: ...
+
+    def playlist_track_action(
+        self, room_uid: str, action: str, playlist_id: str, index: int, item_id: str
+    ) -> dict[str, Any]: ...
+
+
 class SonarchyBackendPort(
     StatePort,
     PlaybackPort,
@@ -94,6 +120,8 @@ class SonarchyBackendPort(
     BrowsePort,
     AlarmsPort,
     SettingsPort,
+    QueuePort,
+    PlaylistsPort,
     Protocol,
 ):
     """Temporary adapter port implemented by the legacy controller."""

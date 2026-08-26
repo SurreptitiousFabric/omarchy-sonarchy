@@ -102,7 +102,7 @@ def test_apple_results_offer_a_keyboard_reachable_whole_album_action():
     browse_page = (ROOT / "SonarchyBrowsePage.qml").read_text()
 
     assert "function playAppleAlbum(item)" in service
-    assert 'startAction(["play-apple-album"' in service
+    assert "live.playAppleAlbum(" in service
     assert "root.service.playAppleAlbum(modelData)" in browse_page
     assert 'text: "Album"' in browse_page
     assert "focusable: true" in browse_page
@@ -185,6 +185,39 @@ def test_device_and_playback_settings_use_the_persistent_backend():
         "sound.setting.set",
         "devices.setting.set",
         "sources.switch",
+    ):
+        assert f'sendCommand("{operation}"' in live_service
+    assert len(re.findall(r"\bProcess\s*\{", service)) == 1
+
+
+def test_content_mutations_use_the_persistent_backend():
+    service = (ROOT / "Service.qml").read_text()
+    live_service = (ROOT / "LiveService.qml").read_text()
+
+    for legacy_command in (
+        "play-queue",
+        "remove-queue",
+        "clear-queue",
+        "queue-content",
+        "playlist",
+        "playlist-track",
+        "play-apple",
+        "play-apple-album",
+        "play-global",
+        "library-update",
+    ):
+        assert f'startAction(["{legacy_command}"' not in service
+    for operation in (
+        "queue.item.play",
+        "queue.item.remove",
+        "queue.clear",
+        "queue.content.enqueue",
+        "playlists.mutate",
+        "playlists.track.mutate",
+        "content.apple.play",
+        "content.apple.album.play",
+        "content.global.play",
+        "library.update.start",
     ):
         assert f'sendCommand("{operation}"' in live_service
     assert len(re.findall(r"\bProcess\s*\{", service)) == 1

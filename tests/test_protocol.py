@@ -253,6 +253,61 @@ PROTOCOL_ACTION_CASES = (
         {"roomUid": "R1", "source": "line-in", "sourceRoomUid": "R2"},
         ("switch_source", "R1", "line-in", "R2"),
     ),
+    (
+        "queue.item.play",
+        {"roomUid": "R1", "index": 2, "itemId": "Q:2"},
+        ("queue_action", "R1", "play-queue", 2, "Q:2"),
+    ),
+    (
+        "queue.item.remove",
+        {"roomUid": "R1", "index": 2, "itemId": "Q:2"},
+        ("queue_action", "R1", "remove-queue", 2, "Q:2"),
+    ),
+    ("queue.clear", {"roomUid": "R1"}, ("queue_action", "R1", "clear-queue")),
+    (
+        "queue.content.enqueue",
+        {
+            "roomUid": "R1",
+            "kind": "library",
+            "context": "song",
+            "itemId": "L:1",
+            "index": 0,
+            "mode": "play",
+        },
+        ("enqueue_content_item", "R1", "library", "song", "L:1", 0, "play"),
+    ),
+    (
+        "playlists.mutate",
+        {"roomUid": "R1", "action": "create", "value": "Road Trip"},
+        ("playlist_action", "R1", "create", "Road Trip"),
+    ),
+    (
+        "playlists.track.mutate",
+        {
+            "roomUid": "R1",
+            "action": "down",
+            "playlistId": "SQ:1",
+            "index": 0,
+            "itemId": "T:1",
+        },
+        ("playlist_track_action", "R1", "down", "SQ:1", 0, "T:1"),
+    ),
+    (
+        "content.apple.play",
+        {"roomUid": "R1", "url": "https://music.apple.com/ch/song/example/1"},
+        ("play_apple", "R1", "https://music.apple.com/ch/song/example/1"),
+    ),
+    (
+        "content.apple.album.play",
+        {"roomUid": "R1", "url": "https://music.apple.com/ch/album/example/1"},
+        ("play_apple_album", "R1", "https://music.apple.com/ch/album/example/1"),
+    ),
+    (
+        "content.global.play",
+        {"roomUid": "R1", "itemId": "G:1", "term": "news"},
+        ("play_global", "R1", "G:1", "news"),
+    ),
+    ("library.update.start", {"roomUid": "R1"}, ("start_library_update", "R1")),
 )
 
 

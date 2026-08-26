@@ -213,6 +213,50 @@ Item {
     if (String(sourceRoomUid || "") !== "") args.sourceRoomUid = sourceRoomUid
     return sendCommand("sources.switch", args)
   }
+  function playQueueItem(roomUid, index, itemId) {
+    return sendCommand("queue.item.play", {
+      roomUid: roomUid, index: index, itemId: itemId
+    })
+  }
+  function removeQueueItem(roomUid, index, itemId) {
+    return sendCommand("queue.item.remove", {
+      roomUid: roomUid, index: index, itemId: itemId
+    })
+  }
+  function clearQueue(roomUid) {
+    return sendCommand("queue.clear", { roomUid: roomUid })
+  }
+  function enqueueContent(roomUid, kind, context, itemId, index, mode) {
+    return sendCommand("queue.content.enqueue", {
+      roomUid: roomUid, kind: kind, context: context,
+      itemId: itemId, index: index, mode: mode
+    })
+  }
+  function mutatePlaylist(roomUid, action, value) {
+    return sendCommand("playlists.mutate", {
+      roomUid: roomUid, action: action, value: value
+    })
+  }
+  function mutatePlaylistTrack(roomUid, action, playlistId, index, itemId) {
+    return sendCommand("playlists.track.mutate", {
+      roomUid: roomUid, action: action, playlistId: playlistId,
+      index: index, itemId: itemId
+    })
+  }
+  function playApple(roomUid, url) {
+    return sendCommand("content.apple.play", { roomUid: roomUid, url: url })
+  }
+  function playAppleAlbum(roomUid, url) {
+    return sendCommand("content.apple.album.play", { roomUid: roomUid, url: url })
+  }
+  function playGlobal(roomUid, itemId, term) {
+    return sendCommand("content.global.play", {
+      roomUid: roomUid, itemId: itemId, term: term
+    })
+  }
+  function startLibraryUpdate(roomUid) {
+    return sendCommand("library.update.start", { roomUid: roomUid })
+  }
 
   function errorMessage(error) {
     if (error && typeof error === "object" && error.message)

@@ -59,6 +59,16 @@ PROTOCOL_OPERATIONS = frozenset(
         "sound.setting.set",
         "devices.setting.set",
         "sources.switch",
+        "queue.item.play",
+        "queue.item.remove",
+        "queue.clear",
+        "queue.content.enqueue",
+        "playlists.mutate",
+        "playlists.track.mutate",
+        "content.apple.play",
+        "content.apple.album.play",
+        "content.global.play",
+        "library.update.start",
     }
 )
 
