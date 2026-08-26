@@ -184,6 +184,9 @@ Item {
       roomUid: roomUid, kind: kind, term: term, limit: limit
     })
   }
+  function requestAlarms(roomUid) {
+    return sendCommand("alarms.list", { roomUid: roomUid })
+  }
 
   function errorMessage(error) {
     if (error && typeof error === "object" && error.message)

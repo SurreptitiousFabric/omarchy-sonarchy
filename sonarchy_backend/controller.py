@@ -14,6 +14,7 @@ from urllib.parse import unquote, urlsplit
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 
+from .domains.alarms import project_alarms
 from .domains.browse import browse_content
 from .domains.devices import project_device_details
 from .model import (
@@ -1309,6 +1310,9 @@ class SonosController:
             lambda: speaker.group.coordinator if speaker.group else speaker, speaker
         )
         return browse_content(coordinator, kind, term, limit)
+
+    def list_alarms(self, room_uid: str) -> dict[str, Any]:
+        return project_alarms(self._zone(room_uid))
 
     def select_room(self, room_uid: str) -> None:
         """Remember one exact room without changing its group or playback."""

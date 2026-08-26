@@ -35,6 +35,7 @@ from sonarchy_backend.apple_catalog import (
     public_apple_music_url,
 )
 from sonarchy_backend.apple_catalog import resolve_apple_artwork as catalog_resolve_artwork
+from sonarchy_backend.domains.alarms import project_alarms
 from sonarchy_backend.domains.browse import (
     album_art_url,
     browse_content,
@@ -908,35 +909,7 @@ def start_library_update(ip: str) -> dict[str, Any]:
 
 
 def alarms_snapshot(ip: str) -> dict[str, Any]:
-    speaker = SoCo(validate_ip(ip))
-    alarms = list(get_alarms(speaker))
-    items = []
-    for alarm in sorted(
-        alarms,
-        key=lambda value: (value.start_time, clean(value.alarm_id)),
-    ):
-        program_uri = clean(alarm.program_uri)
-        items.append(
-            {
-                "id": clean(alarm.alarm_id),
-                "time": alarm.start_time.strftime("%H:%M"),
-                "duration": 0
-                if alarm.duration is None
-                else alarm.duration.hour * 60 + alarm.duration.minute,
-                "recurrence": clean(alarm.recurrence),
-                "enabled": bool(alarm.enabled),
-                "volume": int(alarm.volume),
-                "include_grouped": bool(alarm.include_linked_zones),
-                "room_uid": clean(alarm.room_uuid),
-                "room": clean(
-                    safe_call(lambda alarm=alarm: alarm.zone.player_name, "Unknown room")
-                ),
-                "program": "Chime"
-                if program_uri in {"", "x-rincon-buzzer:0"}
-                else "Saved Sonos content",
-            }
-        )
-    return {"ok": True, "kind": "alarms", "items": items, "total": len(items)}
+    return project_alarms(SoCo(validate_ip(ip)), alarm_loader=get_alarms)
 
 
 def parse_alarm_time(raw: str) -> time:

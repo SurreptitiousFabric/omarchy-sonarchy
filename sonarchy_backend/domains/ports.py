@@ -64,6 +64,10 @@ class BrowsePort(Protocol):
     def browse_content(self, room_uid: str, kind: str, term: str, limit: int) -> dict[str, Any]: ...
 
 
+class AlarmsPort(Protocol):
+    def list_alarms(self, room_uid: str) -> dict[str, Any]: ...
+
+
 class SonarchyBackendPort(
     StatePort,
     PlaybackPort,
@@ -72,6 +76,7 @@ class SonarchyBackendPort(
     MixerPort,
     DevicesPort,
     BrowsePort,
+    AlarmsPort,
     Protocol,
 ):
     """Temporary adapter port implemented by the legacy controller."""

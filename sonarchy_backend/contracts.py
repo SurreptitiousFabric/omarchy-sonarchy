@@ -7,6 +7,7 @@ PROTOCOL_VERSION = 1
 
 CAPABILITY_NAMES = frozenset(
     {
+        "alarms.list",
         "artwork.radio.resolve",
         "content.favorite.play",
         "content.favorites.refresh",
@@ -167,6 +168,7 @@ def snapshot_capabilities(snapshot: dict[str, Any]) -> list[str]:
     if rooms:
         capabilities.update(
             {
+                "alarms.list",
                 "devices.details.get",
                 "mute.room.set",
                 "selection.room.set",

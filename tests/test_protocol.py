@@ -53,6 +53,10 @@ class FakeController:
         self.calls.append(("browseContent", room_uid, kind, term, limit))
         return {"ok": True, "kind": kind, "items": [], "total": 0}
 
+    def list_alarms(self, room_uid):
+        self.calls.append(("listAlarms", room_uid))
+        return {"ok": True, "kind": "alarms", "items": [], "total": 0}
+
 
 def decoded(output):
     return [json.loads(line) for line in output.getvalue().splitlines()]
@@ -253,6 +257,7 @@ class RecordingController:
 
 def test_protocol_action_cases_cover_every_operation():
     assert {case[0] for case in PROTOCOL_ACTION_CASES} == PROTOCOL_OPERATIONS - {
+        "alarms.list",
         "artwork.radio.resolve",
         "content.browse",
         "devices.details.get",
@@ -336,6 +341,32 @@ def test_content_query_returns_value_without_snapshot_refresh():
     messages = decoded(output)
     assert len(messages) == 1
     assert messages[0]["value"] == {"ok": True, "kind": "queue", "items": [], "total": 0}
+
+
+def test_alarm_query_returns_value_without_snapshot_refresh():
+    controller = FakeController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "alarms",
+            "op": "alarms.list",
+            "args": {"roomUid": "R1"},
+        },
+        output,
+    )
+
+    assert controller.calls == [("listAlarms", "R1")]
+    messages = decoded(output)
+    assert len(messages) == 1
+    assert messages[0]["value"] == {
+        "ok": True,
+        "kind": "alarms",
+        "items": [],
+        "total": 0,
+    }
 
 
 @pytest.mark.parametrize(("operation", "arguments", "expected"), PROTOCOL_ACTION_CASES)

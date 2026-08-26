@@ -80,6 +80,8 @@ Item {
   property string contentRequestTerm: ""
   property string pendingContentKind: ""
   property string pendingContentTerm: ""
+  property string alarmsRequestId: ""
+  property string alarmsRequestRoomUid: ""
 
   property int queuedVolume: -1
   property string queuedVolumeGroupUid: ""
@@ -724,10 +726,15 @@ Item {
   }
 
   function loadAlarms() {
-    if (selectedIp === "" || alarmsProcess.running) return
+    if (!selectedDevice || alarmsRequestId !== ""
+        || !live.hasCapability("alarms.list")) return
     alarmsLoading = true
-    alarmsProcess.command = [pythonPath, "-B", helperPath, "alarms", selectedIp]
-    alarmsProcess.running = true
+    alarmsRequestRoomUid = String(selectedDevice.uid || "")
+    alarmsRequestId = live.requestAlarms(alarmsRequestRoomUid)
+    if (alarmsRequestId === "") {
+      alarmsLoading = false
+      alarmsRequestRoomUid = ""
+    }
   }
 
   function ensureFavorites() {
@@ -865,6 +872,22 @@ Item {
         }
         return
       }
+      if (String(message.id || "") === root.alarmsRequestId) {
+        root.alarmsLoading = false
+        var alarmsPayload = message.ok === true ? message.value : null
+        var stillCurrentAlarms = root.selectedDevice
+          && root.alarmsRequestRoomUid === String(root.selectedDevice.uid || "")
+        root.alarmsRequestId = ""
+        root.alarmsRequestRoomUid = ""
+        if (alarmsPayload && alarmsPayload.ok === true
+            && Array.isArray(alarmsPayload.items) && stillCurrentAlarms) {
+          root.alarms = alarmsPayload.items
+          root.requestError = ""
+        } else if (stillCurrentAlarms) {
+          root.setRequestError(live.errorMessage(message.error), "Could not read Sonos alarms")
+        }
+        return
+      }
       if (String(message.id || "") !== root.detailsRequestId) return
       var requestedRoomUid = root.detailsRequestRoomUid
       root.detailsLoading = false
@@ -883,6 +906,9 @@ Item {
         root.contentLoading = false
         root.contentRequestId = ""
         root.contentRequestRoomUid = ""
+        root.alarmsLoading = false
+        root.alarmsRequestId = ""
+        root.alarmsRequestRoomUid = ""
         Qt.callLater(root.refreshDetails)
       }
     }
@@ -951,26 +977,6 @@ Item {
     interval: 140
     repeat: false
     onTriggered: root.flushVolume()
-  }
-
-  Process {
-    id: alarmsProcess
-    command: []
-    clearEnvironment: true
-    environment: root.helperEnvironment
-    stdout: StdioCollector { id: alarmsStdout; waitForEnd: true }
-    stderr: StdioCollector { id: alarmsStderr; waitForEnd: true }
-    onExited: function(exitCode) {
-      root.alarmsLoading = false
-      var payload = root.parsePayload(alarmsStdout.text)
-      if (exitCode === 0 && payload && payload.ok === true
-          && Array.isArray(payload.items)) {
-        root.alarms = payload.items
-        root.requestError = ""
-      } else {
-        root.processFailure(alarmsStdout.text, alarmsStderr.text, "Could not read Sonos alarms")
-      }
-    }
   }
 
   Process {
