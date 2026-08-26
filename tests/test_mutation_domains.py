@@ -12,6 +12,7 @@ from sonarchy_backend.domains.alarms import (
     save_alarm,
     toggle_alarm,
 )
+from sonarchy_backend.domains.capabilities import line_in_available
 from sonarchy_backend.domains.content import (
     play_apple,
     play_apple_album,
@@ -93,6 +94,18 @@ class AudioIn:
         return {"CurrentName": "Line-In"}
 
 
+class DirectAudioIn:
+    base_url = "http://speaker.test:1400"
+    control_url = "/MediaServer/AudioIn/Control"
+
+    def build_command(self, action, args):
+        assert (action, args) == ("GetAudioInputAttributes", [])
+        return {"SOAPACTION": "AudioIn#GetAudioInputAttributes"}, "<Envelope />"
+
+    def send_command(self, *_args, **_kwargs):
+        raise AssertionError("direct probe must bypass SoCo's response parser")
+
+
 class SettingsSpeaker:
     def __init__(self, uid="R1", ip="192.168.1.2"):
         self.uid = uid
@@ -159,6 +172,25 @@ class SettingsSpeaker:
     def get_battery_info(self, timeout):
         assert timeout == 1.5
         return {"Level": "80", "Health": "GOOD", "PowerSource": "BATTERY"}
+
+
+@pytest.mark.parametrize(("status_code", "expected"), ((200, True), (500, False)))
+def test_line_in_capability_uses_quiet_bounded_direct_request(status_code, expected):
+    speaker = SimpleNamespace(audioIn=DirectAudioIn())
+    response = Mock(status_code=status_code)
+
+    request_path = "sonarchy_backend.domains.capabilities.requests.post"
+    with patch(request_path, return_value=response) as post:
+        assert line_in_available(speaker) is expected
+
+    post.assert_called_once_with(
+        "http://speaker.test:1400/MediaServer/AudioIn/Control",
+        headers={"SOAPACTION": "AudioIn#GetAudioInputAttributes"},
+        data=b"<Envelope />",
+        timeout=1.5,
+        allow_redirects=False,
+    )
+    response.close.assert_called_once_with()
 
 
 @pytest.mark.parametrize(

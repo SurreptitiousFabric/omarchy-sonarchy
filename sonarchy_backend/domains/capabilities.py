@@ -2,19 +2,40 @@ from __future__ import annotations
 
 from typing import Any
 
+import requests
+
 LINE_IN_QUERY_TIMEOUT_SEC = 1.5
 
 
 def line_in_available(speaker: Any) -> bool:
     """Return only positively confirmed AudioIn support.
 
-    Calling ``send_command`` directly avoids SoCo's dynamic action lookup,
-    whose service-description fetch has a separate, longer timeout.
+    Building the SOAP request directly avoids SoCo's dynamic action lookup,
+    whose service-description fetch has a separate, longer timeout. It also
+    avoids logging expected unsupported-device responses as backend errors.
     """
     try:
-        response = speaker.audioIn.send_command(
-            "GetAudioInputAttributes", [], timeout=LINE_IN_QUERY_TIMEOUT_SEC
+        service = speaker.audioIn
+        headers, body = service.build_command("GetAudioInputAttributes", [])
+        response = requests.post(
+            service.base_url + service.control_url,
+            headers=headers,
+            data=body.encode("utf-8"),
+            timeout=LINE_IN_QUERY_TIMEOUT_SEC,
+            allow_redirects=False,
         )
+        try:
+            return response.status_code == 200
+        finally:
+            response.close()
+    except AttributeError:
+        # Narrow test/adaptor ports may expose only the action method.
+        try:
+            response = speaker.audioIn.send_command(
+                "GetAudioInputAttributes", [], timeout=LINE_IN_QUERY_TIMEOUT_SEC
+            )
+        except Exception:  # noqa: BLE001 - unsupported and unreachable both fail closed
+            return False
+        return isinstance(response, dict)
     except Exception:  # noqa: BLE001 - unsupported and unreachable both fail closed
         return False
-    return isinstance(response, dict)
