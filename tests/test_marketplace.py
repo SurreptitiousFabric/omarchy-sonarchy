@@ -128,7 +128,8 @@ def test_contextual_play_modes_are_disabled_and_rename_waits_for_topology():
     assert "root.playback.play_mode_supported === true" in sound_page
     assert "id: renameRefresh" in service
     assert "interval: 5500" in service
-    assert "root.optimisticDevicePatch(root.selectedIp" in service
+    assert "root.optimisticDevicePatch(" in service
+    assert "root.selectedIp, { name:" in service
 
 
 def test_errors_are_keyboard_dismissible_and_expire():
@@ -151,7 +152,7 @@ def test_device_details_use_the_persistent_backend_not_a_one_shot_process():
     assert "detailsProcess" not in service
     assert "live.requestDeviceDetails(detailsRequestRoomUid)" in service
     assert 'sendCommand("devices.details.get", { roomUid: roomUid }, false)' in live_service
-    assert len(re.findall(r"\bProcess\s*\{", service)) == 1
+    assert len(re.findall(r"\bProcess\s*\{", service)) == 0
 
 
 def test_content_reads_use_the_persistent_backend_not_a_one_shot_process():
@@ -187,7 +188,7 @@ def test_device_and_playback_settings_use_the_persistent_backend():
         "sources.switch",
     ):
         assert f'sendCommand("{operation}"' in live_service
-    assert len(re.findall(r"\bProcess\s*\{", service)) == 1
+    assert len(re.findall(r"\bProcess\s*\{", service)) == 0
 
 
 def test_content_mutations_use_the_persistent_backend():
@@ -220,7 +221,28 @@ def test_content_mutations_use_the_persistent_backend():
         "library.update.start",
     ):
         assert f'sendCommand("{operation}"' in live_service
-    assert len(re.findall(r"\bProcess\s*\{", service)) == 1
+    assert len(re.findall(r"\bProcess\s*\{", service)) == 0
+
+
+def test_alarm_mutations_use_the_persistent_backend_and_no_process_remains():
+    service = (ROOT / "Service.qml").read_text()
+    live_service = (ROOT / "LiveService.qml").read_text()
+
+    for legacy_command in ("alarm-save", "alarm-toggle", "alarm-delete"):
+        assert f'startAction(["{legacy_command}"' not in service
+    for operation in ("alarms.save", "alarms.toggle", "alarms.delete"):
+        assert f'sendCommand("{operation}"' in live_service
+    for legacy_plumbing in (
+        "Process {",
+        "StdioCollector",
+        "pythonPath",
+        "helperPath",
+        "helperEnvironment",
+        "parsePayload",
+        "processFailure",
+        "startAction",
+    ):
+        assert legacy_plumbing not in service
 
 
 def test_page_navigation_follows_the_now_playing_content():

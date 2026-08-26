@@ -75,6 +75,23 @@ class BrowsePort(Protocol):
 class AlarmsPort(Protocol):
     def list_alarms(self, room_uid: str) -> dict[str, Any]: ...
 
+    def save_alarm(
+        self,
+        room_uid: str,
+        alarm_id: str,
+        start: str,
+        recurrence: str,
+        volume: int,
+        duration: int,
+        enabled: bool,
+        include_grouped: bool,
+        program: str,
+    ) -> dict[str, Any]: ...
+
+    def toggle_alarm(self, room_uid: str, alarm_id: str, enabled: bool) -> dict[str, Any]: ...
+
+    def delete_alarm(self, room_uid: str, alarm_id: str) -> dict[str, Any]: ...
+
 
 class SettingsPort(Protocol):
     def stop_room(self, room_uid: str) -> dict[str, Any]: ...

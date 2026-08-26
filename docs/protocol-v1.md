@@ -20,9 +20,9 @@ ignored within protocol v1 unless they change the meaning of a required field.
 - `op` is a namespaced operation from the checked protocol inventory.
 - `args` is an object. Operations validate their own allowed and required keys.
 
-The backend temporarily accepts the legacy shape with operation arguments at
-the request root. QML migrates first; legacy acceptance is removed with
-`sonarchy_bridge.py`.
+The backend accepts only this canonical versioned shape. Missing versions,
+camelCase operation aliases, flattened arguments, and non-object `args` are
+rejected without executing a command.
 
 ## Result
 

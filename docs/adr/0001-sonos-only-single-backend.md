@@ -21,10 +21,9 @@ Sonarchy remains a Sonos LAN controller. Bluetooth, PipeWire, AirPlay, account
 administration, firmware, ownership, and initial speaker setup remain outside
 its scope.
 
-All runtime reads and mutations will move to one supervised persistent Python
-backend. QML communicates with it through the versioned JSON-line protocol.
-The legacy bridge is a temporary compatibility entry point and will be deleted
-after operation-by-operation parity is proven.
+All runtime reads and mutations use one supervised persistent Python backend.
+QML communicates with it through the versioned JSON-line protocol. The former
+legacy bridge was deleted after operation-by-operation parity was proven.
 
 Advanced features such as alarms, playlists and device settings may remain, but
 each belongs to an isolated domain module and capability-driven page section.

@@ -24,10 +24,9 @@ retries, and error classification. A QML page never launches Python, constructs
 a CLI argument list, parses backend stderr, or infers device support from model
 names.
 
-During migration, `sonarchy_bridge.py` remains only as a compatibility entry
-point. New behavior must be implemented in a domain service and exposed through
-the persistent protocol first. The bridge may call that service temporarily;
-domain behavior must never be copied into both paths.
+The former one-shot compatibility bridge has been removed. New behavior must
+be implemented in a domain service and exposed through the persistent protocol;
+QML must not add subprocess-based command paths.
 
 ## Domain ownership
 

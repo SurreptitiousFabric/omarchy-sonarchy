@@ -14,7 +14,12 @@ from urllib.parse import unquote, urlsplit
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 
-from .domains.alarms import project_alarms
+from .domains.alarms import (
+    delete_alarm,
+    project_alarms,
+    save_alarm,
+    toggle_alarm,
+)
 from .domains.browse import browse_content
 from .domains.content import (
     play_apple,
@@ -1339,6 +1344,36 @@ class SonosController:
 
     def list_alarms(self, room_uid: str) -> dict[str, Any]:
         return project_alarms(self._zone(room_uid))
+
+    def save_alarm(
+        self,
+        room_uid: str,
+        alarm_id: str,
+        start: str,
+        recurrence: str,
+        volume: int,
+        duration: int,
+        enabled: bool,
+        include_grouped: bool,
+        program: str,
+    ) -> dict[str, Any]:
+        return save_alarm(
+            self._zone(room_uid),
+            alarm_id,
+            start,
+            recurrence,
+            volume,
+            duration,
+            enabled,
+            include_grouped,
+            program,
+        )
+
+    def toggle_alarm(self, room_uid: str, alarm_id: str, enabled: bool) -> dict[str, Any]:
+        return toggle_alarm(self._zone(room_uid), alarm_id, enabled)
+
+    def delete_alarm(self, room_uid: str, alarm_id: str) -> dict[str, Any]:
+        return delete_alarm(self._zone(room_uid), alarm_id)
 
     def queue_action(
         self, room_uid: str, action: str, index: int | None = None, item_id: str = ""

@@ -1,25 +1,9 @@
 import QtQuick
-import Quickshell
-import Quickshell.Io
 
 Item {
   id: root
 
   property var shell: null
-
-  readonly property string dataHome: Quickshell.env("XDG_DATA_HOME") !== ""
-    ? Quickshell.env("XDG_DATA_HOME") : Quickshell.env("HOME") + "/.local/share"
-  readonly property string pythonPath: dataHome + "/sonarchy/venv/bin/python"
-  readonly property string helperPath: localPath(Qt.resolvedUrl("sonarchy_bridge.py"))
-  readonly property var helperEnvironment: ({
-    HOME: Quickshell.env("HOME"),
-    LANG: Quickshell.env("LANG") || "C.UTF-8",
-    SONARCHY_APPLE_COUNTRY: Quickshell.env("SONARCHY_APPLE_COUNTRY"),
-    OMARCHY_SONOS_APPLE_COUNTRY: Quickshell.env("OMARCHY_SONOS_APPLE_COUNTRY"),
-    XDG_CACHE_HOME: Quickshell.env("XDG_CACHE_HOME"),
-    XDG_DATA_HOME: Quickshell.env("XDG_DATA_HOME"),
-    XDG_STATE_HOME: Quickshell.env("XDG_STATE_HOME")
-  })
 
   readonly property var liveSnapshot: live.snapshot
   readonly property var connectionStatus: liveSnapshot && liveSnapshot.status
@@ -59,7 +43,7 @@ Item {
   property string artworkRequestArtist: ""
   property string artworkDiagnosticKey: ""
   readonly property int artworkCacheLimit: 128
-  readonly property bool actionBusy: actionProcess.running || protocolActionRequestId !== ""
+  readonly property bool actionBusy: protocolActionRequestId !== ""
     || live.favoriteRequestId !== "" || live.favoriteAwaitingSnapshot
     || live.moveRequestId !== ""
 
@@ -86,12 +70,6 @@ Item {
 
   property int queuedVolume: -1
   property string queuedVolumeGroupUid: ""
-
-  function localPath(url) {
-    var text = String(url || "")
-    if (text.indexOf("file://") === 0) text = text.substring(7)
-    return decodeURIComponent(text)
-  }
 
   readonly property var selectedDevice: {
     var selectedUid = String(liveSnapshot ? liveSnapshot.selectedAnchorRoomUid || "" : "")
@@ -172,15 +150,6 @@ Item {
   function setRequestError(text, fallback) {
     requestError = compactError(text, fallback)
     requestErrorTimer.restart()
-  }
-
-  function parsePayload(raw) {
-    try {
-      var value = String(raw || "").trim()
-      return value === "" ? null : JSON.parse(value)
-    } catch (error) {
-      return null
-    }
   }
 
   function formatTime(value) {
@@ -543,15 +512,6 @@ Item {
     actionMessageTimer.restart()
   }
 
-  function startAction(args, fallback) {
-    if (!selectedDevice || actionBusy) return
-    requestError = ""
-    actionMessage = ""
-    actionFallback = String(fallback || "Sonos control failed")
-    actionProcess.command = [pythonPath, "-B", helperPath].concat(args)
-    actionProcess.running = true
-  }
-
   function trackProtocolAction(requestId, fallback) {
     if (String(requestId || "") === "") return
     requestError = ""
@@ -767,27 +727,30 @@ Item {
   }
 
   function saveAlarm(editor) {
-    if (!editor || selectedIp === "") return
-    startAction([
-      "alarm-save", selectedIp, String(editor.id || "new"),
-      String(editor.time || "07:00"), String(editor.recurrence || "DAILY"),
-      String(Math.round(Number(editor.volume || 0))),
-      String(Math.round(Number(editor.duration || 0))),
-      editor.enabled === false ? "off" : "on",
-      editor.includeGrouped === true ? "on" : "off",
-      String(editor.program || "chime")
-    ], "Could not save Sonos alarm")
+    if (!editor || !selectedDevice || actionBusy) return
+    trackProtocolAction(live.saveAlarm(String(selectedDevice.uid), {
+      alarmId: String(editor.id || "new"),
+      time: String(editor.time || "07:00"),
+      recurrence: String(editor.recurrence || "DAILY"),
+      volume: Math.round(Number(editor.volume || 0)),
+      duration: Math.round(Number(editor.duration || 0)),
+      enabled: editor.enabled !== false,
+      includeGrouped: editor.includeGrouped === true,
+      program: String(editor.program || "chime")
+    }), "Could not save Sonos alarm")
   }
 
   function toggleAlarm(id, enabled) {
-    if (selectedIp !== "")
-      startAction(["alarm-toggle", selectedIp, String(id), enabled ? "on" : "off"],
-                  "Could not change Sonos alarm")
+    if (selectedDevice && !actionBusy)
+      trackProtocolAction(live.toggleAlarm(
+        String(selectedDevice.uid), String(id), Boolean(enabled)),
+        "Could not change Sonos alarm")
   }
 
   function deleteAlarm(id) {
-    if (selectedIp !== "")
-      startAction(["alarm-delete", selectedIp, String(id)], "Could not delete Sonos alarm")
+    if (selectedDevice && !actionBusy)
+      trackProtocolAction(live.deleteAlarm(String(selectedDevice.uid), String(id)),
+                          "Could not delete Sonos alarm")
   }
 
   function removeQueueItem(index, itemId) {
@@ -832,11 +795,6 @@ Item {
     live.setGroupVolume(value)
   }
 
-  function processFailure(stdout, stderr, fallback) {
-    var payload = parsePayload(stdout)
-    setRequestError(payload && payload.error ? payload.error : stderr || stdout, fallback)
-  }
-
   LiveService {
     id: live
     shell: root.shell
@@ -869,6 +827,8 @@ Item {
                  || completedAction.indexOf("queue-") === 0
                  || completedAction === "library-update")
           Qt.callLater(root.reloadContent)
+        if (completedAction.indexOf("alarm-") === 0)
+          Qt.callLater(root.loadAlarms)
         return
       }
       if (String(message.id || "") === root.artworkRequestId) {
@@ -1032,39 +992,6 @@ Item {
     interval: 140
     repeat: false
     onTriggered: root.flushVolume()
-  }
-
-  Process {
-    id: actionProcess
-    command: []
-    clearEnvironment: true
-    environment: root.helperEnvironment
-    stdout: StdioCollector { id: actionStdout; waitForEnd: true }
-    stderr: StdioCollector { id: actionStderr; waitForEnd: true }
-    onExited: function(exitCode) {
-      var payload = root.parsePayload(actionStdout.text)
-      var completedAction = String(payload && payload.action || "")
-      if (exitCode !== 0 || !payload || payload.ok !== true) {
-        root.processFailure(actionStdout.text, actionStderr.text, root.actionFallback)
-      } else {
-        root.requestError = ""
-        root.showActionMessage(String(payload.message || "Updated"))
-        if (completedAction === "rename") {
-          root.optimisticDevicePatch(root.selectedIp, { name: String(payload.name || "") })
-          renameRefresh.restart()
-        }
-      }
-      if (completedAction !== "rename" || exitCode !== 0 || !payload || payload.ok !== true)
-        delayedRefresh.restart()
-      if (String(payload && payload.action || "").indexOf("alarm-") === 0)
-        Qt.callLater(root.loadAlarms)
-      if (completedAction === "playlist-delete")
-        Qt.callLater(function() { root.loadContent("playlists", "") })
-      else if (completedAction.indexOf("playlist-") === 0
-               || completedAction.indexOf("queue-") === 0
-               || completedAction === "library-update")
-        Qt.callLater(root.reloadContent)
-    }
   }
 
   Component.onCompleted: applyLiveSnapshot()

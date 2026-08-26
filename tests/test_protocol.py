@@ -85,7 +85,7 @@ def test_unknown_operation_is_reported_without_crashing():
     controller = FakeController()
     server = ProtocolServer(controller)  # type: ignore[arg-type]
     output = io.StringIO()
-    server.handle({"id": "99", "op": "wat"}, output)
+    server.handle({"version": 1, "id": "99", "op": "wat", "args": {}}, output)
     messages = decoded(output)
     assert messages == [
         {
@@ -108,18 +108,34 @@ def test_set_panel_open_is_local_protocol_state():
     controller = FakeController()
     server = ProtocolServer(controller)  # type: ignore[arg-type]
     output = io.StringIO()
-    server.handle({"id": "2", "op": "setPanelOpen", "open": True}, output)
+    server.handle(
+        {
+            "version": 1,
+            "id": "2",
+            "op": "session.panel_open.set",
+            "args": {"open": True},
+        },
+        output,
+    )
     assert server.panel_open is True
     assert decoded(output)[0]["ok"] is True
 
 
-def test_plan_style_top_level_arguments_are_used():
+@pytest.mark.parametrize(
+    "request_payload",
+    (
+        {"id": "3", "op": "volume.group.set", "args": {"volume": 35}},
+        {"version": 1, "id": "3", "op": "setGroupVolume", "args": {"volume": 35}},
+        {"version": 1, "id": "3", "op": "volume.group.set", "volume": 35},
+    ),
+)
+def test_legacy_request_shapes_are_rejected_without_execution(request_payload):
     controller = FakeController()
     server = ProtocolServer(controller)  # type: ignore[arg-type]
     output = io.StringIO()
-    server.handle({"id": "3", "op": "setGroupVolume", "volume": 35}, output)
-    assert controller.calls == [("setGroupVolume", 35), ("refresh", False)]
-    assert decoded(output)[0]["ok"] is True
+    server.handle(request_payload, output)
+    assert controller.calls == []
+    assert decoded(output)[0]["ok"] is False
 
 
 def test_versioned_nested_arguments_are_used():
@@ -165,7 +181,15 @@ def test_play_favorite_dispatches_opaque_id():
     controller = FakeController()
     server = ProtocolServer(controller)  # type: ignore[arg-type]
     output = io.StringIO()
-    server.handle({"id": "4", "op": "playFavorite", "favoriteId": "fav-1"}, output)
+    server.handle(
+        {
+            "version": 1,
+            "id": "4",
+            "op": "content.favorite.play",
+            "args": {"favoriteId": "fav-1"},
+        },
+        output,
+    )
     assert controller.calls == [("playFavorite", "fav-1"), ("refresh", False)]
     assert decoded(output)[0]["ok"] is True
 
@@ -174,7 +198,15 @@ def test_move_playback_dispatches_dedicated_room_operation():
     controller = FakeController()
     server = ProtocolServer(controller)  # type: ignore[arg-type]
     output = io.StringIO()
-    server.handle({"id": "5", "op": "movePlaybackToRoom", "roomUid": "R2"}, output)
+    server.handle(
+        {
+            "version": 1,
+            "id": "5",
+            "op": "playback.room.move",
+            "args": {"roomUid": "R2"},
+        },
+        output,
+    )
     assert controller.calls == [("movePlaybackToRoom", "R2"), ("refresh", False)]
     assert decoded(output)[0]["ok"] is True
 
@@ -183,7 +215,15 @@ def test_select_room_dispatches_without_changing_topology():
     controller = FakeController()
     server = ProtocolServer(controller)  # type: ignore[arg-type]
     output = io.StringIO()
-    server.handle({"id": "6", "op": "selectRoom", "roomUid": "R2"}, output)
+    server.handle(
+        {
+            "version": 1,
+            "id": "6",
+            "op": "selection.room.set",
+            "args": {"roomUid": "R2"},
+        },
+        output,
+    )
     assert controller.calls == [("selectRoom", "R2"), ("refresh", False)]
     assert decoded(output)[0]["ok"] is True
 
@@ -308,6 +348,42 @@ PROTOCOL_ACTION_CASES = (
         ("play_global", "R1", "G:1", "news"),
     ),
     ("library.update.start", {"roomUid": "R1"}, ("start_library_update", "R1")),
+    (
+        "alarms.save",
+        {
+            "roomUid": "R1",
+            "alarmId": "new",
+            "time": "07:00",
+            "recurrence": "DAILY",
+            "volume": 25,
+            "duration": 30,
+            "enabled": True,
+            "includeGrouped": False,
+            "program": "chime",
+        },
+        (
+            "save_alarm",
+            "R1",
+            "new",
+            "07:00",
+            "DAILY",
+            25,
+            30,
+            True,
+            False,
+            "chime",
+        ),
+    ),
+    (
+        "alarms.toggle",
+        {"roomUid": "R1", "alarmId": "7", "enabled": False},
+        ("toggle_alarm", "R1", "7", False),
+    ),
+    (
+        "alarms.delete",
+        {"roomUid": "R1", "alarmId": "7"},
+        ("delete_alarm", "R1", "7"),
+    ),
 )
 
 
@@ -673,7 +749,9 @@ def test_oversized_protocol_line_is_rejected_and_service_stays_alive():
     output = io.StringIO()
     with tempfile.TemporaryFile(mode="w+") as input_stream:
         input_stream.write("x" * (MAX_PROTOCOL_LINE_BYTES + 10) + "\n")
-        input_stream.write('{"id":"2","op":"setPanelOpen","open":true}\n')
+        input_stream.write(
+            '{"version":1,"id":"2","op":"session.panel_open.set","args":{"open":true}}\n'
+        )
         input_stream.seek(0)
         server.serve(input_stream, output)
 

@@ -69,6 +69,9 @@ PROTOCOL_OPERATIONS = frozenset(
         "content.apple.album.play",
         "content.global.play",
         "library.update.start",
+        "alarms.save",
+        "alarms.toggle",
+        "alarms.delete",
     }
 )
 

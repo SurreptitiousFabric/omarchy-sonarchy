@@ -257,6 +257,27 @@ Item {
   function startLibraryUpdate(roomUid) {
     return sendCommand("library.update.start", { roomUid: roomUid })
   }
+  function saveAlarm(roomUid, alarm) {
+    return sendCommand("alarms.save", {
+      roomUid: roomUid,
+      alarmId: alarm.alarmId,
+      time: alarm.time,
+      recurrence: alarm.recurrence,
+      volume: alarm.volume,
+      duration: alarm.duration,
+      enabled: alarm.enabled,
+      includeGrouped: alarm.includeGrouped,
+      program: alarm.program
+    })
+  }
+  function toggleAlarm(roomUid, alarmId, enabled) {
+    return sendCommand("alarms.toggle", {
+      roomUid: roomUid, alarmId: alarmId, enabled: !!enabled
+    })
+  }
+  function deleteAlarm(roomUid, alarmId) {
+    return sendCommand("alarms.delete", { roomUid: roomUid, alarmId: alarmId })
+  }
 
   function errorMessage(error) {
     if (error && typeof error === "object" && error.message)

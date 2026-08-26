@@ -32,29 +32,6 @@ CAPABILITY_NAMES = frozenset(
     }
 )
 
-OPERATION_ALIASES = {
-    "setPanelOpen": "session.panel_open.set",
-    "refresh": "state.refresh",
-    "playPause": "playback.toggle",
-    "play": "playback.play",
-    "pause": "playback.pause",
-    "next": "playback.next",
-    "previous": "playback.previous",
-    "seek": "playback.seek",
-    "playFavorite": "content.favorite.play",
-    "refreshFavorites": "content.favorites.refresh",
-    "movePlaybackToRoom": "playback.room.move",
-    "selectGroup": "selection.group.set",
-    "selectRoom": "selection.room.set",
-    "setGroupVolume": "volume.group.set",
-    "adjustGroupVolume": "volume.group.adjust",
-    "setGroupMute": "mute.group.set",
-    "setRoomVolume": "volume.room.set",
-    "adjustRoomVolume": "volume.room.adjust",
-    "setRoomMute": "mute.room.set",
-    "applyMembers": "topology.members.set",
-}
-
 
 @dataclass(frozen=True)
 class ProtocolRequest:
@@ -76,7 +53,7 @@ def parse_request(payload: dict[str, Any]) -> ProtocolRequest:
     raw_operation = payload.get("op", "")
     operation = str(raw_operation or "")
 
-    version = payload.get("version", PROTOCOL_VERSION)
+    version = payload.get("version")
     if type(version) is not int or version != PROTOCOL_VERSION:
         raise ProtocolRequestError(
             "unsupported_version",
@@ -93,24 +70,19 @@ def parse_request(payload: dict[str, Any]) -> ProtocolRequest:
             "invalid_request", "Operation must be a non-empty string", request_id=request_id
         )
 
-    if "args" in payload:
-        raw_args = payload["args"]
-        if not isinstance(raw_args, dict):
-            raise ProtocolRequestError(
-                "invalid_request",
-                "Request args must be an object",
-                request_id=request_id,
-                operation=operation,
-            )
-        args = dict(raw_args)
-    else:
-        # Compatibility for the original QML and bridge request shape.
-        args = {key: value for key, value in payload.items() if key not in {"version", "id", "op"}}
+    raw_args = payload.get("args")
+    if not isinstance(raw_args, dict):
+        raise ProtocolRequestError(
+            "invalid_request",
+            "Request args must be an object",
+            request_id=request_id,
+            operation=operation,
+        )
 
     return ProtocolRequest(
         request_id=request_id,
-        operation=OPERATION_ALIASES.get(operation, operation),
-        args=args,
+        operation=operation,
+        args=dict(raw_args),
     )
 
 
@@ -169,6 +141,9 @@ def snapshot_capabilities(snapshot: dict[str, Any]) -> list[str]:
         capabilities.update(
             {
                 "alarms.list",
+                "alarms.save",
+                "alarms.toggle",
+                "alarms.delete",
                 "devices.details.get",
                 "devices.rename",
                 "devices.setting.set",

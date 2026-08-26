@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from .alarms import alarms_service
+from .alarms import alarm_mutations_service, alarms_service
 from .artwork import artwork_service
 from .browse import browse_service
 from .content import content_service
@@ -31,6 +31,7 @@ class SonarchyApplication:
             artwork_service(),
             browse_service(backend),
             alarms_service(backend),
+            alarm_mutations_service(backend),
             settings_service(backend),
             queue_service(backend),
             playlists_service(backend),
