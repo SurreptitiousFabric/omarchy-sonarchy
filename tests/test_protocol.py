@@ -268,6 +268,39 @@ def test_every_protocol_operation_dispatches_and_refreshes(operation, arguments,
     assert messages[1]["revision"] == 1
 
 
+@pytest.mark.parametrize(
+    ("operation", "arguments", "expected_message"),
+    (
+        ("playback.seek", {}, "positionSec must be a finite number"),
+        ("content.favorite.play", {"favoriteId": ""}, "favoriteId must be a non-empty string"),
+        (
+            "topology.members.set",
+            {"roomUids": ["R1", "R1"]},
+            "roomUids must not contain duplicates",
+        ),
+        ("mute.room.set", {"roomUid": "R1", "mute": "yes"}, "mute must be true or false"),
+    ),
+)
+def test_each_domain_rejects_invalid_arguments_before_command(
+    operation, arguments, expected_message
+):
+    controller = RecordingController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle({"version": 1, "id": "invalid", "op": operation, "args": arguments}, output)
+
+    messages = decoded(output)
+    assert messages[0]["error"] == {
+        "code": "invalid_argument",
+        "message": expected_message,
+        "retryable": False,
+        "operation": operation,
+    }
+    assert controller.calls == [("refresh", False)]
+    assert messages[1]["type"] == "snapshot"
+
+
 def test_refresh_exception_becomes_error_snapshot():
     class BrokenController(FakeController):
         def refresh(self, *, rediscover=True):

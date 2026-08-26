@@ -6,7 +6,6 @@ import logging
 import select
 import sys
 import time
-from collections.abc import Callable
 from typing import Any, TextIO
 
 from sonarchy_errors import user_facing_error
@@ -20,6 +19,7 @@ from .contracts import (
     snapshot_capabilities,
 )
 from .controller import ControllerError, SonosController
+from .domains import SonarchyApplication
 from .live_updates import EventSubscriptionManager, WakeQueue
 
 LOG = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ PROTOCOL_OPERATIONS = frozenset(
 
 class ProtocolServer:
     def __init__(self, controller: SonosController) -> None:
-        self.controller = controller
+        self.application = SonarchyApplication(controller)
         self.panel_open = False
         self.last_refresh = 0.0
         self.revision = 0
@@ -69,8 +69,8 @@ class ProtocolServer:
 
     def emit_snapshot(self, output: TextIO, *, rediscover: bool = True) -> None:
         try:
-            snapshot = self.controller.refresh(rediscover=rediscover)
-            diagnostics = self.event_subscriptions.reconcile(self.controller.event_services())
+            snapshot = self.application.refresh(rediscover=rediscover)
+            diagnostics = self.event_subscriptions.reconcile(self.application.event_services())
             snapshot.setdefault("status", {})["liveUpdates"] = diagnostics
             self.last_snapshot = copy.deepcopy(snapshot)
         except Exception as exc:
@@ -153,49 +153,9 @@ class ProtocolServer:
             self.emit_snapshot(output)
             return
 
-        # Keep dispatch lazy: building a table of bound methods up front makes
-        # even an unrelated command depend on every optional controller method.
-        dispatch: dict[str, Callable[[], None]] = {
-            "playback.toggle": lambda: self.controller.play_pause(),
-            "playback.play": lambda: self.controller.play(),
-            "playback.pause": lambda: self.controller.pause(),
-            "playback.next": lambda: self.controller.next(),
-            "playback.previous": lambda: self.controller.previous(),
-            "playback.seek": lambda: self.controller.seek(args.get("positionSec", 0)),
-            "content.favorite.play": lambda: self.controller.play_favorite(
-                str(args.get("favoriteId", ""))
-            ),
-            "content.favorites.refresh": lambda: self.controller.refresh_favorites(),
-            "playback.room.move": lambda: self.controller.move_playback_to_room(
-                str(args.get("roomUid", ""))
-            ),
-            "selection.group.set": lambda: self.controller.select_group(
-                str(args.get("groupUid", ""))
-            ),
-            "selection.room.set": lambda: self.controller.select_room(str(args.get("roomUid", ""))),
-            "volume.group.set": lambda: self.controller.set_group_volume(args.get("volume", 0)),
-            "volume.group.adjust": lambda: self.controller.adjust_group_volume(
-                args.get("delta", 0)
-            ),
-            "mute.group.set": lambda: self.controller.set_group_mute(args.get("mute", False)),
-            "volume.room.set": lambda: self.controller.set_room_volume(
-                str(args.get("roomUid", "")), args.get("volume", 0)
-            ),
-            "volume.room.adjust": lambda: self.controller.adjust_room_volume(
-                str(args.get("roomUid", "")), args.get("delta", 0)
-            ),
-            "mute.room.set": lambda: self.controller.set_room_mute(
-                str(args.get("roomUid", "")), args.get("mute", False)
-            ),
-            "topology.members.set": lambda: self.controller.apply_members(
-                [str(uid) for uid in args.get("roomUids", [])]
-            ),
-        }
-        if dispatch.keys() != PROTOCOL_OPERATIONS:
+        if self.application.operations != PROTOCOL_OPERATIONS:
             raise RuntimeError("Protocol operation inventory is out of sync")
-
-        action = dispatch.get(op)
-        if action is None:
+        if op not in self.application.operations:
             self._emit_error(
                 output,
                 request_id=request_id,
@@ -206,7 +166,7 @@ class ProtocolServer:
             return
 
         try:
-            action()
+            self.application.execute(op, args)
             self._emit(result_payload(request_id, revision=self.revision), output)
         except (ControllerError, ValueError, TypeError, OSError) as exc:
             LOG.warning("Sonos command %s failed: %s", op, exc)
@@ -288,7 +248,7 @@ class ProtocolServer:
                 if pending_event_at is not None and now >= pending_event_at:
                     pending_event_at = None
                     if pending_topology_households:
-                        self.controller.refresh_event_topologies(pending_topology_households)
+                        self.application.refresh_event_topologies(pending_topology_households)
                         pending_topology_households.clear()
                     self.emit_snapshot(output, rediscover=False)
                     continue
