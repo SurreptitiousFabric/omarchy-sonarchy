@@ -68,6 +68,22 @@ class AlarmsPort(Protocol):
     def list_alarms(self, room_uid: str) -> dict[str, Any]: ...
 
 
+class SettingsPort(Protocol):
+    def stop_room(self, room_uid: str) -> dict[str, Any]: ...
+
+    def rename_room(self, room_uid: str, name: str) -> dict[str, Any]: ...
+
+    def set_playback_option(self, room_uid: str, option: str, value: str) -> dict[str, Any]: ...
+
+    def set_sound(self, room_uid: str, setting: str, value: str) -> dict[str, Any]: ...
+
+    def set_device(self, room_uid: str, setting: str, value: str) -> dict[str, Any]: ...
+
+    def switch_source(
+        self, room_uid: str, source: str, source_room_uid: str = ""
+    ) -> dict[str, Any]: ...
+
+
 class SonarchyBackendPort(
     StatePort,
     PlaybackPort,
@@ -77,6 +93,7 @@ class SonarchyBackendPort(
     DevicesPort,
     BrowsePort,
     AlarmsPort,
+    SettingsPort,
     Protocol,
 ):
     """Temporary adapter port implemented by the legacy controller."""

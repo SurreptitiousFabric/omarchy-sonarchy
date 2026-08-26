@@ -187,6 +187,32 @@ Item {
   function requestAlarms(roomUid) {
     return sendCommand("alarms.list", { roomUid: roomUid })
   }
+  function stopRoom(roomUid) {
+    return sendCommand("playback.stop", { roomUid: roomUid })
+  }
+  function renameRoom(roomUid, name) {
+    return sendCommand("devices.rename", { roomUid: roomUid, name: name })
+  }
+  function setPlaybackOption(roomUid, option, value) {
+    return sendCommand("playback.option.set", {
+      roomUid: roomUid, option: option, value: value
+    })
+  }
+  function setSound(roomUid, setting, value) {
+    return sendCommand("sound.setting.set", {
+      roomUid: roomUid, setting: setting, value: value
+    })
+  }
+  function setDeviceSetting(roomUid, setting, value) {
+    return sendCommand("devices.setting.set", {
+      roomUid: roomUid, setting: setting, value: value
+    })
+  }
+  function switchSource(roomUid, source, sourceRoomUid) {
+    var args = { roomUid: roomUid, source: source }
+    if (String(sourceRoomUid || "") !== "") args.sourceRoomUid = sourceRoomUid
+    return sendCommand("sources.switch", args)
+  }
 
   function errorMessage(error) {
     if (error && typeof error === "object" && error.message)

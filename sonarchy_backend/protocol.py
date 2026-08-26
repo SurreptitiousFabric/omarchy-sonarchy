@@ -53,6 +53,12 @@ PROTOCOL_OPERATIONS = frozenset(
         "mute.room.set",
         "topology.members.set",
         "devices.details.get",
+        "playback.stop",
+        "devices.rename",
+        "playback.option.set",
+        "sound.setting.set",
+        "devices.setting.set",
+        "sources.switch",
     }
 )
 

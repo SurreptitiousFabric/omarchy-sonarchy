@@ -55,6 +55,18 @@ from sonarchy_backend.domains.browse import queue_content as browse_queue_conten
 from sonarchy_backend.domains.browse import validate_identifier as browse_validate_identifier
 from sonarchy_backend.domains.browse import validate_playlist_id as browse_validate_playlist_id
 from sonarchy_backend.domains.devices import project_device_details
+from sonarchy_backend.domains.settings import (
+    BOOLEAN_SETTINGS,
+    DEVICE_BOOLEAN_SETTINGS,  # noqa: F401 - compatibility export for callers/tests
+    DEVICE_SETTINGS,
+    NUMBER_SETTINGS,
+    TV_AUTOPLAY_SETTING,  # noqa: F401 - compatibility export for callers/tests
+)
+from sonarchy_backend.domains.settings import rename_room as rename_sonos_room
+from sonarchy_backend.domains.settings import set_device as set_sonos_device
+from sonarchy_backend.domains.settings import set_playback_option as set_sonos_playback_option
+from sonarchy_backend.domains.settings import set_sound as set_sonos_sound
+from sonarchy_backend.domains.settings import switch_source as switch_sonos_source
 from sonarchy_errors import user_facing_error
 
 config.REQUEST_TIMEOUT = 3.0
@@ -93,37 +105,6 @@ CONTENT_KINDS = {
     "playlists",
     "playlist",
 }
-NUMBER_SETTINGS = {
-    "bass": (-10, 10),
-    "treble": (-10, 10),
-    "sub-gain": (-15, 15),
-    "sub-crossover": (50, 110),
-    "surround-tv": (-15, 15),
-    "surround-music": (-15, 15),
-    "audio-delay": (0, 5),
-    "balance": (-100, 100),
-}
-BOOLEAN_SETTINGS = {
-    "loudness": "loudness",
-    "night-mode": "night_mode",
-    "sub-enabled": "sub_enabled",
-    "surround-enabled": "surround_enabled",
-    "surround-mode": "surround_mode",
-}
-NUMBER_ATTRIBUTES = {
-    "sub-gain": "sub_gain",
-    "sub-crossover": "sub_crossover",
-    "surround-tv": "surround_volume_tv",
-    "surround-music": "surround_volume_music",
-    "audio-delay": "audio_delay",
-}
-DEVICE_BOOLEAN_SETTINGS = {
-    "status-light": "status_light",
-    "buttons-enabled": "buttons_enabled",
-    "trueplay": "trueplay",
-}
-TV_AUTOPLAY_SETTING = "tv-autoplay"
-DEVICE_SETTINGS = frozenset({*DEVICE_BOOLEAN_SETTINGS, TV_AUTOPLAY_SETTING})
 ALARM_RECURRENCES = {"ONCE", "DAILY", "WEEKDAYS", "WEEKENDS"}
 ALARM_DURATIONS = {0, 15, 30, 45, 60, 90, 120}
 ALARM_ID_PATTERN = re.compile(r"\d+")
@@ -577,17 +558,7 @@ def run_action(action: str, ip: str, value: int | None = None) -> dict[str, Any]
 
 
 def rename_room(ip: str, name: str) -> dict[str, Any]:
-    speaker = SoCo(validate_ip(ip))
-    room_name = clean(name)
-    if not room_name:
-        raise ValueError("Room name cannot be empty")
-    if len(room_name) > 64 or any(ord(character) < 32 for character in room_name):
-        raise ValueError("Room name is too long or contains control characters")
-    speaker.player_name = room_name
-    response = safe_call(lambda: speaker.deviceProperties.GetZoneAttributes([]), None)
-    if isinstance(response, dict) and clean(response.get("CurrentZoneName")) != room_name:
-        raise ValueError("Sonos did not confirm the room name change")
-    return {"ok": True, "action": "rename", "name": room_name, "message": f"Renamed to {room_name}"}
+    return rename_sonos_room(SoCo(validate_ip(ip)), name)
 
 
 def group_room(ip: str, member_ip: str, grouped: bool) -> dict[str, Any]:
@@ -635,73 +606,11 @@ def separate_room(ip: str) -> dict[str, Any]:
 
 
 def playback_option(ip: str, option: str, value: str) -> dict[str, Any]:
-    speaker = SoCo(validate_ip(ip))
-    coordinator = coordinator_for(speaker)
-    if (
-        option in {"shuffle", "repeat", "crossfade"}
-        and queue_transport_active(coordinator) is False
-    ):
-        raise ValueError(
-            "Play modes are available only while the Sonos queue is the active source. "
-            "Choose a queued track first."
-        )
-    if option == "shuffle":
-        enabled = parse_bool(value)
-        coordinator.shuffle = enabled
-        message = "Shuffle on" if enabled else "Shuffle off"
-    elif option == "repeat":
-        mode = clean(value).casefold()
-        if mode not in {"off", "all", "one"}:
-            raise ValueError("Repeat must be off, all, or one")
-        coordinator.repeat = {"off": False, "all": True, "one": "ONE"}[mode]
-        message = {"off": "Repeat off", "all": "Repeat all", "one": "Repeat one"}[mode]
-    elif option == "crossfade":
-        enabled = parse_bool(value)
-        coordinator.cross_fade = enabled
-        message = "Crossfade on" if enabled else "Crossfade off"
-    elif option == "sleep":
-        if clean(value).casefold() == "off":
-            seconds = None
-            message = "Sleep timer cancelled"
-        else:
-            seconds = int(value)
-            if seconds < 60 or seconds > 86399:
-                raise ValueError("Sleep timer must be between 1 minute and 23 hours")
-            message = f"Sleep timer {max(1, round(seconds / 60))} min"
-        coordinator.set_sleep_timer(seconds)
-    else:
-        raise ValueError(f"Unsupported playback option: {option}")
-    return {"ok": True, "action": option, "message": message}
+    return set_sonos_playback_option(SoCo(validate_ip(ip)), option, value)
 
 
 def set_sound(ip: str, setting: str, value: str) -> dict[str, Any]:
-    speaker = SoCo(validate_ip(ip))
-    if setting in NUMBER_SETTINGS:
-        lower, upper = NUMBER_SETTINGS[setting]
-        number = max(lower, min(upper, int(value)))
-        if setting == "balance":
-            speaker.balance = (100, 100 + number) if number < 0 else (100 - number, 100)
-        elif setting in {"bass", "treble"}:
-            setattr(speaker, setting, number)
-        else:
-            setattr(speaker, NUMBER_ATTRIBUTES[setting], number)
-        label = setting.replace("-", " ").title()
-        message = f"{label} {number:+d}"
-    elif setting == "speech-enhancement":
-        enabled = parse_bool(value)
-        try:
-            speaker.speech_enhance_enabled = enabled
-        except Exception:  # noqa: BLE001 - older soundbars use the fallback property
-            speaker.dialog_mode = enabled
-        message = "Speech enhancement on" if enabled else "Speech enhancement off"
-    elif setting in BOOLEAN_SETTINGS:
-        enabled = parse_bool(value)
-        setattr(speaker, BOOLEAN_SETTINGS[setting], enabled)
-        label = setting.replace("-", " ").title()
-        message = f"{label} {'on' if enabled else 'off'}"
-    else:
-        raise ValueError(f"Unsupported sound setting: {setting}")
-    return {"ok": True, "action": setting, "message": message}
+    return set_sonos_sound(SoCo(validate_ip(ip)), setting, value)
 
 
 def find_favorite(coordinator: Any, item_id: str) -> Any:
@@ -1010,55 +919,25 @@ def delete_alarm(ip: str, alarm_id: str) -> dict[str, Any]:
 
 def switch_source(ip: str, source: str, source_ip: str = "") -> dict[str, Any]:
     speaker = SoCo(validate_ip(ip))
-    coordinator = coordinator_for(speaker)
-    if source == "line-in":
-        expected_ip = validate_ip(source_ip or ip)
+    source_speaker = None
+    if source_ip:
+        expected_ip = validate_ip(source_ip)
         visible = list(safe_call(lambda: speaker.visible_zones, set()) or set())
         if all(
             clean(getattr(zone, "ip_address", "")) != clean(speaker.ip_address) for zone in visible
         ):
             visible.append(speaker)
-        line_in = next(
+        source_speaker = next(
             (zone for zone in visible if clean(getattr(zone, "ip_address", "")) == expected_ip),
             None,
         )
-        if line_in is None:
+        if source_speaker is None:
             raise ValueError("Line-in source is not part of this Sonos household")
-        coordinator.switch_to_line_in(line_in)
-        message = "Playing line-in"
-    elif source == "tv":
-        coordinator.switch_to_tv()
-        message = "Playing TV audio"
-    else:
-        raise ValueError("Unsupported Sonos source")
-    return {"ok": True, "action": f"source-{source}", "message": message}
+    return switch_sonos_source(speaker, source, source_speaker)
 
 
 def set_device(ip: str, setting: str, value: str) -> dict[str, Any]:
-    if setting not in DEVICE_SETTINGS:
-        raise ValueError("Unsupported device setting")
-    enabled = parse_bool(value)
-    speaker = SoCo(validate_ip(ip))
-    if setting == TV_AUTOPLAY_SETTING:
-        if tv_autoplay_enabled(speaker) is None:
-            raise ValueError("TV Autoplay is not available on this speaker")
-        room_uuid = clean(safe_call(lambda: speaker.uid, ""))
-        if enabled and not room_uuid:
-            raise ValueError("Sonos did not provide the room identity needed for TV Autoplay")
-        speaker.deviceProperties.SetAutoplayRoomUUID(
-            [("RoomUUID", room_uuid if enabled else ""), ("Source", "")]
-        )
-        confirmed = tv_autoplay_enabled(speaker)
-        if confirmed is not enabled:
-            raise ValueError("Sonos did not confirm the TV Autoplay change")
-    else:
-        setattr(speaker, DEVICE_BOOLEAN_SETTINGS[setting], enabled)
-    label = "TV Autoplay" if setting == TV_AUTOPLAY_SETTING else setting.replace("-", " ").title()
-    return {
-        "ok": True,
-        "action": setting,
-        "message": f"{label} {'on' if enabled else 'off'}",
-    }
+    return set_sonos_device(SoCo(validate_ip(ip)), setting, value)
 
 
 def validate_apple_url(url: str) -> str:

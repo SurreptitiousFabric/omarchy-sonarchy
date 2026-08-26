@@ -170,8 +170,14 @@ def snapshot_capabilities(snapshot: dict[str, Any]) -> list[str]:
             {
                 "alarms.list",
                 "devices.details.get",
+                "devices.rename",
+                "devices.setting.set",
                 "mute.room.set",
+                "playback.option.set",
+                "playback.stop",
                 "selection.room.set",
+                "sound.setting.set",
+                "sources.switch",
                 "volume.room.adjust",
                 "volume.room.set",
             }

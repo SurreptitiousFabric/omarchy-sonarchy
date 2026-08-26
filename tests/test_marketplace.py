@@ -172,6 +172,24 @@ def test_alarm_reads_use_the_persistent_backend_not_a_one_shot_process():
     assert 'sendCommand("alarms.list"' in live_service
 
 
+def test_device_and_playback_settings_use_the_persistent_backend():
+    service = (ROOT / "Service.qml").read_text()
+    live_service = (ROOT / "LiveService.qml").read_text()
+
+    for legacy_command in ("stop", "rename", "playback-option", "sound", "device", "source"):
+        assert f'startAction(["{legacy_command}"' not in service
+    for operation in (
+        "playback.stop",
+        "devices.rename",
+        "playback.option.set",
+        "sound.setting.set",
+        "devices.setting.set",
+        "sources.switch",
+    ):
+        assert f'sendCommand("{operation}"' in live_service
+    assert len(re.findall(r"\bProcess\s*\{", service)) == 1
+
+
 def test_page_navigation_follows_the_now_playing_content():
     widget = (ROOT / "BarWidget.qml").read_text()
     navigation = (ROOT / "SonarchyNavigation.qml").read_text()

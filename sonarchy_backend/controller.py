@@ -17,6 +17,24 @@ from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from .domains.alarms import project_alarms
 from .domains.browse import browse_content
 from .domains.devices import project_device_details
+from .domains.settings import (
+    rename_room as rename_sonos_room,
+)
+from .domains.settings import (
+    set_device as set_sonos_device,
+)
+from .domains.settings import (
+    set_playback_option as set_sonos_playback_option,
+)
+from .domains.settings import (
+    set_sound as set_sonos_sound,
+)
+from .domains.settings import (
+    stop_playback,
+)
+from .domains.settings import (
+    switch_source as switch_sonos_source,
+)
 from .model import (
     choose_target_group,
     clamp_volume,
@@ -1313,6 +1331,28 @@ class SonosController:
 
     def list_alarms(self, room_uid: str) -> dict[str, Any]:
         return project_alarms(self._zone(room_uid))
+
+    def stop_room(self, room_uid: str) -> dict[str, Any]:
+        return stop_playback(self._zone(room_uid))
+
+    def rename_room(self, room_uid: str, name: str) -> dict[str, Any]:
+        return rename_sonos_room(self._zone(room_uid), name)
+
+    def set_playback_option(self, room_uid: str, option: str, value: str) -> dict[str, Any]:
+        return set_sonos_playback_option(self._zone(room_uid), option, value)
+
+    def set_sound(self, room_uid: str, setting: str, value: str) -> dict[str, Any]:
+        return set_sonos_sound(self._zone(room_uid), setting, value)
+
+    def set_device(self, room_uid: str, setting: str, value: str) -> dict[str, Any]:
+        return set_sonos_device(self._zone(room_uid), setting, value)
+
+    def switch_source(
+        self, room_uid: str, source: str, source_room_uid: str = ""
+    ) -> dict[str, Any]:
+        speaker = self._zone(room_uid)
+        source_speaker = self._zone(source_room_uid) if source_room_uid else None
+        return switch_sonos_source(speaker, source, source_speaker)
 
     def select_room(self, room_uid: str) -> None:
         """Remember one exact room without changing its group or playback."""

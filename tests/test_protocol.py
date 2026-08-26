@@ -227,6 +227,32 @@ PROTOCOL_ACTION_CASES = (
         {"roomUids": ["R1", "R2"]},
         ("apply_members", ["R1", "R2"]),
     ),
+    ("playback.stop", {"roomUid": "R1"}, ("stop_room", "R1")),
+    (
+        "devices.rename",
+        {"roomUid": "R1", "name": "Dining Room"},
+        ("rename_room", "R1", "Dining Room"),
+    ),
+    (
+        "playback.option.set",
+        {"roomUid": "R1", "option": "repeat", "value": "one"},
+        ("set_playback_option", "R1", "repeat", "one"),
+    ),
+    (
+        "sound.setting.set",
+        {"roomUid": "R1", "setting": "bass", "value": "4"},
+        ("set_sound", "R1", "bass", "4"),
+    ),
+    (
+        "devices.setting.set",
+        {"roomUid": "R1", "setting": "status-light", "value": "off"},
+        ("set_device", "R1", "status-light", "off"),
+    ),
+    (
+        "sources.switch",
+        {"roomUid": "R1", "source": "line-in", "sourceRoomUid": "R2"},
+        ("switch_source", "R1", "line-in", "R2"),
+    ),
 )
 
 
@@ -388,6 +414,29 @@ def test_every_protocol_operation_dispatches_and_refreshes(operation, arguments,
         "value": None,
     }
     assert messages[1]["type"] == "snapshot"
+    assert messages[1]["revision"] == 1
+
+
+def test_source_switch_rejects_non_string_optional_room_uid():
+    controller = RecordingController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "source",
+            "op": "sources.switch",
+            "args": {"roomUid": "R1", "source": "line-in", "sourceRoomUid": 2},
+        },
+        output,
+    )
+
+    messages = decoded(output)
+    message = messages[0]
+    assert message["ok"] is False
+    assert message["error"]["code"] == "invalid_argument"
+    assert controller.calls == [("refresh", False)]
     assert messages[1]["revision"] == 1
 
 

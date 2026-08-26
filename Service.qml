@@ -59,7 +59,7 @@ Item {
   property string artworkRequestArtist: ""
   property string artworkDiagnosticKey: ""
   readonly property int artworkCacheLimit: 128
-  readonly property bool actionBusy: actionProcess.running
+  readonly property bool actionBusy: actionProcess.running || protocolActionRequestId !== ""
     || live.favoriteRequestId !== "" || live.favoriteAwaitingSnapshot
     || live.moveRequestId !== ""
 
@@ -70,6 +70,7 @@ Item {
           : String(live.lastError || "")))
   property string actionMessage: ""
   property string actionFallback: "Sonos control failed"
+  property string protocolActionRequestId: ""
   property bool detailsQueued: false
 
   property string detailsRequestId: ""
@@ -543,12 +544,20 @@ Item {
   }
 
   function startAction(args, fallback) {
-    if (!selectedDevice || actionProcess.running) return
+    if (!selectedDevice || actionBusy) return
     requestError = ""
     actionMessage = ""
     actionFallback = String(fallback || "Sonos control failed")
     actionProcess.command = [pythonPath, "-B", helperPath].concat(args)
     actionProcess.running = true
+  }
+
+  function trackProtocolAction(requestId, fallback) {
+    if (String(requestId || "") === "") return
+    requestError = ""
+    actionMessage = ""
+    actionFallback = String(fallback || "Sonos control failed")
+    protocolActionRequestId = String(requestId)
   }
 
   function runAction(action) {
@@ -570,8 +579,9 @@ Item {
       optimisticDevicePatch(device.ip, { muted: !device.muted })
       live.setGroupMute(!device.muted)
     } else if (action === "stop") {
+      if (actionBusy) return
       optimisticDevicePatch(device.ip, { is_playing: false, state: "STOPPED" })
-      startAction(["stop", String(device.ip)], "Sonos playback control failed")
+      trackProtocolAction(live.stopRoom(String(device.uid)), "Sonos playback control failed")
       return
     } else {
       return
@@ -585,8 +595,9 @@ Item {
   }
 
   function renameRoom(name) {
-    if (selectedIp === "") return
-    startAction(["rename", selectedIp, String(name || "")], "Could not rename Sonos room")
+    if (!selectedDevice || actionBusy) return
+    trackProtocolAction(live.renameRoom(String(selectedDevice.uid), String(name || "")),
+                        "Could not rename Sonos room")
   }
 
   function setGrouped(memberIp, grouped) {
@@ -648,28 +659,37 @@ Item {
   }
 
   function setPlaybackOption(option, value) {
-    if (selectedIp === "") return
-    startAction(["playback-option", selectedIp, String(option), String(value)],
-                "Could not change playback option")
+    if (!selectedDevice || actionBusy) return
+    trackProtocolAction(live.setPlaybackOption(
+      String(selectedDevice.uid), String(option), String(value)),
+      "Could not change playback option")
   }
 
   function setSound(setting, value) {
-    if (selectedIp === "") return
-    startAction(["sound", selectedIp, String(setting), String(value)],
-                "Could not change sound setting")
+    if (!selectedDevice || actionBusy) return
+    trackProtocolAction(live.setSound(
+      String(selectedDevice.uid), String(setting), String(value)),
+      "Could not change sound setting")
   }
 
   function setDeviceSetting(setting, value) {
-    if (selectedIp === "") return
-    startAction(["device", selectedIp, String(setting), String(value)],
-                "Could not change device setting")
+    if (!selectedDevice || actionBusy) return
+    trackProtocolAction(live.setDeviceSetting(
+      String(selectedDevice.uid), String(setting), String(value)),
+      "Could not change device setting")
   }
 
   function switchSource(source, sourceIp) {
-    if (selectedIp === "") return
-    var args = ["source", selectedIp, String(source)]
-    if (String(sourceIp || "") !== "") args.push(String(sourceIp))
-    startAction(args, "Could not switch Sonos source")
+    if (!selectedDevice || actionBusy) return
+    var sourceRoom = String(sourceIp || "") !== "" ? roomForIp(sourceIp) : null
+    if (String(sourceIp || "") !== "" && !sourceRoom) {
+      setRequestError("The selected line-in room is no longer available",
+                      "Could not switch Sonos source")
+      return
+    }
+    trackProtocolAction(live.switchSource(
+      String(selectedDevice.uid), String(source), sourceRoom ? String(sourceRoom.uid) : ""),
+      "Could not switch Sonos source")
   }
 
   function playContent(item) {
@@ -819,6 +839,25 @@ Item {
     target: live
     function onSnapshotChanged() { root.applyLiveSnapshot() }
     function onCommandResult(message) {
+      if (String(message.id || "") === root.protocolActionRequestId) {
+        var actionPayload = message.ok === true ? message.value : null
+        var completedAction = String(actionPayload && actionPayload.action || "")
+        root.protocolActionRequestId = ""
+        if (!actionPayload || actionPayload.ok !== true) {
+          root.setRequestError(live.errorMessage(message.error), root.actionFallback)
+        } else {
+          root.requestError = ""
+          root.showActionMessage(String(actionPayload.message || "Updated"))
+          if (completedAction === "rename") {
+            root.optimisticDevicePatch(
+              root.selectedIp, { name: String(actionPayload.name || "") })
+            renameRefresh.restart()
+          }
+        }
+        if (completedAction !== "rename" || !actionPayload || actionPayload.ok !== true)
+          delayedRefresh.restart()
+        return
+      }
       if (String(message.id || "") === root.artworkRequestId) {
         var completedKey = root.artworkRequestKey
         var payload = message.ok === true ? message.value : null
@@ -830,6 +869,9 @@ Item {
         root.artworkRequestKey = ""
         root.artworkRequestTitle = ""
         root.artworkRequestArtist = ""
+        if (root.protocolActionRequestId !== "")
+          root.setRequestError("The Sonos backend stopped", root.actionFallback)
+        root.protocolActionRequestId = ""
         root.applyLiveSnapshot()
         Qt.callLater(root.maybeRequestRadioArtwork)
         return
