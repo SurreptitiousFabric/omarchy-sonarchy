@@ -161,6 +161,10 @@ marketplace capabilities. See [OFFICIAL_APP_GAPS.md](OFFICIAL_APP_GAPS.md) for
 what remains exclusive to, or safer in, the official Sonos app. The complete
 keyboard-first walkthrough is in the [user guide](USER_GUIDE.md).
 
+The runtime boundaries and refactoring target are documented in
+[ARCHITECTURE.md](ARCHITECTURE.md), with decisions and the persistent protocol
+under [`docs/`](docs/).
+
 ## Remove
 
 Remove the installed plugin with:

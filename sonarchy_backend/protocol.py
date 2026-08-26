@@ -11,6 +11,14 @@ from typing import Any, TextIO
 
 from sonarchy_errors import user_facing_error
 
+from .contracts import (
+    PROTOCOL_VERSION,
+    ProtocolRequestError,
+    error_payload,
+    parse_request,
+    result_payload,
+    snapshot_capabilities,
+)
 from .controller import ControllerError, SonosController
 from .live_updates import EventSubscriptionManager, WakeQueue
 
@@ -23,24 +31,24 @@ FALLBACK_BACKGROUND_POLL_SEC = 5.0
 MAX_PROTOCOL_LINE_BYTES = 64 * 1024
 PROTOCOL_OPERATIONS = frozenset(
     {
-        "playPause",
-        "play",
-        "pause",
-        "next",
-        "previous",
-        "seek",
-        "playFavorite",
-        "refreshFavorites",
-        "movePlaybackToRoom",
-        "selectGroup",
-        "selectRoom",
-        "setGroupVolume",
-        "adjustGroupVolume",
-        "setGroupMute",
-        "setRoomVolume",
-        "adjustRoomVolume",
-        "setRoomMute",
-        "applyMembers",
+        "playback.toggle",
+        "playback.play",
+        "playback.pause",
+        "playback.next",
+        "playback.previous",
+        "playback.seek",
+        "content.favorite.play",
+        "content.favorites.refresh",
+        "playback.room.move",
+        "selection.group.set",
+        "selection.room.set",
+        "volume.group.set",
+        "volume.group.adjust",
+        "mute.group.set",
+        "volume.room.set",
+        "volume.room.adjust",
+        "mute.room.set",
+        "topology.members.set",
     }
 )
 
@@ -50,6 +58,7 @@ class ProtocolServer:
         self.controller = controller
         self.panel_open = False
         self.last_refresh = 0.0
+        self.revision = 0
         self.last_snapshot: dict[str, Any] | None = None
         self.event_queue = WakeQueue()
         self.event_subscriptions = EventSubscriptionManager(self.event_queue)
@@ -110,56 +119,75 @@ class ProtocolServer:
                         "stale": False,
                     },
                 }
+        self.revision += 1
+        snapshot["type"] = "snapshot"
+        snapshot["version"] = PROTOCOL_VERSION
+        snapshot["revision"] = self.revision
+        snapshot["capabilities"] = snapshot_capabilities(snapshot)
         self.last_refresh = time.monotonic()
         self._emit(snapshot, output)
 
     def handle(self, request: dict[str, Any], output: TextIO) -> None:
-        request_id = str(request.get("id", "") or "")
-        op = str(request.get("op", "") or "")
-        args: dict[str, Any] = {}
-        for key, value in request.items():
-            if key not in {"id", "op"}:
-                args[key] = value
+        try:
+            parsed = parse_request(request)
+        except ProtocolRequestError as exc:
+            self._emit_error(
+                output,
+                request_id=exc.request_id,
+                code=exc.code,
+                message=str(exc),
+                operation=exc.operation,
+            )
+            return
+        request_id = parsed.request_id
+        op = parsed.operation
+        args = parsed.args
 
-        if op == "setPanelOpen":
+        if op == "session.panel_open.set":
             self.panel_open = bool(args.get("open", False))
-            self._emit({"type": "result", "id": request_id, "ok": True}, output)
+            self._emit(result_payload(request_id, revision=self.revision), output)
             return
 
-        if op == "refresh":
-            self._emit({"type": "result", "id": request_id, "ok": True}, output)
+        if op == "state.refresh":
+            self._emit(result_payload(request_id, revision=self.revision), output)
             self.emit_snapshot(output)
             return
 
         # Keep dispatch lazy: building a table of bound methods up front makes
         # even an unrelated command depend on every optional controller method.
         dispatch: dict[str, Callable[[], None]] = {
-            "playPause": lambda: self.controller.play_pause(),
-            "play": lambda: self.controller.play(),
-            "pause": lambda: self.controller.pause(),
-            "next": lambda: self.controller.next(),
-            "previous": lambda: self.controller.previous(),
-            "seek": lambda: self.controller.seek(args.get("positionSec", 0)),
-            "playFavorite": lambda: self.controller.play_favorite(str(args.get("favoriteId", ""))),
-            "refreshFavorites": lambda: self.controller.refresh_favorites(),
-            "movePlaybackToRoom": lambda: self.controller.move_playback_to_room(
+            "playback.toggle": lambda: self.controller.play_pause(),
+            "playback.play": lambda: self.controller.play(),
+            "playback.pause": lambda: self.controller.pause(),
+            "playback.next": lambda: self.controller.next(),
+            "playback.previous": lambda: self.controller.previous(),
+            "playback.seek": lambda: self.controller.seek(args.get("positionSec", 0)),
+            "content.favorite.play": lambda: self.controller.play_favorite(
+                str(args.get("favoriteId", ""))
+            ),
+            "content.favorites.refresh": lambda: self.controller.refresh_favorites(),
+            "playback.room.move": lambda: self.controller.move_playback_to_room(
                 str(args.get("roomUid", ""))
             ),
-            "selectGroup": lambda: self.controller.select_group(str(args.get("groupUid", ""))),
-            "selectRoom": lambda: self.controller.select_room(str(args.get("roomUid", ""))),
-            "setGroupVolume": lambda: self.controller.set_group_volume(args.get("volume", 0)),
-            "adjustGroupVolume": lambda: self.controller.adjust_group_volume(args.get("delta", 0)),
-            "setGroupMute": lambda: self.controller.set_group_mute(args.get("mute", False)),
-            "setRoomVolume": lambda: self.controller.set_room_volume(
+            "selection.group.set": lambda: self.controller.select_group(
+                str(args.get("groupUid", ""))
+            ),
+            "selection.room.set": lambda: self.controller.select_room(str(args.get("roomUid", ""))),
+            "volume.group.set": lambda: self.controller.set_group_volume(args.get("volume", 0)),
+            "volume.group.adjust": lambda: self.controller.adjust_group_volume(
+                args.get("delta", 0)
+            ),
+            "mute.group.set": lambda: self.controller.set_group_mute(args.get("mute", False)),
+            "volume.room.set": lambda: self.controller.set_room_volume(
                 str(args.get("roomUid", "")), args.get("volume", 0)
             ),
-            "adjustRoomVolume": lambda: self.controller.adjust_room_volume(
+            "volume.room.adjust": lambda: self.controller.adjust_room_volume(
                 str(args.get("roomUid", "")), args.get("delta", 0)
             ),
-            "setRoomMute": lambda: self.controller.set_room_mute(
+            "mute.room.set": lambda: self.controller.set_room_mute(
                 str(args.get("roomUid", "")), args.get("mute", False)
             ),
-            "applyMembers": lambda: self.controller.apply_members(
+            "topology.members.set": lambda: self.controller.apply_members(
                 [str(uid) for uid in args.get("roomUids", [])]
             ),
         }
@@ -168,46 +196,64 @@ class ProtocolServer:
 
         action = dispatch.get(op)
         if action is None:
-            self._emit(
-                {
-                    "type": "result",
-                    "id": request_id,
-                    "ok": False,
-                    "error": f"Unknown operation: {op}",
-                },
+            self._emit_error(
                 output,
+                request_id=request_id,
+                code="unsupported_operation",
+                message=f"Unknown operation: {op}",
+                operation=op,
             )
             return
 
         try:
             action()
-            self._emit({"type": "result", "id": request_id, "ok": True}, output)
+            self._emit(result_payload(request_id, revision=self.revision), output)
         except (ControllerError, ValueError, TypeError, OSError) as exc:
             LOG.warning("Sonos command %s failed: %s", op, exc)
-            self._emit(
-                {
-                    "type": "result",
-                    "id": request_id,
-                    "ok": False,
-                    "error": user_facing_error(exc),
-                },
+            if isinstance(exc, (ValueError, TypeError)):
+                code = "invalid_argument"
+            elif isinstance(exc, OSError):
+                code = "network_error"
+            else:
+                code = "speaker_rejected"
+            self._emit_error(
                 output,
+                request_id=request_id,
+                code=code,
+                message=(
+                    "A Sonos speaker could not be reached. Check the network and try again."
+                    if isinstance(exc, OSError)
+                    else user_facing_error(exc)
+                ),
+                operation=op,
+                retryable=isinstance(exc, OSError),
             )
-        except Exception as exc:
+        except Exception:
             LOG.exception("Unhandled Sonos command error")
-            self._emit(
-                {
-                    "type": "result",
-                    "id": request_id,
-                    "ok": False,
-                    "error": user_facing_error(exc),
-                },
+            self._emit_error(
                 output,
+                request_id=request_id,
+                code="internal_error",
+                message="Sonos could not complete that action",
+                operation=op,
             )
         finally:
             # Mutations are followed by authoritative state, including partial
             # failures, so the QML never has to pretend its optimistic view won.
             self.emit_snapshot(output, rediscover=False)
+
+    def _emit_error(
+        self,
+        output: TextIO,
+        *,
+        request_id: str,
+        code: str,
+        message: str,
+        operation: str = "",
+        retryable: bool = False,
+    ) -> None:
+        error = error_payload(code, message, operation=operation, retryable=retryable)
+        self._emit(result_payload(request_id, revision=self.revision, error=error), output)
 
     def serve(self, input_stream: TextIO = sys.stdin, output: TextIO = sys.stdout) -> None:
         pending_event_at: float | None = None
@@ -257,14 +303,11 @@ class ProtocolServer:
                 if len(line.encode("utf-8")) > MAX_PROTOCOL_LINE_BYTES:
                     while line and not line.endswith("\n"):
                         line = input_stream.readline(MAX_PROTOCOL_LINE_BYTES + 1)
-                    self._emit(
-                        {
-                            "type": "result",
-                            "id": "",
-                            "ok": False,
-                            "error": "Protocol message is too large",
-                        },
+                    self._emit_error(
                         output,
+                        request_id="",
+                        code="invalid_request",
+                        message="Protocol message is too large",
                     )
                     continue
                 if not line.strip():
@@ -272,25 +315,19 @@ class ProtocolServer:
                 try:
                     request = json.loads(line)
                 except json.JSONDecodeError as exc:
-                    self._emit(
-                        {
-                            "type": "result",
-                            "id": "",
-                            "ok": False,
-                            "error": f"Invalid JSON: {exc.msg}",
-                        },
+                    self._emit_error(
                         output,
+                        request_id="",
+                        code="invalid_request",
+                        message=f"Invalid JSON: {exc.msg}",
                     )
                     continue
                 if not isinstance(request, dict):
-                    self._emit(
-                        {
-                            "type": "result",
-                            "id": "",
-                            "ok": False,
-                            "error": "Protocol message must be a JSON object",
-                        },
+                    self._emit_error(
                         output,
+                        request_id="",
+                        code="invalid_request",
+                        message="Protocol message must be a JSON object",
                     )
                     continue
                 self.handle(request, output)

@@ -53,11 +53,19 @@ def test_mutation_emits_result_then_fresh_snapshot():
     controller = FakeController()
     server = ProtocolServer(controller)  # type: ignore[arg-type]
     output = io.StringIO()
-    server.handle({"id": "12", "op": "playPause"}, output)
+    server.handle({"version": 1, "id": "12", "op": "playback.toggle", "args": {}}, output)
     messages = decoded(output)
     assert controller.calls == [("playPause",), ("refresh", False)]
-    assert messages[0] == {"type": "result", "id": "12", "ok": True}
+    assert messages[0] == {
+        "type": "result",
+        "version": 1,
+        "id": "12",
+        "ok": True,
+        "revision": 0,
+        "value": None,
+    }
     assert messages[1]["type"] == "snapshot"
+    assert messages[1]["revision"] == 1
 
 
 def test_unknown_operation_is_reported_without_crashing():
@@ -67,7 +75,19 @@ def test_unknown_operation_is_reported_without_crashing():
     server.handle({"id": "99", "op": "wat"}, output)
     messages = decoded(output)
     assert messages == [
-        {"type": "result", "id": "99", "ok": False, "error": "Unknown operation: wat"}
+        {
+            "type": "result",
+            "version": 1,
+            "id": "99",
+            "ok": False,
+            "revision": 0,
+            "error": {
+                "code": "unsupported_operation",
+                "message": "Unknown operation: wat",
+                "retryable": False,
+                "operation": "wat",
+            },
+        }
     ]
 
 
@@ -87,6 +107,45 @@ def test_plan_style_top_level_arguments_are_used():
     server.handle({"id": "3", "op": "setGroupVolume", "volume": 35}, output)
     assert controller.calls == [("setGroupVolume", 35), ("refresh", False)]
     assert decoded(output)[0]["ok"] is True
+
+
+def test_versioned_nested_arguments_are_used():
+    controller = FakeController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    server.handle(
+        {
+            "version": 1,
+            "id": "3",
+            "op": "volume.group.set",
+            "args": {"volume": 35},
+        },
+        output,
+    )
+    assert controller.calls == [("setGroupVolume", 35), ("refresh", False)]
+
+
+@pytest.mark.parametrize(
+    ("request_payload", "code"),
+    (
+        ({"version": 2, "id": "3", "op": "state.refresh", "args": {}}, "unsupported_version"),
+        ({"version": 1, "id": "", "op": "state.refresh", "args": {}}, "invalid_request"),
+        ({"version": 1, "id": "3", "op": "", "args": {}}, "invalid_request"),
+        ({"version": 1, "id": "3", "op": "state.refresh", "args": []}, "invalid_request"),
+    ),
+)
+def test_invalid_request_contract_is_rejected_without_execution(request_payload, code):
+    controller = FakeController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(request_payload, output)
+
+    message = decoded(output)[0]
+    assert message["version"] == 1
+    assert message["ok"] is False
+    assert message["error"]["code"] == code
+    assert controller.calls == []
 
 
 def test_play_favorite_dispatches_opaque_id():
@@ -117,41 +176,41 @@ def test_select_room_dispatches_without_changing_topology():
 
 
 PROTOCOL_ACTION_CASES = (
-    ("playPause", {}, ("play_pause",)),
-    ("play", {}, ("play",)),
-    ("pause", {}, ("pause",)),
-    ("next", {}, ("next",)),
-    ("previous", {}, ("previous",)),
-    ("seek", {"positionSec": 42}, ("seek", 42)),
-    ("playFavorite", {"favoriteId": "fav-1"}, ("play_favorite", "fav-1")),
-    ("refreshFavorites", {}, ("refresh_favorites",)),
+    ("playback.toggle", {}, ("play_pause",)),
+    ("playback.play", {}, ("play",)),
+    ("playback.pause", {}, ("pause",)),
+    ("playback.next", {}, ("next",)),
+    ("playback.previous", {}, ("previous",)),
+    ("playback.seek", {"positionSec": 42}, ("seek", 42)),
+    ("content.favorite.play", {"favoriteId": "fav-1"}, ("play_favorite", "fav-1")),
+    ("content.favorites.refresh", {}, ("refresh_favorites",)),
     (
-        "movePlaybackToRoom",
+        "playback.room.move",
         {"roomUid": "R2"},
         ("move_playback_to_room", "R2"),
     ),
-    ("selectGroup", {"groupUid": "G2"}, ("select_group", "G2")),
-    ("selectRoom", {"roomUid": "R2"}, ("select_room", "R2")),
-    ("setGroupVolume", {"volume": 35}, ("set_group_volume", 35)),
-    ("adjustGroupVolume", {"delta": -2}, ("adjust_group_volume", -2)),
-    ("setGroupMute", {"mute": True}, ("set_group_mute", True)),
+    ("selection.group.set", {"groupUid": "G2"}, ("select_group", "G2")),
+    ("selection.room.set", {"roomUid": "R2"}, ("select_room", "R2")),
+    ("volume.group.set", {"volume": 35}, ("set_group_volume", 35)),
+    ("volume.group.adjust", {"delta": -2}, ("adjust_group_volume", -2)),
+    ("mute.group.set", {"mute": True}, ("set_group_mute", True)),
     (
-        "setRoomVolume",
+        "volume.room.set",
         {"roomUid": "R2", "volume": 21},
         ("set_room_volume", "R2", 21),
     ),
     (
-        "adjustRoomVolume",
+        "volume.room.adjust",
         {"roomUid": "R2", "delta": 2},
         ("adjust_room_volume", "R2", 2),
     ),
     (
-        "setRoomMute",
+        "mute.room.set",
         {"roomUid": "R2", "mute": False},
         ("set_room_mute", "R2", False),
     ),
     (
-        "applyMembers",
+        "topology.members.set",
         {"roomUids": ["R1", "R2"]},
         ("apply_members", ["R1", "R2"]),
     ),
@@ -193,12 +252,20 @@ def test_every_protocol_operation_dispatches_and_refreshes(operation, arguments,
     server = ProtocolServer(controller)  # type: ignore[arg-type]
     output = io.StringIO()
 
-    server.handle({"id": "matrix", "op": operation, **arguments}, output)
+    server.handle({"version": 1, "id": "matrix", "op": operation, "args": arguments}, output)
 
     assert controller.calls == [expected, ("refresh", False)]
     messages = decoded(output)
-    assert messages[0] == {"type": "result", "id": "matrix", "ok": True}
+    assert messages[0] == {
+        "type": "result",
+        "version": 1,
+        "id": "matrix",
+        "ok": True,
+        "revision": 0,
+        "value": None,
+    }
     assert messages[1]["type"] == "snapshot"
+    assert messages[1]["revision"] == 1
 
 
 def test_refresh_exception_becomes_error_snapshot():
@@ -254,6 +321,76 @@ def test_refresh_exception_retains_last_good_playback_snapshot():
     assert message["playback"]["stale"] is True
 
 
+def test_snapshot_revisions_are_monotonic():
+    server = ProtocolServer(FakeController())  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.emit_snapshot(output)
+    server.emit_snapshot(output, rediscover=False)
+
+    assert [message["revision"] for message in decoded(output)] == [1, 2]
+
+
+def test_snapshot_capabilities_come_from_topology_and_advertised_actions():
+    class CapableController(FakeController):
+        def refresh(self, *, rediscover=True):
+            return {
+                "type": "snapshot",
+                "version": 1,
+                "status": {"state": "ready", "message": ""},
+                "households": [
+                    {
+                        "id": "HH1",
+                        "rooms": [{"uid": "R1"}, {"uid": "R2"}],
+                        "groups": [{"uid": "G1"}],
+                    }
+                ],
+                "target": {"groupUid": "G1"},
+                "playback": {"availableActions": ["Next", "SeekTime"]},
+            }
+
+    server = ProtocolServer(CapableController())  # type: ignore[arg-type]
+    output = io.StringIO()
+    server.emit_snapshot(output)
+
+    capabilities = decoded(output)[0]["capabilities"]
+    assert capabilities == sorted(capabilities)
+    assert "playback.next" in capabilities
+    assert "playback.seek" in capabilities
+    assert "playback.previous" not in capabilities
+    assert "topology.members.set" in capabilities
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "message"),
+    (
+        (
+            OSError("connection failed at http://203.0.113.20/device"),
+            "network_error",
+            "A Sonos speaker could not be reached. Check the network and try again.",
+        ),
+        (
+            RuntimeError("raw backend detail"),
+            "internal_error",
+            "Sonos could not complete that action",
+        ),
+    ),
+)
+def test_command_errors_are_classified_without_leaking_raw_details(error, code, message):
+    class BrokenController(FakeController):
+        def play_pause(self):
+            raise error
+
+    server = ProtocolServer(BrokenController())  # type: ignore[arg-type]
+    output = io.StringIO()
+    server.handle({"version": 1, "id": "broken", "op": "playback.toggle", "args": {}}, output)
+
+    result = decoded(output)[0]
+    assert result["error"]["code"] == code
+    assert result["error"]["message"] == message
+    assert result["error"]["retryable"] is isinstance(error, OSError)
+
+
 def test_oversized_protocol_line_is_rejected_and_service_stays_alive():
     controller = FakeController()
     server = ProtocolServer(controller)  # type: ignore[arg-type]
@@ -265,5 +402,8 @@ def test_oversized_protocol_line_is_rejected_and_service_stays_alive():
         server.serve(input_stream, output)
 
     messages = decoded(output)
-    assert any(message.get("error") == "Protocol message is too large" for message in messages)
+    assert any(
+        message.get("error", {}).get("message") == "Protocol message is too large"
+        for message in messages
+    )
     assert any(message.get("id") == "2" and message.get("ok") is True for message in messages)

@@ -19,9 +19,11 @@ Item {
   property var snapshot: ({
     type: "snapshot",
     version: 1,
+    revision: 0,
     status: { state: "starting", message: "Starting Sonos controller…" },
     selectedAnchorRoomUid: "",
     targetGroupUid: "",
+    capabilities: [],
     households: [],
     target: null,
     favorites: { state: "not_loaded", items: [], total: 0, unsupported: 0, error: "" },
@@ -63,6 +65,11 @@ Item {
   readonly property var target: snapshot ? snapshot.target : null
   readonly property var households: snapshot && snapshot.households ? snapshot.households : []
 
+  function hasCapability(name) {
+    var capabilities = snapshot && snapshot.capabilities ? snapshot.capabilities : []
+    return capabilities.indexOf(String(name || "")) >= 0
+  }
+
   function setStatus(state, message) {
     var next = {}
     for (var key in snapshot) next[key] = snapshot[key]
@@ -90,10 +97,8 @@ Item {
     }
     requestCounter += 1
     var id = String(requestCounter)
-    if (op !== "setPanelOpen") clearTransientErrors()
-    var payload = { id: id, op: op }
-    var fields = args || ({})
-    for (var key in fields) payload[key] = fields[key]
+    if (op !== "session.panel_open.set") clearTransientErrors()
+    var payload = { version: 1, id: id, op: op, args: args || ({}) }
     backend.write(JSON.stringify(payload) + "\n")
     return id
   }
@@ -125,41 +130,47 @@ Item {
       if (!backend.running) backend.running = true
       return
     }
-    sendCommand("refresh")
+    sendCommand("state.refresh")
   }
   function setPanelOpen(open) {
     var wasOpen = openPanelCount > 0
     openPanelCount = Math.max(0, openPanelCount + (open ? 1 : -1))
     var isOpen = openPanelCount > 0
     if (wasOpen !== isOpen && backend.running)
-      sendCommand("setPanelOpen", { open: isOpen })
+      sendCommand("session.panel_open.set", { open: isOpen })
   }
-  function playPause() { sendCommand("playPause") }
-  function next() { sendCommand("next") }
-  function previous() { sendCommand("previous") }
-  function seek(positionSec) { sendCommand("seek", { positionSec: positionSec }) }
+  function playPause() { sendCommand("playback.toggle") }
+  function next() { sendCommand("playback.next") }
+  function previous() { sendCommand("playback.previous") }
+  function seek(positionSec) { sendCommand("playback.seek", { positionSec: positionSec }) }
   function playFavorite(favoriteId, title) {
     if (favoriteRequestId !== "" || favoriteAwaitingSnapshot) return ""
     favoriteStartingTitle = String(title || "Favorite")
     favoriteError = ""
-    favoriteRequestId = sendCommand("playFavorite", { favoriteId: favoriteId })
+    favoriteRequestId = sendCommand("content.favorite.play", { favoriteId: favoriteId })
     return favoriteRequestId
   }
-  function refreshFavorites() { sendCommand("refreshFavorites") }
+  function refreshFavorites() { sendCommand("content.favorites.refresh") }
   function movePlaybackToRoom(roomUid) {
     if (moveRequestId !== "") return ""
     moveError = ""
-    moveRequestId = sendCommand("movePlaybackToRoom", { roomUid: roomUid })
+    moveRequestId = sendCommand("playback.room.move", { roomUid: roomUid })
     return moveRequestId
   }
-  function selectGroup(groupUid) { sendCommand("selectGroup", { groupUid: groupUid }) }
-  function selectRoom(roomUid) { sendCommand("selectRoom", { roomUid: roomUid }) }
-  function setGroupVolume(volume) { sendCommand("setGroupVolume", { volume: volume }) }
-  function adjustGroupVolume(delta) { sendCommand("adjustGroupVolume", { delta: delta }) }
-  function setGroupMute(mute) { sendCommand("setGroupMute", { mute: !!mute }) }
-  function setRoomVolume(roomUid, volume) { sendCommand("setRoomVolume", { roomUid: roomUid, volume: volume }) }
-  function setRoomMute(roomUid, mute) { sendCommand("setRoomMute", { roomUid: roomUid, mute: !!mute }) }
-  function applyMembers(roomUids) { sendCommand("applyMembers", { roomUids: roomUids }) }
+  function selectGroup(groupUid) { sendCommand("selection.group.set", { groupUid: groupUid }) }
+  function selectRoom(roomUid) { sendCommand("selection.room.set", { roomUid: roomUid }) }
+  function setGroupVolume(volume) { sendCommand("volume.group.set", { volume: volume }) }
+  function adjustGroupVolume(delta) { sendCommand("volume.group.adjust", { delta: delta }) }
+  function setGroupMute(mute) { sendCommand("mute.group.set", { mute: !!mute }) }
+  function setRoomVolume(roomUid, volume) { sendCommand("volume.room.set", { roomUid: roomUid, volume: volume }) }
+  function setRoomMute(roomUid, mute) { sendCommand("mute.room.set", { roomUid: roomUid, mute: !!mute }) }
+  function applyMembers(roomUids) { sendCommand("topology.members.set", { roomUids: roomUids }) }
+
+  function errorMessage(error) {
+    if (error && typeof error === "object" && error.message)
+      return String(error.message)
+    return String(error || "Sonos command failed")
+  }
 
   function handleLine(line) {
     var text = String(line || "").trim()
@@ -173,6 +184,12 @@ Item {
       return
     }
     if (message.type === "snapshot") {
+      if (Number(message.version || 0) !== 1) {
+        setCommandError("The Sonarchy backend uses an unsupported protocol version")
+        return
+      }
+      if (receivedSnapshotThisRun
+          && Number(message.revision || 0) < Number(snapshot.revision || 0)) return
       var firstSnapshot = !receivedSnapshotThisRun
       snapshot = message
       backendReady = true
@@ -185,18 +202,18 @@ Item {
         favoriteStartingTitle = ""
       }
       if (firstSnapshot && openPanelCount > 0)
-        sendCommand("setPanelOpen", { open: true })
+        sendCommand("session.panel_open.set", { open: true })
       return
     }
     if (message.type === "result" && message.ok === false) {
-      setCommandError(String(message.error || "Sonos command failed"))
+      setCommandError(errorMessage(message.error))
       if (String(message.id || "") === moveRequestId) {
         moveError = commandError
         moveRequestId = ""
       }
       if (String(message.id || "") === favoriteRequestId) {
         favoriteError = "Could not start " + favoriteStartingTitle + ": "
-          + String(message.error || "Sonos command failed")
+          + errorMessage(message.error)
         favoriteRequestId = ""
         favoriteAwaitingSnapshot = false
         favoriteStartingTitle = ""
