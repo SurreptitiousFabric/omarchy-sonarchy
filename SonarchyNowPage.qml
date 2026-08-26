@@ -128,8 +128,6 @@ Item {
             asynchronous: true
             cache: true
             opacity: status === Image.Ready ? 1.0 : 0.0
-            onSourceChanged: console.warn("SONARCHY_IMAGE_STATE", source !== "", status)
-            onStatusChanged: console.warn("SONARCHY_IMAGE_STATE", source !== "", status)
 
             Behavior on opacity {
               NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
@@ -148,14 +146,6 @@ Item {
             opacity: 0.5
           }
 
-          Text {
-            anchors.left: parent.left
-            anchors.bottom: parent.bottom
-            z: 10
-            text: (artwork.source !== "" ? "S" : "-") + String(artwork.status)
-            color: "#ff0000"
-            font.pixelSize: 12
-          }
         }
 
         Column {

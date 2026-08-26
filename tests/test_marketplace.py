@@ -360,6 +360,15 @@ def test_production_components_stay_within_size_guardrails():
     assert re.search(r"\bProcess\s*\{", service_implementation()) is None
 
 
+def test_pages_use_omarchy_tokens_without_debug_chrome():
+    pages = "\n".join(path.read_text() for path in sorted(ROOT.glob("Sonarchy*Page.qml")))
+
+    assert 'color: "#' not in pages
+    assert not re.search(r"font\.pixelSize:\s*\d", pages)
+    assert "SONARCHY_IMAGE_STATE" not in pages
+    assert "Style.spacing.hairline" in pages
+
+
 def test_every_manifest_setting_is_documented_and_read_by_qml():
     manifest = json.loads((ROOT / "manifest.json").read_text())
     readme = (ROOT / "README.md").read_text()

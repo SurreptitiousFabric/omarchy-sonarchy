@@ -33,6 +33,17 @@ compatibility view model and user actions, `SonarchyProtocolRouter.qml` owns
 correlated results and timers, `SonarchyArtwork.qml` owns bounded artwork state
 and URL policy, and `LiveService.qml` alone owns the backend process/protocol.
 
+## Omarchy visual language
+
+The bar and popup use Omarchy's public `qs.Ui` and `qs.Commons` primitives:
+`WidgetButton`, `KeyboardPanel`, `PanelHero`, `PanelSeparator`,
+`PanelSectionHeader`, `PanelSlider`, `Button`, `Dropdown`, `Toggle`,
+`BorderSurface`, `OpticalGlyph`, `Style`, `Color`, and `Border`. Geometry and
+typography come from `Style`; surfaces and state colors come from the active
+theme. Product-specific components may compose these primitives, but must not
+introduce fixed fonts, hard-coded colors, platform-native control chrome, or
+debug overlays.
+
 ## Domain ownership
 
 | Domain | Owns | Must not own |

@@ -401,7 +401,7 @@ Item {
               anchors.right: parent.right
               anchors.rightMargin: Style.space(8)
               anchors.bottom: parent.bottom
-              height: 1
+              height: Style.spacing.hairline
               color: Util.alpha(root.foreground, 0.08)
             }
 
