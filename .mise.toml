@@ -1,0 +1,5 @@
+[tools]
+python = "3.14.7"
+
+[env]
+_.python.venv = { path = "../.venvs/omarchy-sonarchy", create = true }

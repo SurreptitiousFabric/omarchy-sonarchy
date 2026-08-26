@@ -1,0 +1,5 @@
+# Direct runtime dependencies. Compile with Python 3.14 using the command in
+# CONTRIBUTING.md; do not edit requirements.lock by hand.
+defusedxml==0.7.1
+requests==2.34.2
+soco==0.31.2

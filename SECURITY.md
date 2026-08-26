@@ -1,0 +1,91 @@
+# Security
+
+## Trust model
+
+Like every Omarchy shell plugin, this code runs unsandboxed as the desktop user.
+The plugin directory, current user account, Omarchy shell, Python interpreter,
+and installed dependency environment are trusted. The local network, speaker
+metadata, service responses, artwork URLs, search text, and stale UI state are
+treated as untrusted.
+
+Anyone able to run code as the same desktop user can already send equivalent
+Sonos UPnP commands. This plugin is not an authorization boundary between local
+processes.
+
+## Network surface
+
+Expected traffic is limited to:
+
+- SSDP discovery and a rate-limited attached-network fallback scan;
+- UPnP/HTTP requests to private, unicast IPv4 Sonos speakers, normally TCP 1400;
+- a Sonos event callback listener on the attached interface, TCP 1400–1499;
+- explicit HTTPS Apple catalog searches and optional, popup-scoped radio-track
+  artwork matching against the same public endpoint;
+- Global Player and compatible Favorite/TuneIn traffic requested by the user;
+- allowlisted public HTTPS artwork and exact speaker-local HTTP artwork on 1400.
+
+The event callback is not a control server. It accepts only `NOTIFY` requests
+whose subscription ID exists and whose source address exactly matches that
+subscription's private IPv4 speaker. Sequence and subscription headers are
+bounded and validated. Bodies are capped at 512 KiB, sockets time out after
+three seconds, at most 16 handlers run concurrently, and pending events are
+capped at 1,024. A valid event only wakes an authoritative speaker refresh. Do
+not port-forward these ports or expose the computer to an untrusted LAN.
+
+There is no REST API, browser UI, or listener on port 8000.
+
+## Defensive measures
+
+- Runtime packages have exact versions and hashes. Pip runs with an allowlisted
+  environment and no download cache; configuration, extra indexes, link
+  sources, Python startup hooks, and interactive prompts are excluded. The
+  explicit index is HTTPS PyPI, dependency discovery is disabled, and only
+  wheels (not remote source builds) are used.
+- The managed venv, lock, state, and cache paths reject relevant symbolic-link
+  targets. State and caches use unique, exclusive temporary files, `fsync`, and
+  atomic replacement with owner-only modes.
+- Cached and explicit speaker targets must be private, unicast IPv4 addresses;
+  loopback, link-local, multicast, public, reserved, and unspecified targets
+  are rejected.
+- A line-in source must be visible in the selected speaker's Sonos household.
+- External artwork requires HTTPS on port 443 and a small hostname allowlist.
+  The MyTuner station fallback permits only `static.mytuner-radio.net`, not its
+  parent domain or arbitrary subdomains. Speaker artwork must use the exact
+  speaker address and port 1400.
+- Apple catalog responses do not follow redirects and are capped at 1 MiB.
+  Automatic radio matching requires both title and artist, rejects weak or
+  conflicting catalog candidates, runs outside the persistent control process,
+  and keeps at most 128 positive or negative results in memory.
+  TuneIn playlist reads use trusted hostnames and a 256 KiB cap.
+- Speaker-supplied XML metadata is parsed with `defusedxml`; entity expansion
+  and external entity access are forbidden.
+- Persistent-backend protocol lines are capped at 64 KiB.
+- QML process calls use argument arrays and small allowlisted environments;
+  user text is never interpolated into a shell command. Search terms,
+  room/playlist names, IDs, alarm fields, Boolean settings, and numeric ranges
+  are validated again in Python.
+- Queue and playlist item mutations re-read the authoritative item and compare
+  its opaque ID before changing it. The UI requires a timed second activation
+  for item removal, queue clearing, and playlist/alarm deletion.
+- Alarms returned to QML contain a human label, not their potentially
+  credential-bearing program URI or service metadata.
+- No service or account credentials are requested, logged, or stored.
+
+## Dependency and release policy
+
+`requirements.lock` is generated for Python 3.14 with hashes and reviewed as a
+source change. Release validation includes the Omarchy manifest validator,
+Python/QML static checks, unit tests, dependency auditing, a symlink/file-mode
+check, and the marketplace deterministic baseline when available.
+
+SoCo uses Sonos's local UPnP interfaces and is not the official Sonos app.
+Local Sonos control is generally unauthenticated and unencrypted by the
+speakers themselves; use this plugin only on a trusted home network.
+
+## Reporting
+
+Use the public repository's **Security → Report a vulnerability** form so the
+report remains private. If private vulnerability reporting is unavailable,
+contact the marketplace maintainer privately before sharing details. Never put
+tokens, passwords, pairing codes, private room metadata, or raw diagnostics in
+a public issue.

@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.surreptitiousfabric.sonarchy",
+  "name": "Sonarchy",
+  "version": "4.1.0",
+  "author": "SurreptitiousFabric",
+  "license": "MIT",
+  "description": "Keyboard-first local Sonos playback, library, playlist, alarm, room, and device controls",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Sonarchy",
+    "description": "Playback, library, playlists, alarms, grouping, search, and device settings",
+    "category": "Audio",
+    "defaultSection": "right",
+    "allowMultiple": false,
+    "defaults": {
+      "barDisplay": "Icon only",
+      "maxLabelWidth": 220,
+      "showArtwork": true,
+      "enrichRadioArtwork": true,
+      "panelWidth": 440,
+      "panelHeight": 660,
+      "volumeStep": 2
+    },
+    "schema": [
+      {
+        "key": "barDisplay",
+        "type": "enum",
+        "label": "Bar appearance",
+        "description": "Show only the themed Sonos icon, the room name, or scrolling now-playing text.",
+        "options": ["Icon only", "Room", "Now playing"],
+        "defaultValue": "Icon only"
+      },
+      {
+        "key": "maxLabelWidth",
+        "type": "integer",
+        "label": "Maximum bar label width",
+        "description": "Maximum width of the optional scrolling bar text in pixels.",
+        "min": 80,
+        "max": 500,
+        "step": 20,
+        "defaultValue": 220
+      },
+      {
+        "key": "showArtwork",
+        "type": "boolean",
+        "label": "Show artwork",
+        "description": "Show album and result artwork in the popup.",
+        "defaultValue": true
+      },
+      {
+        "key": "enrichRadioArtwork",
+        "type": "boolean",
+        "label": "Find radio track artwork",
+        "description": "When the popup is open, use title and artist metadata to find a confident public Apple catalogue artwork match.",
+        "defaultValue": true
+      },
+      {
+        "key": "panelWidth",
+        "type": "integer",
+        "label": "Popup width",
+        "description": "Preferred popup width in pixels; Omarchy still fits it to the screen.",
+        "min": 360,
+        "max": 620,
+        "step": 20,
+        "defaultValue": 440
+      },
+      {
+        "key": "panelHeight",
+        "type": "integer",
+        "label": "Popup height",
+        "description": "Preferred popup height in pixels; page contents scroll when needed.",
+        "min": 520,
+        "max": 820,
+        "step": 20,
+        "defaultValue": 660
+      },
+      {
+        "key": "volumeStep",
+        "type": "integer",
+        "label": "Volume step",
+        "description": "Percentage changed by keyboard volume shortcuts.",
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "defaultValue": 2
+      }
+    ]
+  }
+}
