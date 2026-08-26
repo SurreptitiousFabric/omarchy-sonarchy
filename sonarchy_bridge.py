@@ -19,7 +19,6 @@ from collections.abc import Iterable
 from datetime import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse
 
 import requests
 import soco
@@ -37,11 +36,18 @@ from sonarchy_backend.apple_catalog import (
 )
 from sonarchy_backend.apple_catalog import apple_search_results as catalog_search_results
 from sonarchy_backend.apple_catalog import resolve_apple_artwork as catalog_resolve_artwork
+from sonarchy_backend.domains.browse import (
+    album_art_url,
+    browse_content,
+)
+from sonarchy_backend.domains.browse import apple_content as browse_apple_content
+from sonarchy_backend.domains.browse import public_artwork_url as browse_public_artwork_url
 from sonarchy_backend.domains.devices import project_device_details
 from sonarchy_errors import user_facing_error
 
 config.REQUEST_TIMEOUT = 3.0
 APPLE_RESPONSE_LIMIT = CATALOG_RESPONSE_LIMIT
+public_artwork_url = browse_public_artwork_url
 
 
 def default_cache_path() -> Path:
@@ -110,16 +116,6 @@ ALARM_RECURRENCES = {"ONCE", "DAILY", "WEEKDAYS", "WEEKENDS"}
 ALARM_DURATIONS = {0, 15, 30, 45, 60, 90, 120}
 PLAYLIST_ID_PATTERN = re.compile(r"SQ:\d+")
 ALARM_ID_PATTERN = re.compile(r"\d+")
-PUBLIC_ARTWORK_SUFFIXES = (
-    ".mzstatic.com",
-    ".scdn.co",
-    ".tunein.com",
-    ".radiotime.com",
-    ".globalplayer.com",
-    ".thisisglobal.com",
-    ".radioplayer.cloud",
-)
-PUBLIC_ARTWORK_HOSTS = ("static.mytuner-radio.net",)
 CLI_COMMANDS = frozenset(
     {
         "artwork",
@@ -305,48 +301,6 @@ def group_members_for(speaker: Any) -> list[Any]:
         ]
     except Exception:  # noqa: BLE001 - stale group state falls back safely
         return [speaker]
-
-
-def public_artwork_url(raw: Any) -> str:
-    resolved = clean(raw)
-    parsed = urlparse(resolved)
-    if parsed.username or parsed.password or not parsed.hostname:
-        return ""
-    if parsed.scheme != "https":
-        return ""
-    try:
-        if parsed.port not in (None, 443):
-            return ""
-    except ValueError:
-        return ""
-    try:
-        ipaddress.ip_address(parsed.hostname)
-    except ValueError:
-        hostname = parsed.hostname.casefold().rstrip(".")
-        if hostname == "localhost" or hostname.endswith((".local", ".internal")):
-            return ""
-        if hostname not in PUBLIC_ARTWORK_HOSTS and not any(
-            hostname == suffix.removeprefix(".") or hostname.endswith(suffix)
-            for suffix in PUBLIC_ARTWORK_SUFFIXES
-        ):
-            return ""
-        return resolved
-    # Literal remote addresses would bypass the reviewed hostname allowlist.
-    return ""
-
-
-def album_art_url(raw: Any, coordinator_ip: str) -> str:
-    art = clean(raw)
-    if not art:
-        return ""
-    local_ip = validate_ip(coordinator_ip)
-    resolved = urljoin(f"http://{local_ip}:1400/", art)
-    parsed = urlparse(resolved)
-    if parsed.username or parsed.password or not parsed.hostname:
-        return ""
-    if parsed.scheme == "http":
-        return resolved if parsed.hostname == local_ip and parsed.port in (None, 1400) else ""
-    return public_artwork_url(resolved)
 
 
 def safe_index(raw: Any, fallback: int = -1) -> int:
@@ -736,21 +690,13 @@ def content_snapshot(ip: str, kind: str, term: str = "", limit: int = 30) -> dic
     limit = max(1, min(int(limit), 100))
 
     if kind == "apple":
-        return apple_content(term, limit)
+        return browse_apple_content(term, limit, request_get=requests.get, country=APPLE_COUNTRY)
 
     speaker = SoCo(validate_ip(ip))
     coordinator = coordinator_for(speaker)
-    if kind == "queue":
-        return queue_content(coordinator, limit)
     if kind == "favorites":
         return favorites_content(coordinator, limit)
-    if kind == "library":
-        return library_content(coordinator, term, limit)
-    if kind == "playlists":
-        return playlists_content(coordinator, limit)
-    if kind == "playlist":
-        return playlist_content(coordinator, term, limit)
-    return global_content(coordinator, term, limit)
+    return browse_content(coordinator, kind, term, limit)
 
 
 def run_action(action: str, ip: str, value: int | None = None) -> dict[str, Any]:

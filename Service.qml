@@ -74,7 +74,8 @@ Item {
 
   property string detailsRequestId: ""
   property string detailsRequestRoomUid: ""
-  property string contentRequestIp: ""
+  property string contentRequestId: ""
+  property string contentRequestRoomUid: ""
   property string contentRequestKind: ""
   property string contentRequestTerm: ""
   property string pendingContentKind: ""
@@ -485,7 +486,7 @@ Item {
       }
       return
     }
-    if (selectedIp === "") {
+    if (!selectedDevice || !live.hasCapability("content.browse")) {
       contentItems = []
       contentTotal = 0
       return
@@ -496,22 +497,23 @@ Item {
       contentLoading = false
       return
     }
-    if (contentProcess.running) {
+    if (contentRequestId !== "") {
       pendingContentKind = nextKind
       pendingContentTerm = nextTerm
       return
     }
 
     contentLoading = true
-    contentRequestIp = selectedIp
+    contentRequestRoomUid = String(selectedDevice.uid || "")
     contentRequestKind = nextKind
     contentRequestTerm = nextTerm
-    var resultLimit = nextKind === "queue" ? "100" : "40"
-    contentProcess.command = [
-      pythonPath, "-B", helperPath, "content", contentRequestIp,
-      contentRequestKind, contentRequestTerm, "--limit", resultLimit
-    ]
-    contentProcess.running = true
+    var resultLimit = nextKind === "queue" ? 100 : 40
+    contentRequestId = live.requestContent(
+      contentRequestRoomUid, contentRequestKind, contentRequestTerm, resultLimit)
+    if (contentRequestId === "") {
+      contentLoading = false
+      contentRequestRoomUid = ""
+    }
   }
 
   function reloadContent() {
@@ -825,6 +827,44 @@ Item {
         Qt.callLater(root.maybeRequestRadioArtwork)
         return
       }
+      if (String(message.id || "") === root.contentRequestId) {
+        root.contentLoading = false
+        var payload = message.ok === true ? message.value : null
+        var stillCurrentContent = root.selectedDevice
+          && root.contentRequestRoomUid === String(root.selectedDevice.uid || "")
+          && root.contentRequestKind === root.contentKind
+          && root.contentRequestTerm === root.contentTerm
+        root.contentRequestId = ""
+        root.contentRequestRoomUid = ""
+        if (payload && payload.ok === true && Array.isArray(payload.items)
+            && stillCurrentContent) {
+          var safeItems = []
+          for (var i = 0; i < payload.items.length; i++) {
+            var item = Object.assign({}, payload.items[i])
+            item.album_art = root.safeArtworkUrl(item.album_art)
+            safeItems.push(item)
+          }
+          root.contentItems = safeItems
+          root.contentTotal = Number(payload.total || safeItems.length)
+          root.contentMeta = {
+            shares: Array.isArray(payload.shares) ? payload.shares : [],
+            updating: payload.updating === true,
+            playlistId: String(payload.playlist_id || ""),
+            playlistTitle: String(payload.playlist_title || "")
+          }
+          root.requestError = ""
+        } else if (stillCurrentContent) {
+          root.setRequestError(live.errorMessage(message.error), "Could not browse Sonos content")
+        }
+        if (root.pendingContentKind !== "") {
+          var nextKind = root.pendingContentKind
+          var nextTerm = root.pendingContentTerm
+          root.pendingContentKind = ""
+          root.pendingContentTerm = ""
+          Qt.callLater(function() { root.loadContent(nextKind, nextTerm) })
+        }
+        return
+      }
       if (String(message.id || "") !== root.detailsRequestId) return
       var requestedRoomUid = root.detailsRequestRoomUid
       root.detailsLoading = false
@@ -840,6 +880,9 @@ Item {
       }
       if (root.detailsQueued) {
         root.detailsQueued = false
+        root.contentLoading = false
+        root.contentRequestId = ""
+        root.contentRequestRoomUid = ""
         Qt.callLater(root.refreshDetails)
       }
     }
@@ -855,6 +898,7 @@ Item {
         root.artworkRequestArtist = ""
       } else if (root.panelOpen) {
         Qt.callLater(root.refreshDetails)
+        if (root.contentKind !== "favorites") Qt.callLater(root.reloadContent)
       }
     }
   }
@@ -907,49 +951,6 @@ Item {
     interval: 140
     repeat: false
     onTriggered: root.flushVolume()
-  }
-
-  Process {
-    id: contentProcess
-    command: []
-    clearEnvironment: true
-    environment: root.helperEnvironment
-    stdout: StdioCollector { id: contentStdout; waitForEnd: true }
-    stderr: StdioCollector { id: contentStderr; waitForEnd: true }
-    onExited: function(exitCode) {
-      root.contentLoading = false
-      var payload = root.parsePayload(contentStdout.text)
-      var stillCurrent = root.contentRequestIp === root.selectedIp
-        && root.contentRequestKind === root.contentKind
-        && root.contentRequestTerm === root.contentTerm
-      if (exitCode === 0 && payload && payload.ok === true
-          && Array.isArray(payload.items) && stillCurrent) {
-        var safeItems = []
-        for (var i = 0; i < payload.items.length; i++) {
-          var item = Object.assign({}, payload.items[i])
-          item.album_art = root.safeArtworkUrl(item.album_art)
-          safeItems.push(item)
-        }
-        root.contentItems = safeItems
-        root.contentTotal = Number(payload.total || safeItems.length)
-        root.contentMeta = {
-          shares: Array.isArray(payload.shares) ? payload.shares : [],
-          updating: payload.updating === true,
-          playlistId: String(payload.playlist_id || ""),
-          playlistTitle: String(payload.playlist_title || "")
-        }
-        root.requestError = ""
-      } else if (stillCurrent) {
-        root.processFailure(contentStdout.text, contentStderr.text, "Could not browse Sonos content")
-      }
-      if (root.pendingContentKind !== "") {
-        var nextKind = root.pendingContentKind
-        var nextTerm = root.pendingContentTerm
-        root.pendingContentKind = ""
-        root.pendingContentTerm = ""
-        Qt.callLater(function() { root.loadContent(nextKind, nextTerm) })
-      }
-    }
   }
 
   Process {

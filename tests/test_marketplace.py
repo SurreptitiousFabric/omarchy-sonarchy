@@ -151,7 +151,16 @@ def test_device_details_use_the_persistent_backend_not_a_one_shot_process():
     assert "detailsProcess" not in service
     assert "live.requestDeviceDetails(detailsRequestRoomUid)" in service
     assert 'sendCommand("devices.details.get", { roomUid: roomUid }, false)' in live_service
-    assert len(re.findall(r"\bProcess\s*\{", service)) == 3
+    assert len(re.findall(r"\bProcess\s*\{", service)) == 2
+
+
+def test_content_reads_use_the_persistent_backend_not_a_one_shot_process():
+    service = (ROOT / "Service.qml").read_text()
+    live_service = (ROOT / "LiveService.qml").read_text()
+
+    assert "contentProcess" not in service
+    assert "live.requestContent(" in service
+    assert 'sendCommand("content.browse"' in live_service
 
 
 def test_page_navigation_follows_the_now_playing_content():

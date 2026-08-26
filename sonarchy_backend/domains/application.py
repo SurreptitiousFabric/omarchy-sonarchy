@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from .artwork import artwork_service
+from .browse import browse_service
 from .content import content_service
 from .devices import devices_service
 from .mixer import mixer_service
@@ -24,6 +25,7 @@ class SonarchyApplication:
             mixer_service(backend),
             devices_service(backend),
             artwork_service(),
+            browse_service(backend),
         )
         operations = [operation for service in self.services for operation in service.operations]
         if len(operations) != len(set(operations)):

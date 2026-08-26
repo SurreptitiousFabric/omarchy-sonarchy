@@ -49,6 +49,10 @@ class FakeController:
         self.calls.append(("deviceDetails", room_uid))
         return {"ok": True, "ip": "device-address", "device": {"name": "Office"}}
 
+    def browse_content(self, room_uid, kind, term, limit):
+        self.calls.append(("browseContent", room_uid, kind, term, limit))
+        return {"ok": True, "kind": kind, "items": [], "total": 0}
+
 
 def decoded(output):
     return [json.loads(line) for line in output.getvalue().splitlines()]
@@ -250,6 +254,7 @@ class RecordingController:
 def test_protocol_action_cases_cover_every_operation():
     assert {case[0] for case in PROTOCOL_ACTION_CASES} == PROTOCOL_OPERATIONS - {
         "artwork.radio.resolve",
+        "content.browse",
         "devices.details.get",
     }
 
@@ -310,6 +315,27 @@ def test_artwork_query_returns_value_without_speaker_refresh():
     message = decoded(output)[0]
     assert message["ok"] is True
     assert message["value"] == result
+
+
+def test_content_query_returns_value_without_snapshot_refresh():
+    controller = FakeController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "content",
+            "op": "content.browse",
+            "args": {"roomUid": "R1", "kind": "queue", "term": "", "limit": 100},
+        },
+        output,
+    )
+
+    assert controller.calls == [("browseContent", "R1", "queue", "", 100)]
+    messages = decoded(output)
+    assert len(messages) == 1
+    assert messages[0]["value"] == {"ok": True, "kind": "queue", "items": [], "total": 0}
 
 
 @pytest.mark.parametrize(("operation", "arguments", "expected"), PROTOCOL_ACTION_CASES)

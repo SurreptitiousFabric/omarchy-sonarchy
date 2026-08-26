@@ -40,6 +40,7 @@ PROTOCOL_OPERATIONS = frozenset(
         "playback.seek",
         "content.favorite.play",
         "content.favorites.refresh",
+        "content.browse",
         "playback.room.move",
         "selection.group.set",
         "selection.room.set",

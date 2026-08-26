@@ -10,6 +10,7 @@ CAPABILITY_NAMES = frozenset(
         "artwork.radio.resolve",
         "content.favorite.play",
         "content.favorites.refresh",
+        "content.browse",
         "devices.details.get",
         "mute.group.set",
         "mute.room.set",
@@ -158,7 +159,11 @@ def snapshot_capabilities(snapshot: dict[str, Any]) -> list[str]:
     playback = snapshot.get("playback") or {}
     advertised = {str(action).lower() for action in playback.get("availableActions", [])}
 
-    capabilities = {"artwork.radio.resolve", "content.favorites.refresh"}
+    capabilities = {
+        "artwork.radio.resolve",
+        "content.browse",
+        "content.favorites.refresh",
+    }
     if rooms:
         capabilities.update(
             {

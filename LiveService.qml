@@ -179,6 +179,11 @@ Item {
     return sendCommand(
       "artwork.radio.resolve", { title: title, artist: artist }, false, false)
   }
+  function requestContent(roomUid, kind, term, limit) {
+    return sendCommand("content.browse", {
+      roomUid: roomUid, kind: kind, term: term, limit: limit
+    })
+  }
 
   function errorMessage(error) {
     if (error && typeof error === "object" && error.message)

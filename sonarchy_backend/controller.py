@@ -14,6 +14,7 @@ from urllib.parse import unquote, urlsplit
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 
+from .domains.browse import browse_content
 from .domains.devices import project_device_details
 from .model import (
     choose_target_group,
@@ -1301,6 +1302,13 @@ class SonosController:
 
     def device_details(self, room_uid: str) -> dict[str, Any]:
         return project_device_details(self._zone(room_uid))
+
+    def browse_content(self, room_uid: str, kind: str, term: str, limit: int) -> dict[str, Any]:
+        speaker = self._zone(room_uid)
+        coordinator = self._safe(
+            lambda: speaker.group.coordinator if speaker.group else speaker, speaker
+        )
+        return browse_content(coordinator, kind, term, limit)
 
     def select_room(self, room_uid: str) -> None:
         """Remember one exact room without changing its group or playback."""
