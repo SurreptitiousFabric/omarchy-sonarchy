@@ -379,7 +379,23 @@ def test_refresh_exception_becomes_error_snapshot():
     assert message["type"] == "snapshot"
     assert message["status"]["state"] == "error"
     assert message["favorites"]["state"] == "not_loaded"
-    assert "network exploded" in message["status"]["message"]
+    assert message["status"]["error"]["code"] == "internal_error"
+    assert message["status"]["error"]["retryable"] is True
+    assert "network exploded" not in message["status"]["message"]
+
+
+def test_refresh_network_error_is_classified_and_redacted():
+    class BrokenController(FakeController):
+        def refresh(self, *, rediscover=True):
+            raise OSError("failed at http://203.0.113.20/device")
+
+    server = ProtocolServer(BrokenController())  # type: ignore[arg-type]
+    output = io.StringIO()
+    server.emit_snapshot(output)
+
+    status = decoded(output)[0]["status"]
+    assert status["error"]["code"] == "network_error"
+    assert "203.0.113.20" not in json.dumps(status)
 
 
 def test_refresh_exception_retains_last_good_playback_snapshot():

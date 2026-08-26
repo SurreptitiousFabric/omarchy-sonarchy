@@ -77,11 +77,18 @@ class ProtocolServer:
             self.last_snapshot = copy.deepcopy(snapshot)
         except Exception as exc:
             LOG.exception("Sonos refresh failed")
+            refresh_error = error_payload(
+                "network_error" if isinstance(exc, OSError) else "internal_error",
+                "Sonos state is temporarily unavailable. Try refreshing in a moment.",
+                operation="state.refresh",
+                retryable=True,
+            )
             if self.last_snapshot is not None:
                 snapshot = copy.deepcopy(self.last_snapshot)
                 status = snapshot.setdefault("status", {})
                 status["state"] = "ready" if status.get("state") == "ready" else "error"
-                status["message"] = f"{type(exc).__name__}: {exc}"
+                status["message"] = refresh_error["message"]
+                status["error"] = refresh_error
                 status["degraded"] = True
                 status["lastRefreshEpochMs"] = int(time.time() * 1000)
                 snapshot.setdefault("playback", {})["stale"] = True
@@ -92,7 +99,8 @@ class ProtocolServer:
                     "version": 1,
                     "status": {
                         "state": "error",
-                        "message": f"{type(exc).__name__}: {exc}",
+                        "message": refresh_error["message"],
+                        "error": refresh_error,
                         "lastRefreshEpochMs": int(time.time() * 1000),
                     },
                     "selectedAnchorRoomUid": "",
