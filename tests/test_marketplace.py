@@ -6,6 +6,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def service_implementation():
+    return "\n".join(
+        (ROOT / name).read_text()
+        for name in (
+            "Service.qml",
+            "SonarchyStore.qml",
+            "SonarchyProtocolRouter.qml",
+            "SonarchyArtwork.qml",
+        )
+    )
+
+
+def controller_implementation():
+    return "\n".join(
+        path.read_text() for path in sorted((ROOT / "sonarchy_backend").glob("controller*.py"))
+    )
+
+
 def test_manifest_identity_and_entrypoints_are_safe():
     manifest = json.loads((ROOT / "manifest.json").read_text())
     assert manifest["schemaVersion"] == 1
@@ -98,7 +116,7 @@ def test_runtime_lock_is_versioned_and_hashed():
 
 
 def test_apple_results_offer_a_keyboard_reachable_whole_album_action():
-    service = (ROOT / "Service.qml").read_text()
+    service = service_implementation()
     browse_page = (ROOT / "SonarchyBrowsePage.qml").read_text()
 
     assert "function playAppleAlbum(item)" in service
@@ -121,20 +139,20 @@ def test_tv_autoplay_takeover_has_a_keyboard_reachable_recovery():
 def test_contextual_play_modes_are_disabled_and_rename_waits_for_topology():
     now_page = (ROOT / "SonarchyNowPage.qml").read_text()
     sound_page = (ROOT / "SonarchySoundPage.qml").read_text()
-    service = (ROOT / "Service.qml").read_text()
+    service = service_implementation()
 
     assert "playbackDetails.play_mode_supported" in now_page
     assert "root.playModeSupported" in now_page
     assert "root.playback.play_mode_supported === true" in sound_page
     assert "id: renameRefresh" in service
     assert "interval: 5500" in service
-    assert "root.optimisticDevicePatch(" in service
-    assert "root.selectedIp, { name:" in service
+    assert "router.store.optimisticDevicePatch(" in service
+    assert "router.store.selectedIp, { name:" in service
 
 
 def test_errors_are_keyboard_dismissible_and_expire():
     widget = (ROOT / "BarWidget.qml").read_text()
-    service = (ROOT / "Service.qml").read_text()
+    service = service_implementation()
     live_service = (ROOT / "LiveService.qml").read_text()
 
     assert 'tooltipText: "Dismiss error"' in widget
@@ -146,7 +164,7 @@ def test_errors_are_keyboard_dismissible_and_expire():
 
 
 def test_device_details_use_the_persistent_backend_not_a_one_shot_process():
-    service = (ROOT / "Service.qml").read_text()
+    service = service_implementation()
     live_service = (ROOT / "LiveService.qml").read_text()
 
     assert "detailsProcess" not in service
@@ -156,7 +174,7 @@ def test_device_details_use_the_persistent_backend_not_a_one_shot_process():
 
 
 def test_content_reads_use_the_persistent_backend_not_a_one_shot_process():
-    service = (ROOT / "Service.qml").read_text()
+    service = service_implementation()
     live_service = (ROOT / "LiveService.qml").read_text()
 
     assert "contentProcess" not in service
@@ -165,7 +183,7 @@ def test_content_reads_use_the_persistent_backend_not_a_one_shot_process():
 
 
 def test_alarm_reads_use_the_persistent_backend_not_a_one_shot_process():
-    service = (ROOT / "Service.qml").read_text()
+    service = service_implementation()
     live_service = (ROOT / "LiveService.qml").read_text()
 
     assert "alarmsProcess" not in service
@@ -174,7 +192,7 @@ def test_alarm_reads_use_the_persistent_backend_not_a_one_shot_process():
 
 
 def test_device_and_playback_settings_use_the_persistent_backend():
-    service = (ROOT / "Service.qml").read_text()
+    service = service_implementation()
     live_service = (ROOT / "LiveService.qml").read_text()
 
     for legacy_command in ("stop", "rename", "playback-option", "sound", "device", "source"):
@@ -192,7 +210,7 @@ def test_device_and_playback_settings_use_the_persistent_backend():
 
 
 def test_content_mutations_use_the_persistent_backend():
-    service = (ROOT / "Service.qml").read_text()
+    service = service_implementation()
     live_service = (ROOT / "LiveService.qml").read_text()
 
     for legacy_command in (
@@ -225,7 +243,7 @@ def test_content_mutations_use_the_persistent_backend():
 
 
 def test_alarm_mutations_use_the_persistent_backend_and_no_process_remains():
-    service = (ROOT / "Service.qml").read_text()
+    service = service_implementation()
     live_service = (ROOT / "LiveService.qml").read_text()
 
     for legacy_command in ("alarm-save", "alarm-toggle", "alarm-delete"):
@@ -240,7 +258,7 @@ def test_alarm_mutations_use_the_persistent_backend_and_no_process_remains():
         "helperEnvironment",
         "parsePayload",
         "processFailure",
-        "startAction",
+        "function startAction(",
     ):
         assert legacy_plumbing not in service
 
@@ -297,7 +315,7 @@ def test_shared_omarchy_dropdowns_and_toggles_are_in_the_keyboard_focus_route():
 
 
 def test_favorite_artwork_is_forwarded_to_the_browse_model():
-    service = (ROOT / "Service.qml").read_text()
+    service = service_implementation()
     browse_page = (ROOT / "SonarchyBrowsePage.qml").read_text()
 
     assert "safeArtworkUrl(source[i].albumArtUrl)" in service
@@ -307,21 +325,39 @@ def test_favorite_artwork_is_forwarded_to_the_browse_model():
 def test_radio_artwork_enrichment_is_bounded_async_optional_and_safe():
     manifest = json.loads((ROOT / "manifest.json").read_text())
     widget = (ROOT / "BarWidget.qml").read_text()
-    service = (ROOT / "Service.qml").read_text()
-    controller = (ROOT / "sonarchy_backend" / "controller.py").read_text()
+    service = service_implementation()
+    controller = controller_implementation()
 
     assert manifest["barWidget"]["defaults"]["enrichRadioArtwork"] is True
     assert 'setting("enrichRadioArtwork", true)' in widget
     assert "service.radioArtworkEnrichmentEnabled = showArtwork && enrichRadioArtwork" in widget
     assert "property bool radioArtworkEnrichmentEnabled: false" in service
-    assert "readonly property int artworkCacheLimit: 128" in service
+    assert "readonly property int cacheLimit: 128" in service
     assert "artworkProcess" not in service
-    assert 'live.hasCapability("artwork.radio.resolve")' in service
-    assert "live.requestRadioArtwork(artworkRequestTitle, artworkRequestArtist)" in service
+    assert 'artwork.live.hasCapability("artwork.radio.resolve")' in service
+    assert "artwork.live.requestRadioArtwork(" in service
     assert "payload && payload.ok === true && payload.match === true" in service
-    assert "root.cacheArtwork(completedKey, artworkUrl)" in service
+    assert "router.store.cacheArtwork(completedKey, artworkUrl)" in service
     assert 'playback.artworkKind || "") === "track"' in service
     assert 'trusted_hosts = ("static.mytuner-radio.net",)' in controller
+
+
+def test_production_components_stay_within_size_guardrails():
+    facade = (ROOT / "Service.qml").read_text()
+    components = (
+        "SonarchyStore.qml",
+        "SonarchyProtocolRouter.qml",
+        "SonarchyArtwork.qml",
+        "LiveService.qml",
+    )
+
+    assert len(facade.splitlines()) <= 350
+    assert "SonarchyStore {" in facade
+    for name in components:
+        assert len((ROOT / name).read_text().splitlines()) <= 800, name
+    for path in (ROOT / "sonarchy_backend").rglob("*.py"):
+        assert len(path.read_text().splitlines()) <= 800, path.relative_to(ROOT)
+    assert re.search(r"\bProcess\s*\{", service_implementation()) is None
 
 
 def test_every_manifest_setting_is_documented_and_read_by_qml():

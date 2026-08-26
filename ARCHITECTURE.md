@@ -28,6 +28,11 @@ The former one-shot compatibility bridge has been removed. New behavior must
 be implemented in a domain service and exposed through the persistent protocol;
 QML must not add subprocess-based command paths.
 
+`Service.qml` is the stable page-facing facade. `SonarchyStore.qml` owns the
+compatibility view model and user actions, `SonarchyProtocolRouter.qml` owns
+correlated results and timers, `SonarchyArtwork.qml` owns bounded artwork state
+and URL policy, and `LiveService.qml` alone owns the backend process/protocol.
+
 ## Domain ownership
 
 | Domain | Owns | Must not own |
@@ -47,6 +52,12 @@ QML must not add subprocess-based command paths.
 External catalogs are adapters beneath Content. SoCo is an infrastructure
 adapter beneath the domains. Neither may leak library-specific objects into the
 protocol model.
+
+`SonosController` is the stable composition root for those services. Its
+implementation is separated by infrastructure responsibility: discovery,
+snapshot projection, favorites, topology convergence, playback/handoff, and
+thin domain delegation. The mixins are internal and do not widen the protocol
+or expose SoCo objects.
 
 ## Dependency direction
 
@@ -97,7 +108,8 @@ metadata, and credentials never cross the protocol. The initial codes are:
 Line count is a diagnostic, not an objective. A production module over roughly
 600 lines receives a responsibility review; a file over 800 lines requires an
 architecture note explaining why further separation would worsen cohesion.
-`Service.qml` is specifically expected to become a thin store below 350 lines.
+`Service.qml` remains a thin public facade below 350 lines. Each internal QML
+service component remains below 800 lines and has one named responsibility.
 
 ## Verification gates
 

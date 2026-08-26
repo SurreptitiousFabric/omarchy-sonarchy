@@ -714,7 +714,7 @@ def test_move_to_standalone_room_waits_for_topology_then_plays_destination(
     # must retry instead of reporting a false failure on that first snapshot.
     snapshots = iter([initial, initial, joined, joined, moved, moved])
     controller.refresh = lambda **kwargs: next(snapshots)  # type: ignore[method-assign]
-    monkeypatch.setattr("sonarchy_backend.controller.TOPOLOGY_SETTLE_INTERVAL_SEC", 0)
+    monkeypatch.setattr("sonarchy_backend.controller_topology.TOPOLOGY_SETTLE_INTERVAL_SEC", 0)
 
     controller.move_playback_to_room("R2")
 
@@ -891,8 +891,8 @@ def test_failed_handoff_verification_restores_original_playback(monkeypatch):
     }
     snapshots = iter([standalone, standalone, standalone, standalone])
     controller.refresh = lambda **kwargs: next(snapshots)  # type: ignore[method-assign]
-    monkeypatch.setattr("sonarchy_backend.controller.TOPOLOGY_SETTLE_ATTEMPTS", 2)
-    monkeypatch.setattr("sonarchy_backend.controller.TOPOLOGY_SETTLE_INTERVAL_SEC", 0)
+    monkeypatch.setattr("sonarchy_backend.controller_topology.TOPOLOGY_SETTLE_ATTEMPTS", 2)
+    monkeypatch.setattr("sonarchy_backend.controller_topology.TOPOLOGY_SETTLE_INTERVAL_SEC", 0)
 
     with pytest.raises(ControllerError, match="did not prepare"):
         controller.move_playback_to_room("R2")
