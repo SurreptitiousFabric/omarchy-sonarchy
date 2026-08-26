@@ -59,6 +59,7 @@ Item {
   property string favoriteError: ""
   property string moveRequestId: ""
   property string moveError: ""
+  property var quietRequestIds: ({})
   signal commandResult(var message)
 
   readonly property bool ready: backendReady && snapshot && snapshot.status && snapshot.status.state === "ready"
@@ -91,7 +92,7 @@ Item {
 
   readonly property string backendPath: localPath(Qt.resolvedUrl("sonarchy-backend.sh"))
 
-  function sendCommand(op, args, clearErrors) {
+  function sendCommand(op, args, clearErrors, reportErrors) {
     if (!backend.running) {
       setCommandError("Sonos backend is not running")
       return ""
@@ -99,6 +100,11 @@ Item {
     requestCounter += 1
     var id = String(requestCounter)
     if (op !== "session.panel_open.set" && clearErrors !== false) clearTransientErrors()
+    if (reportErrors === false) {
+      var quiet = Object.assign({}, quietRequestIds)
+      quiet[id] = true
+      quietRequestIds = quiet
+    }
     var payload = { version: 1, id: id, op: op, args: args || ({}) }
     backend.write(JSON.stringify(payload) + "\n")
     return id
@@ -169,6 +175,10 @@ Item {
   function requestDeviceDetails(roomUid) {
     return sendCommand("devices.details.get", { roomUid: roomUid }, false)
   }
+  function requestRadioArtwork(title, artist) {
+    return sendCommand(
+      "artwork.radio.resolve", { title: title, artist: artist }, false, false)
+  }
 
   function errorMessage(error) {
     if (error && typeof error === "object" && error.message)
@@ -209,8 +219,15 @@ Item {
         sendCommand("session.panel_open.set", { open: true })
       return
     }
+    var resultId = String(message.id || "")
+    var quietResult = message.type === "result" && quietRequestIds[resultId] === true
+    if (quietResult) {
+      var remainingQuiet = Object.assign({}, quietRequestIds)
+      delete remainingQuiet[resultId]
+      quietRequestIds = remainingQuiet
+    }
     if (message.type === "result" && message.ok === false) {
-      setCommandError(errorMessage(message.error))
+      if (!quietResult) setCommandError(errorMessage(message.error))
       if (String(message.id || "") === moveRequestId) {
         moveError = commandError
         moveRequestId = ""
@@ -263,6 +280,7 @@ Item {
       root.backendReady = false
       root.receivedSnapshotThisRun = false
       root.backendStderr = ""
+      root.quietRequestIds = ({})
     }
 
     onExited: function(exitCode) {

@@ -29,11 +29,19 @@ from soco.data_structures import to_didl_string
 from soco.music_services import MusicService
 from soco.plugins.sharelink import ShareLinkPlugin
 
-from sonarchy_backend.artwork import select_artwork_match
+from sonarchy_backend.apple_catalog import APPLE_RESPONSE_LIMIT as CATALOG_RESPONSE_LIMIT
+from sonarchy_backend.apple_catalog import (
+    apple_artwork_url,
+    public_apple_album_url,
+    public_apple_music_url,
+)
+from sonarchy_backend.apple_catalog import apple_search_results as catalog_search_results
+from sonarchy_backend.apple_catalog import resolve_apple_artwork as catalog_resolve_artwork
 from sonarchy_backend.domains.devices import project_device_details
 from sonarchy_errors import user_facing_error
 
 config.REQUEST_TIMEOUT = 3.0
+APPLE_RESPONSE_LIMIT = CATALOG_RESPONSE_LIMIT
 
 
 def default_cache_path() -> Path:
@@ -43,7 +51,6 @@ def default_cache_path() -> Path:
 
 CACHE_PATH = default_cache_path()
 
-APPLE_SEARCH_URL = "https://itunes.apple.com/search"
 APPLE_COUNTRY = os.environ.get(
     "SONARCHY_APPLE_COUNTRY",
     os.environ.get("OMARCHY_SONOS_APPLE_COUNTRY", "CH"),
@@ -103,7 +110,6 @@ ALARM_RECURRENCES = {"ONCE", "DAILY", "WEEKDAYS", "WEEKENDS"}
 ALARM_DURATIONS = {0, 15, 30, 45, 60, 90, 120}
 PLAYLIST_ID_PATTERN = re.compile(r"SQ:\d+")
 ALARM_ID_PATTERN = re.compile(r"\d+")
-APPLE_ALBUM_PATH_PATTERN = re.compile(r"/[A-Za-z]{2}/album/[^/]+/(\d+)/?")
 PUBLIC_ARTWORK_SUFFIXES = (
     ".mzstatic.com",
     ".scdn.co",
@@ -114,7 +120,6 @@ PUBLIC_ARTWORK_SUFFIXES = (
     ".radioplayer.cloud",
 )
 PUBLIC_ARTWORK_HOSTS = ("static.mytuner-radio.net",)
-APPLE_RESPONSE_LIMIT = 1024 * 1024
 CLI_COMMANDS = frozenset(
     {
         "artwork",
@@ -654,98 +659,8 @@ def format_duration(milliseconds: Any) -> str:
     return f"{seconds // 60}:{seconds % 60:02d}" if seconds else ""
 
 
-def public_apple_music_url(value: Any) -> str:
-    url = clean(value)
-    parsed = urlparse(url)
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname != "music.apple.com"
-        or parsed.username
-        or parsed.password
-    ):
-        return ""
-    try:
-        port = parsed.port
-    except ValueError:
-        return ""
-    return url if port in (None, 443) else ""
-
-
-def public_apple_album_url(value: Any, collection_id: Any = "") -> str:
-    """Return a canonical album link, never Apple's track-qualified variant."""
-
-    url = public_apple_music_url(value)
-    if not url:
-        return ""
-    parsed = urlparse(url)
-    match = APPLE_ALBUM_PATH_PATTERN.fullmatch(parsed.path)
-    expected_id = clean(collection_id)
-    if not match or (expected_id and match.group(1) != expected_id):
-        return ""
-    # Apple's collectionViewUrl can still contain ``?i=<track id>``. SoCo
-    # intentionally classifies that form as a song, so remove all track and
-    # affiliate qualifiers before handing an album action to ShareLinkPlugin.
-    return parsed._replace(params="", query="", fragment="").geturl()
-
-
-def apple_artwork_url(value: Any, size: int = 600) -> str:
-    """Return a safe Apple image URL, requesting a crisp square when possible."""
-
-    url = public_artwork_url(value)
-    if not url:
-        return ""
-    parsed = urlparse(url)
-    hostname = str(parsed.hostname or "").casefold().rstrip(".")
-    if hostname != "mzstatic.com" and not hostname.endswith(".mzstatic.com"):
-        return ""
-    bounded_size = max(100, min(int(size), 1200))
-    path = re.sub(
-        r"/\d+x\d+bb(?=\.[A-Za-z0-9]+$)",
-        f"/{bounded_size}x{bounded_size}bb",
-        parsed.path,
-        count=1,
-    )
-    return parsed._replace(path=path, params="", fragment="").geturl()
-
-
 def apple_search_results(term: str, limit: int) -> list[dict[str, Any]]:
-    query = validate_search_term(term)
-    if not query:
-        return []
-
-    response = requests.get(
-        APPLE_SEARCH_URL,
-        params={
-            "term": query,
-            "country": APPLE_COUNTRY,
-            "media": "music",
-            "entity": "song",
-            "limit": limit,
-        },
-        headers={"Accept": "application/json", "User-Agent": "sonarchy/4"},
-        timeout=6,
-        allow_redirects=False,
-        stream=True,
-    )
-    try:
-        if 300 <= int(response.status_code) < 400:
-            raise ValueError("Apple catalog returned an unexpected redirect")
-        response.raise_for_status()
-        content_length = safe_index(response.headers.get("content-length"), 0)
-        if content_length > APPLE_RESPONSE_LIMIT:
-            raise ValueError("Apple catalog returned an oversized response")
-        chunks = []
-        total = 0
-        for chunk in response.iter_content(chunk_size=16384):
-            total += len(chunk)
-            if total > APPLE_RESPONSE_LIMIT:
-                raise ValueError("Apple catalog returned an oversized response")
-            chunks.append(chunk)
-        payload = json.loads(b"".join(chunks).decode("utf-8"))
-    finally:
-        response.close()
-    results = payload.get("results", []) if isinstance(payload, dict) else []
-    return [item for item in results if isinstance(item, dict)]
+    return catalog_search_results(term, limit, request_get=requests.get, country=APPLE_COUNTRY)
 
 
 def apple_content(term: str, limit: int) -> dict[str, Any]:
@@ -776,34 +691,7 @@ def apple_content(term: str, limit: int) -> dict[str, Any]:
 
 
 def resolve_apple_artwork(title: str, artist: str) -> dict[str, Any]:
-    """Find artwork only when Apple's public catalog strongly matches both fields."""
-
-    safe_title = validate_search_term(title, allow_empty=False)
-    safe_artist = validate_search_term(artist, allow_empty=False)
-    query = f"{safe_title} {safe_artist}"[:120].strip()
-    candidates = []
-    for item in apple_search_results(query, 12):
-        artwork_url = apple_artwork_url(item.get("artworkUrl100"))
-        if not artwork_url:
-            continue
-        candidates.append(
-            {
-                "title": clean(item.get("trackName")),
-                "artist": clean(item.get("artistName")),
-                "album": clean(item.get("collectionName")),
-                "artwork_url": artwork_url,
-            }
-        )
-
-    match = select_artwork_match(safe_title, safe_artist, candidates)
-    if match is None:
-        return {
-            "ok": True,
-            "match": False,
-            "artwork_url": "",
-            "confidence": 0,
-        }
-    return {"ok": True, "match": True, **match}
+    return catalog_resolve_artwork(title, artist, request_get=requests.get, country=APPLE_COUNTRY)
 
 
 def global_service(coordinator: Any) -> MusicService:

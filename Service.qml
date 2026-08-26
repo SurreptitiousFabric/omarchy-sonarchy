@@ -53,6 +53,7 @@ Item {
   property bool radioArtworkEnrichmentEnabled: false
   property var artworkCache: ({})
   property var artworkCacheOrder: []
+  property string artworkRequestId: ""
   property string artworkRequestKey: ""
   property string artworkRequestTitle: ""
   property string artworkRequestArtist: ""
@@ -263,7 +264,8 @@ Item {
   }
 
   function maybeRequestRadioArtwork() {
-    if (!radioArtworkEnrichmentEnabled || !panelOpen || artworkProcess.running) return
+    if (!radioArtworkEnrichmentEnabled || !panelOpen || artworkRequestId !== ""
+        || !live.hasCapability("artwork.radio.resolve")) return
     var playback = livePlayback || ({})
     if (String(playback.artworkKind || "") === "track") return
     var key = radioArtworkKey(playback)
@@ -271,10 +273,7 @@ Item {
     artworkRequestKey = key
     artworkRequestTitle = String(playback.title || "")
     artworkRequestArtist = String(playback.artist || "")
-    artworkProcess.command = [
-      pythonPath, "-B", helperPath, "artwork", artworkRequestTitle, artworkRequestArtist
-    ]
-    artworkProcess.running = true
+    artworkRequestId = live.requestRadioArtwork(artworkRequestTitle, artworkRequestArtist)
   }
 
   function applyLiveSnapshot() {
@@ -811,6 +810,21 @@ Item {
     target: live
     function onSnapshotChanged() { root.applyLiveSnapshot() }
     function onCommandResult(message) {
+      if (String(message.id || "") === root.artworkRequestId) {
+        var completedKey = root.artworkRequestKey
+        var payload = message.ok === true ? message.value : null
+        var artworkUrl = ""
+        if (payload && payload.ok === true && payload.match === true)
+          artworkUrl = root.safeArtworkUrl(payload.artwork_url)
+        root.cacheArtwork(completedKey, artworkUrl)
+        root.artworkRequestId = ""
+        root.artworkRequestKey = ""
+        root.artworkRequestTitle = ""
+        root.artworkRequestArtist = ""
+        root.applyLiveSnapshot()
+        Qt.callLater(root.maybeRequestRadioArtwork)
+        return
+      }
       if (String(message.id || "") !== root.detailsRequestId) return
       var requestedRoomUid = root.detailsRequestRoomUid
       root.detailsLoading = false
@@ -835,6 +849,10 @@ Item {
         root.detailsRequestId = ""
         root.detailsRequestRoomUid = ""
         root.detailsQueued = false
+        root.artworkRequestId = ""
+        root.artworkRequestKey = ""
+        root.artworkRequestTitle = ""
+        root.artworkRequestArtist = ""
       } else if (root.panelOpen) {
         Qt.callLater(root.refreshDetails)
       }
@@ -889,28 +907,6 @@ Item {
     interval: 140
     repeat: false
     onTriggered: root.flushVolume()
-  }
-
-  Process {
-    id: artworkProcess
-    command: []
-    clearEnvironment: true
-    environment: root.helperEnvironment
-    stdout: StdioCollector { id: artworkStdout; waitForEnd: true }
-    stderr: StdioCollector { id: artworkStderr; waitForEnd: true }
-    onExited: function(exitCode) {
-      var completedKey = root.artworkRequestKey
-      var payload = root.parsePayload(artworkStdout.text)
-      var artworkUrl = ""
-      if (exitCode === 0 && payload && payload.ok === true && payload.match === true)
-        artworkUrl = root.safeArtworkUrl(payload.artwork_url)
-      root.cacheArtwork(completedKey, artworkUrl)
-      root.artworkRequestKey = ""
-      root.artworkRequestTitle = ""
-      root.artworkRequestArtist = ""
-      root.applyLiveSnapshot()
-      Qt.callLater(root.maybeRequestRadioArtwork)
-    }
   }
 
   Process {

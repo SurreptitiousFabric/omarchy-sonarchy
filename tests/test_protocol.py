@@ -1,6 +1,7 @@
 import io
 import json
 import tempfile
+from unittest.mock import patch
 
 import pytest
 
@@ -248,7 +249,8 @@ class RecordingController:
 
 def test_protocol_action_cases_cover_every_operation():
     assert {case[0] for case in PROTOCOL_ACTION_CASES} == PROTOCOL_OPERATIONS - {
-        "devices.details.get"
+        "artwork.radio.resolve",
+        "devices.details.get",
     }
 
 
@@ -278,6 +280,36 @@ def test_device_details_query_returns_value_without_snapshot_refresh():
             "value": {"ok": True, "ip": "device-address", "device": {"name": "Office"}},
         }
     ]
+
+
+def test_artwork_query_returns_value_without_speaker_refresh():
+    controller = FakeController()
+    output = io.StringIO()
+    result = {
+        "ok": True,
+        "match": True,
+        "artwork_url": "https://example.test/art.jpg",
+        "confidence": 0.9,
+    }
+    with patch(
+        "sonarchy_backend.domains.artwork.resolve_apple_artwork", return_value=result
+    ) as resolve:
+        server = ProtocolServer(controller)  # type: ignore[arg-type]
+        server.handle(
+            {
+                "version": 1,
+                "id": "artwork",
+                "op": "artwork.radio.resolve",
+                "args": {"title": "Track", "artist": "Artist"},
+            },
+            output,
+        )
+
+    resolve.assert_called_once_with("Track", "Artist")
+    assert controller.calls == []
+    message = decoded(output)[0]
+    assert message["ok"] is True
+    assert message["value"] == result
 
 
 @pytest.mark.parametrize(("operation", "arguments", "expected"), PROTOCOL_ACTION_CASES)

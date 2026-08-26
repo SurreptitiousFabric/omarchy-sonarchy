@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from .artwork import artwork_service
 from .content import content_service
 from .devices import devices_service
 from .mixer import mixer_service
@@ -22,6 +23,7 @@ class SonarchyApplication:
             topology_service(backend),
             mixer_service(backend),
             devices_service(backend),
+            artwork_service(),
         )
         operations = [operation for service in self.services for operation in service.operations]
         if len(operations) != len(set(operations)):

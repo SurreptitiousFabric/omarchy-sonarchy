@@ -31,6 +31,7 @@ FALLBACK_BACKGROUND_POLL_SEC = 5.0
 MAX_PROTOCOL_LINE_BYTES = 64 * 1024
 PROTOCOL_OPERATIONS = frozenset(
     {
+        "artwork.radio.resolve",
         "playback.toggle",
         "playback.play",
         "playback.pause",

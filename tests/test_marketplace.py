@@ -151,7 +151,7 @@ def test_device_details_use_the_persistent_backend_not_a_one_shot_process():
     assert "detailsProcess" not in service
     assert "live.requestDeviceDetails(detailsRequestRoomUid)" in service
     assert 'sendCommand("devices.details.get", { roomUid: roomUid }, false)' in live_service
-    assert len(re.findall(r"\bProcess\s*\{", service)) == 4
+    assert len(re.findall(r"\bProcess\s*\{", service)) == 3
 
 
 def test_page_navigation_follows_the_now_playing_content():
@@ -224,9 +224,10 @@ def test_radio_artwork_enrichment_is_bounded_async_optional_and_safe():
     assert "service.radioArtworkEnrichmentEnabled = showArtwork && enrichRadioArtwork" in widget
     assert "property bool radioArtworkEnrichmentEnabled: false" in service
     assert "readonly property int artworkCacheLimit: 128" in service
-    assert "!panelOpen || artworkProcess.running" in service
-    assert 'helperPath, "artwork", artworkRequestTitle, artworkRequestArtist' in service
-    assert "payload.match === true" in service
+    assert "artworkProcess" not in service
+    assert 'live.hasCapability("artwork.radio.resolve")' in service
+    assert "live.requestRadioArtwork(artworkRequestTitle, artworkRequestArtist)" in service
+    assert "payload && payload.ok === true && payload.match === true" in service
     assert "root.cacheArtwork(completedKey, artworkUrl)" in service
     assert 'playback.artworkKind || "") === "track"' in service
     assert 'trusted_hosts = ("static.mytuner-radio.net",)' in controller
