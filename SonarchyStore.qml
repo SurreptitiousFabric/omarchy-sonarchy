@@ -41,7 +41,6 @@ Item {
   property alias artworkRequestKey: artwork.requestKey
   property alias artworkRequestTitle: artwork.requestTitle
   property alias artworkRequestArtist: artwork.requestArtist
-  property alias artworkDiagnosticKey: artwork.diagnosticKey
   readonly property alias artworkCacheLimit: artwork.cacheLimit
   readonly property bool actionBusy: protocolActionRequestId !== ""
     || live.favoriteRequestId !== "" || live.favoriteAwaitingSnapshot
@@ -215,15 +214,6 @@ Item {
     var selectedGroupUid = target ? String(target.groupUid || "") : ""
     var playback = livePlayback || ({})
     var targetArtwork = artworkForPlayback(playback)
-    var diagnosticKey = [
-      String(playback.state || ""), String(playback.source || ""),
-      String(playback.artworkKind || ""), targetArtwork !== "",
-      radioArtworkEnrichmentEnabled, panelOpen
-    ].join("|")
-    if (diagnosticKey !== artworkDiagnosticKey) {
-      console.warn("SONARCHY_ARTWORK_STATE", diagnosticKey)
-      artworkDiagnosticKey = diagnosticKey
-    }
 
     for (var h = 0; h < households.length; h++) {
       var household = households[h]

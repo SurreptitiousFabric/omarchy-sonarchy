@@ -95,7 +95,8 @@ Item {
           Math.max(numberSetting.minimum, numberSetting.current - numberSetting.step))
       }
 
-      PanelSlider {
+      SonarchySlider {
+        scrollTarget: soundFlick
         width: parent.width - parent.children[0].width - parent.children[2].width
           - parent.spacing * 2
         anchors.verticalCenter: parent.verticalCenter

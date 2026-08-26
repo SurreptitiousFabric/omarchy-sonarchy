@@ -234,7 +234,8 @@ Item {
               Math.max(0, Number(root.live.positionSec || 0) - 10))
           }
 
-          PanelSlider {
+          SonarchySlider {
+            scrollTarget: nowFlick
             width: parent.width - seekBackButton.width - seekForwardButton.width
               - parent.spacing * 2
             anchors.verticalCenter: parent.verticalCenter
@@ -392,7 +393,8 @@ Item {
             onClicked: root.service.runAction("mute-toggle")
           }
 
-          PanelSlider {
+          SonarchySlider {
+            scrollTarget: nowFlick
             width: parent.width - Style.space(43)
             anchors.verticalCenter: parent.verticalCenter
             bar: root.bar

@@ -10,6 +10,8 @@
   router, artwork owner, and the single process-owning live protocol client.
 - Added exact operation inventory tests, correlated result handling, stable
   capabilities/errors, destructive identity checks, and an 80% coverage gate.
+- Prevented vertical page scrolling over a slider from changing playback,
+  room, sound, or alarm values; intentional pointer dragging remains available.
 
 ## 4.1.0 — 2026-08-26
 

@@ -366,7 +366,22 @@ def test_pages_use_omarchy_tokens_without_debug_chrome():
     assert 'color: "#' not in pages
     assert not re.search(r"font\.pixelSize:\s*\d", pages)
     assert "SONARCHY_IMAGE_STATE" not in pages
+    assert "SONARCHY_ARTWORK_STATE" not in service_implementation()
     assert "Style.spacing.hairline" in pages
+
+
+def test_page_sliders_scroll_the_page_without_wheel_mutations():
+    pages = "\n".join(path.read_text() for path in sorted(ROOT.glob("Sonarchy*Page.qml")))
+    slider = (ROOT / "SonarchySlider.qml").read_text()
+
+    assert "PanelSlider {" not in pages
+    assert pages.count("SonarchySlider {") == 5
+    assert pages.count("scrollTarget:") == 5
+    assert "WheelHandler {" in slider
+    assert "blocking: true" in slider
+    assert "event.accepted = true" in slider
+    assert "view.contentY =" in slider
+    assert "root.value" not in slider
 
 
 def test_every_manifest_setting_is_documented_and_read_by_qml():

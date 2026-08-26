@@ -333,7 +333,8 @@ Item {
                 String(roomRow.modelData.uid), -Math.max(1, root.volumeStep))
             }
 
-            PanelSlider {
+            SonarchySlider {
+              scrollTarget: roomsFlick
               bar: root.bar
               anchors.verticalCenter: parent.verticalCenter
               width: Math.max(Style.space(70), roomMixer.width - Style.space(228))

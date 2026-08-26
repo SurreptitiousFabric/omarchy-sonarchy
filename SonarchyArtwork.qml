@@ -12,7 +12,6 @@ QtObject {
   property string requestKey: ""
   property string requestTitle: ""
   property string requestArtist: ""
-  property string diagnosticKey: ""
   readonly property int cacheLimit: 128
 
   function radioKey(playback) {

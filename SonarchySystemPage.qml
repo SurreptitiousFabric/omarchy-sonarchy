@@ -312,7 +312,8 @@ Item {
             onClicked: root.alarmVolume = Math.max(0, root.alarmVolume - 1)
           }
 
-          PanelSlider {
+          SonarchySlider {
+            scrollTarget: systemFlick
             width: parent.width - parent.children[0].width - parent.children[2].width
               - parent.spacing * 2
             anchors.verticalCenter: parent.verticalCenter
