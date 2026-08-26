@@ -51,6 +51,7 @@ class SnapshotMixin:
                 if uid:
                     logical[uid] = candidate
         self._zones = logical
+        self._refresh_source_capabilities(logical)
 
         by_household: dict[str, list[Any]] = defaultdict(list)
         for zone in logical.values():
@@ -152,6 +153,7 @@ class SnapshotMixin:
             "name": self._zone_name(zone),
             "ip": str(getattr(zone, "ip_address", "") or ""),
             "online": True,
+            "lineInAvailable": self._line_in_available.get(self._zone_uid(zone), False),
             "volume": clamp_volume(self._safe(lambda z=zone: z.volume, 0)),
             "mute": bool(self._safe(lambda z=zone: z.mute, False)),
         }

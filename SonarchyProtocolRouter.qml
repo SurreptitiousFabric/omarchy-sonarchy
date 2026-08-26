@@ -52,9 +52,6 @@ Item {
         router.store.artworkRequestKey = ""
         router.store.artworkRequestTitle = ""
         router.store.artworkRequestArtist = ""
-        if (router.store.protocolActionRequestId !== "")
-          router.store.setRequestError("The Sonos backend stopped", router.store.actionFallback)
-        router.store.protocolActionRequestId = ""
         router.store.applyLiveSnapshot()
         Qt.callLater(router.store.maybeRequestRadioArtwork)
         return
@@ -139,14 +136,30 @@ Item {
     }
     function onBackendReadyChanged() {
       if (!router.live.backendReady) {
+        if (router.store.protocolActionRequestId !== "")
+          router.store.setRequestError("The Sonos backend stopped", router.store.actionFallback)
+        router.store.protocolActionRequestId = ""
         router.store.detailsLoading = false
         router.store.detailsRequestId = ""
         router.store.detailsRequestRoomUid = ""
         router.store.detailsQueued = false
+        router.store.contentLoading = false
+        router.store.contentRequestId = ""
+        router.store.contentRequestRoomUid = ""
+        router.store.contentRequestKind = ""
+        router.store.contentRequestTerm = ""
+        router.store.pendingContentKind = ""
+        router.store.pendingContentTerm = ""
+        router.store.alarmsLoading = false
+        router.store.alarmsRequestId = ""
+        router.store.alarmsRequestRoomUid = ""
         router.store.artworkRequestId = ""
         router.store.artworkRequestKey = ""
         router.store.artworkRequestTitle = ""
         router.store.artworkRequestArtist = ""
+        router.store.queuedVolume = -1
+        router.store.queuedVolumeGroupUid = ""
+        volumeDebounce.stop()
       } else if (router.store.panelOpen) {
         Qt.callLater(router.store.refreshDetails)
         if (router.store.contentKind !== "favorites") Qt.callLater(router.store.reloadContent)

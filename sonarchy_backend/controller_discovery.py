@@ -5,6 +5,7 @@ import logging
 import time
 import unicodedata
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -15,14 +16,35 @@ from .controller_common import (
     NETWORK_SCAN_TIMEOUT_SEC,
     PLAYBACK_QUERY_ATTEMPTS,
     PLAYBACK_QUERY_RETRY_SEC,
+    SOURCE_CAPABILITY_RETRY_SEC,
     SSDP_DISCOVERY_TIMEOUT_SEC,
     ControllerError,
 )
+from .domains.capabilities import line_in_available
 
 LOG = logging.getLogger(__name__)
 
 
 class DiscoveryMixin:
+    def _refresh_source_capabilities(self, zones: dict[str, Any]) -> None:
+        now = time.monotonic()
+        pending = {
+            uid: zone
+            for uid, zone in zones.items()
+            if uid not in self._line_in_available
+            or (
+                not self._line_in_available[uid]
+                and now - self._line_in_checked_at.get(uid, 0) >= SOURCE_CAPABILITY_RETRY_SEC
+            )
+        }
+        if not pending:
+            return
+        workers = min(8, len(pending))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            results = executor.map(line_in_available, pending.values())
+            self._line_in_available.update(dict(zip(pending, results, strict=True)))
+        self._line_in_checked_at.update(dict.fromkeys(pending, now))
+
     @staticmethod
     def _empty_snapshot(status: str = "offline", message: str = "") -> dict[str, Any]:
         return {

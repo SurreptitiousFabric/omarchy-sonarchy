@@ -82,6 +82,17 @@ class Transport:
         return {"CurrentURI": self.uri}
 
 
+class AudioIn:
+    def __init__(self, supported=True):
+        self.supported = supported
+
+    def send_command(self, action, args, *, timeout):
+        assert (action, args, timeout) == ("GetAudioInputAttributes", [], 1.5)
+        if not self.supported:
+            raise RuntimeError("unsupported")
+        return {"CurrentName": "Line-In"}
+
+
 class SettingsSpeaker:
     def __init__(self, uid="R1", ip="192.168.1.2"):
         self.uid = uid
@@ -90,6 +101,7 @@ class SettingsSpeaker:
         self.group = None
         self.visible_zones = {self}
         self.avTransport = Transport()
+        self.audioIn = AudioIn()
         self.deviceProperties = DeviceProperties(self)
         self.music_source = "TV"
         self.is_soundbar = True
@@ -520,6 +532,9 @@ def test_stop_rename_and_source_switches_use_the_expected_speaker():
         switch_source(room, "line-in", SettingsSpeaker("R3", "192.168.1.4"))
     with pytest.raises(ValueError, match="Unsupported Sonos source"):
         switch_source(room, "bluetooth")
+    source.audioIn.supported = False
+    with pytest.raises(ValueError, match="Line-in is not available"):
+        switch_source(room, "line-in", source)
 
 
 @pytest.mark.parametrize(
@@ -589,7 +604,7 @@ def test_tv_autoplay_is_confirmed_and_rejects_unsupported_rooms():
     assert room.deviceProperties.autoplay_room_uuid == room.uid
 
     ordinary = SettingsSpeaker()
-    ordinary.is_soundbar = False
+    ordinary.deviceProperties.GetAutoplayRoomUUID = Mock(side_effect=RuntimeError("unsupported"))
     with pytest.raises(ValueError, match="not available"):
         set_device(ordinary, "tv-autoplay", "on")
     with pytest.raises(ValueError, match="Unsupported device setting"):

@@ -12,7 +12,7 @@ reviewers and users do not need to infer them from the code.
 | Inbound LAN listener | Yes, notifications only | SoCo subscriptions bind the attached interface on TCP 1400–1499. Requests are limited to 16 concurrent handlers, 512 KiB bodies, three-second socket timeouts, bounded 1,024-event buffering, valid sequence headers, active subscription IDs, and the exact subscribed speaker IP. No controls are accepted. |
 | Public HTTPS | Yes | Explicit Apple catalog searches, optional popup-scoped matching of Sonos-supplied radio title/artist metadata, and allowlisted artwork/service hosts. Redirects and oversized Apple responses are rejected. |
 | Persistent files | Yes | Selected room UID and private speaker IP cache; private venv and dependency hash. Directories are 0700 and state/cache files are 0600. |
-| Subprocesses | Yes | Quickshell starts the checked-in Python bridge with argument arrays and the persistent backend with a checked-in shell launcher. Both receive small allowlisted environments rather than the full desktop environment. |
+| Subprocesses | Yes | Quickshell starts one persistent Python backend through the checked-in shell launcher. It receives a small allowlisted environment rather than the full desktop environment; QML has no one-shot command bridge. |
 | Privilege escalation | No | No `sudo`, `pkexec`, setuid, capabilities, polkit rules, or sudoers changes. |
 | System package manager | No | No pacman, AUR helper, apt, dnf, or system Python installation. |
 | Service management | No | No systemd unit or long-lived process outside the Omarchy shell lifecycle. |

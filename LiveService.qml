@@ -144,7 +144,7 @@ Item {
     openPanelCount = Math.max(0, openPanelCount + (open ? 1 : -1))
     var isOpen = openPanelCount > 0
     if (wasOpen !== isOpen && backend.running)
-      sendCommand("session.panel_open.set", { open: isOpen })
+      sendCommand("session.panel_open.set", { open: isOpen }, false, false)
   }
   function playPause() { sendCommand("playback.toggle") }
   function next() { sendCommand("playback.next") }
@@ -173,7 +173,7 @@ Item {
   function setRoomMute(roomUid, mute) { sendCommand("mute.room.set", { roomUid: roomUid, mute: !!mute }) }
   function applyMembers(roomUids) { sendCommand("topology.members.set", { roomUids: roomUids }) }
   function requestDeviceDetails(roomUid) {
-    return sendCommand("devices.details.get", { roomUid: roomUid }, false)
+    return sendCommand("devices.details.get", { roomUid: roomUid }, false, false)
   }
   function requestRadioArtwork(title, artist) {
     return sendCommand(
@@ -182,10 +182,10 @@ Item {
   function requestContent(roomUid, kind, term, limit) {
     return sendCommand("content.browse", {
       roomUid: roomUid, kind: kind, term: term, limit: limit
-    })
+    }, false, false)
   }
   function requestAlarms(roomUid) {
-    return sendCommand("alarms.list", { roomUid: roomUid })
+    return sendCommand("alarms.list", { roomUid: roomUid }, false, false)
   }
   function stopRoom(roomUid) {
     return sendCommand("playback.stop", { roomUid: roomUid })
@@ -285,6 +285,11 @@ Item {
     return String(error || "Sonos command failed")
   }
 
+  function validRevision(value) {
+    var revision = Number(value)
+    return isFinite(revision) && revision >= 1 && Math.floor(revision) === revision
+  }
+
   function handleLine(line) {
     var text = String(line || "").trim()
     if (!text) return
@@ -297,8 +302,9 @@ Item {
       return
     }
     if (message.type === "snapshot") {
-      if (Number(message.version || 0) !== 1) {
-        setCommandError("The Sonarchy backend uses an unsupported protocol version")
+      if (Number(message.version || 0) !== 1 || !validRevision(message.revision)
+          || !message.status || !Array.isArray(message.households)) {
+        setCommandError("The Sonarchy backend returned an invalid snapshot")
         return
       }
       if (receivedSnapshotThisRun
@@ -315,7 +321,13 @@ Item {
         favoriteStartingTitle = ""
       }
       if (firstSnapshot && openPanelCount > 0)
-        sendCommand("session.panel_open.set", { open: true })
+        sendCommand("session.panel_open.set", { open: true }, false, false)
+      return
+    }
+    if (message.type === "result"
+        && (Number(message.version || 0) !== 1 || String(message.id || "") === ""
+            || !validRevision(message.revision) || typeof message.ok !== "boolean")) {
+      setCommandError("The Sonarchy backend returned an invalid result")
       return
     }
     var resultId = String(message.id || "")
@@ -339,8 +351,10 @@ Item {
         favoriteStartingTitle = ""
       }
     } else if (message.type === "result" && message.ok === true) {
-      commandError = ""
-      transientErrorTimer.stop()
+      if (!quietResult) {
+        commandError = ""
+        transientErrorTimer.stop()
+      }
       if (String(message.id || "") === moveRequestId) {
         moveError = ""
         moveRequestId = ""

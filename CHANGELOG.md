@@ -10,6 +10,10 @@
   router, artwork owner, and the single process-owning live protocol client.
 - Added exact operation inventory tests, correlated result handling, stable
   capabilities/errors, destructive identity checks, and an 80% coverage gate.
+- Gated controls at both page and Store boundaries, projected line-in support
+  through bounded AudioIn probes, and removed model-name-based TV visibility.
+- Kept background request results from clearing unrelated errors or pending
+  mutations, and atomically clears pending UI requests after backend loss.
 - Prevented vertical page scrolling over a slider from changing playback,
   room, sound, or alarm values; intentional pointer dragging remains available.
 

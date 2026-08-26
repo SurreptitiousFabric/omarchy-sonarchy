@@ -55,3 +55,5 @@ class SonosController(
         self._favorites_household_id = ""
         self._transport_state_cache: dict[str, str] = {}
         self._playback_cache: dict[str, dict[str, Any]] = {}
+        self._line_in_available: dict[str, bool] = {}
+        self._line_in_checked_at: dict[str, float] = {}

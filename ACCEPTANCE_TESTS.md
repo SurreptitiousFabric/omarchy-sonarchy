@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 234 automated tests pass with 82% branch coverage.
+- [x] All 239 automated tests pass with 82% branch coverage.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
 - [x] The marketplace v3 deterministic baseline reports no findings and only

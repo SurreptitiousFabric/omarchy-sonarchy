@@ -265,6 +265,7 @@ Item {
           room_volume: Number(room.volume || 0),
           muted: isTarget ? group.mute === true : room.mute === true,
           room_muted: room.mute === true,
+          line_in_available: room.lineInAvailable === true,
           state: state,
           is_playing: state === "PLAYING" || state === "TRANSITIONING",
           group_uid: group ? String(group.uid) : "",
@@ -594,10 +595,10 @@ Item {
       "Could not change device setting")
   }
 
-  function switchSource(source, sourceIp) {
+  function switchSource(source, sourceRoomUid) {
     if (!selectedDevice || actionBusy || !requireCapability("sources.switch")) return
-    var sourceRoom = String(sourceIp || "") !== "" ? roomForIp(sourceIp) : null
-    if (String(sourceIp || "") !== "" && !sourceRoom) {
+    var sourceRoom = String(sourceRoomUid || "") !== "" ? deviceForUid(sourceRoomUid) : null
+    if (String(sourceRoomUid || "") !== "" && (!sourceRoom || sourceRoom.line_in_available !== true)) {
       setRequestError("The selected line-in room is no longer available",
                       "Could not switch Sonos source")
       return

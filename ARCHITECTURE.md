@@ -92,11 +92,12 @@ ID and is followed by, or references, an authoritative revision. QML may show a
 bounded optimistic value while a request is pending, but a newer snapshot
 always wins.
 
-Rooms, groups, playback sources, and content items expose explicit capability
-flags. Pages render or disable controls from those flags instead of relying on
-speaker model names or predictable command failures. Capability names are
-positive actions such as `playback.seek`, `queue.edit`, `group.edit`,
-`sound.bass`, and `source.tv`.
+Every snapshot exposes a canonical set of positive action capabilities such as
+`playback.seek`, `queue.item.remove`, `topology.members.set`, and
+`sound.setting.set`. Device-specific settings use nullable backend projections,
+content items expose `playable`, and rooms expose a bounded, positively probed
+`lineInAvailable` flag. Pages render or disable controls from those projections
+instead of relying on speaker model names or predictable command failures.
 
 ## Error model
 

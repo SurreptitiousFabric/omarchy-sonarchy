@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .capabilities import line_in_available
 from .common import DomainService, string_arg
 from .ports import SettingsPort
 
@@ -75,8 +76,6 @@ def _queue_transport_active(coordinator: Any) -> bool | None:
 
 
 def _tv_autoplay(speaker: Any) -> bool | None:
-    if not bool(_safe(lambda: speaker.is_soundbar, False)):
-        return None
     response = _safe(lambda: speaker.deviceProperties.GetAutoplayRoomUUID([("Source", "")]), None)
     if not isinstance(response, dict) or "RoomUUID" not in response:
         return None
@@ -210,6 +209,8 @@ def switch_source(speaker: Any, source: str, source_speaker: Any | None = None) 
         expected_ip = _clean(getattr(line_in, "ip_address", ""))
         if all(_clean(getattr(zone, "ip_address", "")) != expected_ip for zone in visible):
             raise ValueError("Line-in source is not part of this Sonos household")
+        if not line_in_available(line_in):
+            raise ValueError("Line-in is not available on the selected Sonos room")
         coordinator.switch_to_line_in(line_in)
         message = "Playing line-in"
     elif source == "tv":

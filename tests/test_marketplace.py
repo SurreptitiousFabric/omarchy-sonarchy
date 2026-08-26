@@ -169,7 +169,7 @@ def test_device_details_use_the_persistent_backend_not_a_one_shot_process():
 
     assert "detailsProcess" not in service
     assert "live.requestDeviceDetails(detailsRequestRoomUid)" in service
-    assert 'sendCommand("devices.details.get", { roomUid: roomUid }, false)' in live_service
+    assert 'sendCommand("devices.details.get", { roomUid: roomUid }, false, false)' in live_service
     assert len(re.findall(r"\bProcess\s*\{", service)) == 0
 
 
@@ -376,8 +376,34 @@ def test_pages_are_capability_driven_and_do_not_mutate_store_state():
 
     assert "hasCapability(" in pages
     assert "requireCapability(" in store
+    assert "is_soundbar" not in pages
     for property_name in ("contentItems", "contentTotal", "contentMeta", "contentTerm"):
         assert re.search(rf"service\.{property_name}\s*=(?!=)", pages) is None
+
+
+def test_protocol_requests_keep_background_and_action_state_correlated():
+    live = (ROOT / "LiveService.qml").read_text()
+    router = (ROOT / "SonarchyProtocolRouter.qml").read_text()
+
+    assert 'sendCommand("session.panel_open.set", { open: isOpen }, false, false)' in live
+    assert 'sendCommand("session.panel_open.set", { open: true }, false, false)' in live
+    assert 'sendCommand("devices.details.get", { roomUid: roomUid }, false, false)' in live
+    assert 'sendCommand("alarms.list", { roomUid: roomUid }, false, false)' in live
+    assert "if (!quietResult)" in live
+    assert "validRevision(message.revision)" in live
+    artwork_branch = router.split("=== router.store.artworkRequestId) {", 1)[1].split(
+        "=== router.store.contentRequestId) {", 1
+    )[0]
+    assert "protocolActionRequestId" not in artwork_branch
+    backend_loss = router.split("function onBackendReadyChanged()", 1)[1]
+    for pending_state in (
+        "protocolActionRequestId",
+        "detailsRequestId",
+        "contentRequestId",
+        "alarmsRequestId",
+        "queuedVolume",
+    ):
+        assert pending_state in backend_loss
 
 
 def test_page_sliders_scroll_the_page_without_wheel_mutations():

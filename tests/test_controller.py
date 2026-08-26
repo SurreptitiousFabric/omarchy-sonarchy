@@ -44,6 +44,21 @@ class FakeAVTransport:
         self.play_args = args
 
 
+class FakeAudioIn:
+    def __init__(self, supported=False):
+        self.supported = supported
+        self.calls = 0
+
+    def send_command(self, action, args, *, timeout):
+        assert action == "GetAudioInputAttributes"
+        assert args == []
+        assert timeout == 1.5
+        self.calls += 1
+        if not self.supported:
+            raise RuntimeError("unsupported")
+        return {"CurrentName": "Line-In"}
+
+
 class FakeZone:
     def __init__(self, uid, name, ip, household="HH1"):
         self.uid = uid
@@ -60,6 +75,7 @@ class FakeZone:
         self.music_source = "SPOTIFY_CONNECT"
         self.music_library = FakeMusicLibrary()
         self.avTransport = FakeAVTransport()
+        self.audioIn = FakeAudioIn()
 
     @property
     def visible_zones(self):
@@ -191,6 +207,39 @@ def test_refresh_builds_target_and_playback(tmp_path):
         for room in household["rooms"]
     }
     assert room_states == {"Kitchen": "PLAYING", "Living Room": "PLAYING"}
+
+
+def test_refresh_projects_and_caches_positive_line_in_capability(tmp_path):
+    controller, living, kitchen, _ = make_controller(tmp_path)
+    living.audioIn.supported = True
+
+    first = controller.refresh()
+    second = controller.refresh(rediscover=False)
+
+    first_rooms = {
+        room["uid"]: room["lineInAvailable"]
+        for household in first["households"]
+        for room in household["rooms"]
+    }
+    second_rooms = {
+        room["uid"]: room["lineInAvailable"]
+        for household in second["households"]
+        for room in household["rooms"]
+    }
+    assert first_rooms == second_rooms == {"R1": True, "R2": False}
+    assert living.audioIn.calls == 1
+    assert kitchen.audioIn.calls == 1
+
+    kitchen.audioIn.supported = True
+    controller._line_in_checked_at["R2"] -= 300
+    recovered = controller.refresh(rediscover=False)
+    recovered_rooms = {
+        room["uid"]: room["lineInAvailable"]
+        for household in recovered["households"]
+        for room in household["rooms"]
+    }
+    assert recovered_rooms == {"R1": True, "R2": True}
+    assert kitchen.audioIn.calls == 2
 
 
 def test_radio_uses_media_metadata_when_track_metadata_is_blank(tmp_path):

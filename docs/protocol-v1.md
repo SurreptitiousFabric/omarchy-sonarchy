@@ -33,7 +33,6 @@ rejected without executing a command.
   "id": "qml-42",
   "ok": true,
   "revision": 18,
-  "capabilities": ["playback.toggle", "volume.group.set"],
   "value": null
 }
 ```
@@ -67,6 +66,7 @@ private addresses, credentials, or service metadata.
   "version": 1,
   "revision": 18,
   "status": {},
+  "capabilities": ["playback.toggle", "volume.group.set"],
   "households": [],
   "target": null,
   "playback": {},
@@ -80,8 +80,9 @@ older than the newest revision it has applied.
 
 `capabilities` is a sorted list of stable positive action names. It is derived
 from discovered topology and actions advertised by the current Sonos source;
-it is never inferred from speaker model names. QML uses this list to render or
-disable commands as pages migrate to capability-driven behavior.
+it is never inferred from speaker model names. Rooms additionally expose
+`lineInAvailable`, populated by a bounded read-only AudioIn action probe. QML
+uses these projections to render or disable commands.
 
 ## Events
 

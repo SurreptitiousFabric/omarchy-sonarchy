@@ -22,9 +22,12 @@ Item {
   property bool alarmEnabled: true
   property bool alarmGrouped: false
   property string alarmProgram: "chime"
-  property string lineInIp: ""
+  property string lineInRoomUid: ""
 
   readonly property var deviceInfo: service ? service.deviceDetails : ({})
+  readonly property bool hasTvSource: deviceInfo.tv_autoplay !== null
+    && deviceInfo.tv_autoplay !== undefined
+  readonly property var lineInSources: lineInOptions()
   readonly property bool editing: alarmTimeField.activeFocus
     || sectionPicker.popupOpen || recurrencePicker.popupOpen
     || durationPicker.popupOpen || programPicker.popupOpen || lineInPicker.popupOpen
@@ -34,13 +37,14 @@ Item {
     service.refreshDetails()
     service.loadAlarms()
     service.ensureFavorites()
-    if (lineInIp === "" && device) lineInIp = String(device.ip || "")
+    root.selectAvailableLineIn()
   }
 
   onDeviceChanged: {
-    if (device) lineInIp = String(device.ip || "")
+    root.selectAvailableLineIn()
     if (visible && service) service.refreshDetails()
   }
+  onLineInSourcesChanged: root.selectAvailableLineIn()
 
   function ensureVisible(item) {
     if (!item || !systemFlick.visible) return
@@ -107,9 +111,19 @@ Item {
   function lineInOptions() {
     var options = []
     var rooms = service ? service.devices : []
-    for (var i = 0; i < rooms.length; i++)
-      options.push({ value: String(rooms[i].ip), label: String(rooms[i].name) })
+    for (var i = 0; i < rooms.length; i++) {
+      if (rooms[i].line_in_available === true)
+        options.push({ value: String(rooms[i].uid), label: String(rooms[i].name) })
+    }
     return options
+  }
+
+  function selectAvailableLineIn() {
+    var options = lineInOptions()
+    for (var i = 0; i < options.length; i++) {
+      if (String(options[i].value) === lineInRoomUid) return
+    }
+    lineInRoomUid = options.length > 0 ? String(options[0].value) : ""
   }
 
   function valueText(value, fallback) {
@@ -534,36 +548,48 @@ Item {
           wrapMode: Text.WordWrap
         }
 
+        Text {
+          width: parent.width
+          visible: root.lineInSources.length === 0
+          text: "No reachable Sonos room currently reports a line-in input."
+          color: Qt.darker(root.foreground, 1.35)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
+        }
+
         SonarchyDropdown {
           id: lineInPicker
           width: parent.width
           label: "SOURCE ROOM"
-          value: root.lineInIp
-          options: root.lineInOptions()
+          value: root.lineInRoomUid
+          options: root.lineInSources
+          visible: root.lineInSources.length > 0
           foreground: root.foreground
           fontFamily: root.fontFamily
-          onChanged: function(value) { root.lineInIp = String(value) }
+          onChanged: function(value) { root.lineInRoomUid = String(value) }
         }
 
         Button {
           width: parent.width
+          visible: root.lineInSources.length > 0
           text: "Play line-in"
           iconText: "󰕾"
           foreground: root.foreground
           bordered: true
           focusable: true
-          enabled: root.service && !root.service.actionBusy && root.lineInIp !== ""
+          enabled: root.service && !root.service.actionBusy && root.lineInRoomUid !== ""
             && root.can("sources.switch")
-          onClicked: root.service.switchSource("line-in", root.lineInIp)
+          onClicked: root.service.switchSource("line-in", root.lineInRoomUid)
         }
 
         PanelSeparator {
           foreground: root.foreground
-          visible: root.deviceInfo.is_soundbar === true
+          visible: root.hasTvSource
         }
 
         PanelSectionHeader {
-          visible: root.deviceInfo.is_soundbar === true
+          visible: root.hasTvSource
           text: "TV AUDIO"
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -571,7 +597,7 @@ Item {
 
         Button {
           width: parent.width
-          visible: root.deviceInfo.is_soundbar === true
+          visible: root.hasTvSource
           text: "Switch to TV"
           iconText: "󰔂"
           foreground: root.foreground
@@ -654,9 +680,7 @@ Item {
 
         SonarchyToggle {
           width: parent.width
-          visible: root.deviceInfo.is_soundbar === true
-            && root.deviceInfo.tv_autoplay !== null
-            && root.deviceInfo.tv_autoplay !== undefined
+          visible: root.hasTvSource
           label: "TV Autoplay"
           description: "Switch from music whenever the TV sends audio"
           checked: root.deviceInfo.tv_autoplay === true

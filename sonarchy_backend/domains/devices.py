@@ -82,8 +82,6 @@ def _repeat_label(raw: Any) -> str | None:
 
 
 def _tv_autoplay(speaker: Any) -> bool | None:
-    if not bool(_safe(lambda: speaker.is_soundbar, False)):
-        return None
     response = _safe(lambda: speaker.deviceProperties.GetAutoplayRoomUUID([("Source", "")]), None)
     if not isinstance(response, dict) or "RoomUUID" not in response:
         return None
@@ -178,7 +176,6 @@ def project_device_details(speaker: Any) -> dict[str, Any]:
             "hardware_version": _clean(speaker_info.get("hardware_version")),
             "channel": _clean(_optional(speaker, "channel")),
             "source": source,
-            "is_soundbar": bool(_safe(lambda: speaker.is_soundbar, False)),
             "tv_autoplay": selected_tv_autoplay,
             "status_light": _optional_bool(speaker, "status_light"),
             "buttons_enabled": _optional_bool(speaker, "buttons_enabled"),
