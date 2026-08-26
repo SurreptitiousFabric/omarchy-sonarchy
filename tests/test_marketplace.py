@@ -370,6 +370,16 @@ def test_pages_use_omarchy_tokens_without_debug_chrome():
     assert "Style.spacing.hairline" in pages
 
 
+def test_pages_are_capability_driven_and_do_not_mutate_store_state():
+    pages = "\n".join(path.read_text() for path in sorted(ROOT.glob("Sonarchy*Page.qml")))
+    store = (ROOT / "SonarchyStore.qml").read_text()
+
+    assert "hasCapability(" in pages
+    assert "requireCapability(" in store
+    for property_name in ("contentItems", "contentTotal", "contentMeta", "contentTerm"):
+        assert re.search(rf"service\.{property_name}\s*=(?!=)", pages) is None
+
+
 def test_page_sliders_scroll_the_page_without_wheel_mutations():
     pages = "\n".join(path.read_text() for path in sorted(ROOT.glob("Sonarchy*Page.qml")))
     slider = (ROOT / "SonarchySlider.qml").read_text()

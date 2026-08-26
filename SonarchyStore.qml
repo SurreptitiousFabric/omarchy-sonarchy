@@ -146,6 +146,17 @@ Item {
     live.clearErrors()
   }
 
+  function hasCapability(name) {
+    return live.hasCapability(String(name || ""))
+  }
+
+  function requireCapability(name) {
+    if (hasCapability(name)) return true
+    setRequestError("This Sonos action is not available right now",
+                    "Sonos action unavailable")
+    return false
+  }
+
   function setRequestError(text, fallback) {
     requestError = compactError(text, fallback)
     protocolRouter.restartRequestErrorTimer()
@@ -301,11 +312,12 @@ Item {
   }
 
   function selectDevice(uid) {
-    if (!deviceForUid(uid)) return
+    if (!deviceForUid(uid) || !requireCapability("selection.room.set")) return
     live.selectRoom(String(uid))
   }
 
   function selectSession(groupUid) {
+    if (!requireCapability("selection.group.set")) return
     live.selectGroup(String(groupUid))
   }
 
@@ -411,6 +423,15 @@ Item {
     }
   }
 
+  function prepareContentSearch(kind) {
+    contentKind = String(kind || "")
+    contentTerm = ""
+    contentItems = []
+    contentTotal = 0
+    contentMeta = ({})
+    contentLoading = false
+  }
+
   function reloadContent() {
     if (contentKind === "favorites") {
       contentLoading = true
@@ -449,20 +470,24 @@ Item {
 
     requestError = ""
     if (action === "play-pause") {
+      if (!requireCapability("playback.toggle")) return
       optimisticDevicePatch(device.ip, {
         is_playing: !device.is_playing,
         state: device.is_playing ? "PAUSED_PLAYBACK" : "PLAYING"
       })
       live.playPause()
     } else if (action === "previous") {
+      if (!requireCapability("playback.previous")) return
       live.previous()
     } else if (action === "next") {
+      if (!requireCapability("playback.next")) return
       live.next()
     } else if (action === "mute-toggle") {
+      if (!requireCapability("mute.group.set")) return
       optimisticDevicePatch(device.ip, { muted: !device.muted })
       live.setGroupMute(!device.muted)
     } else if (action === "stop") {
-      if (actionBusy) return
+      if (actionBusy || !requireCapability("playback.stop")) return
       optimisticDevicePatch(device.ip, { is_playing: false, state: "STOPPED" })
       trackProtocolAction(live.stopRoom(String(device.uid)), "Sonos playback control failed")
       return
@@ -473,12 +498,13 @@ Item {
   }
 
   function seek(positionSec) {
+    if (!requireCapability("playback.seek")) return
     requestError = ""
     live.seek(Math.max(0, Math.round(Number(positionSec || 0))))
   }
 
   function renameRoom(name) {
-    if (!selectedDevice || actionBusy) return
+    if (!selectedDevice || actionBusy || !requireCapability("devices.rename")) return
     trackProtocolAction(live.renameRoom(String(selectedDevice.uid), String(name || "")),
                         "Could not rename Sonos room")
   }
@@ -504,13 +530,15 @@ Item {
   }
 
   function applyMembers(roomUids) {
-    if (!roomUids || roomUids.length === 0) return
+    if (!roomUids || roomUids.length === 0
+        || !requireCapability("topology.members.set")) return
     requestError = ""
     live.applyMembers(roomUids)
     showActionMessage("Applying room group…")
   }
 
   function movePlaybackToRoom(roomUid) {
+    if (!requireCapability("playback.room.move")) return
     requestError = ""
     live.movePlaybackToRoom(String(roomUid))
   }
@@ -529,6 +557,7 @@ Item {
   }
 
   function setRoomVolume(roomUid, value) {
+    if (!requireCapability("volume.room.set")) return
     live.setRoomVolume(String(roomUid), Math.max(0, Math.min(100, Math.round(Number(value)))))
   }
 
@@ -538,32 +567,35 @@ Item {
   }
 
   function setRoomMute(roomUid, mute) {
+    if (!requireCapability("mute.room.set")) return
     live.setRoomMute(String(roomUid), Boolean(mute))
   }
 
   function setPlaybackOption(option, value) {
-    if (!selectedDevice || actionBusy) return
+    if (!selectedDevice || actionBusy
+        || !requireCapability("playback.option.set")) return
     trackProtocolAction(live.setPlaybackOption(
       String(selectedDevice.uid), String(option), String(value)),
       "Could not change playback option")
   }
 
   function setSound(setting, value) {
-    if (!selectedDevice || actionBusy) return
+    if (!selectedDevice || actionBusy || !requireCapability("sound.setting.set")) return
     trackProtocolAction(live.setSound(
       String(selectedDevice.uid), String(setting), String(value)),
       "Could not change sound setting")
   }
 
   function setDeviceSetting(setting, value) {
-    if (!selectedDevice || actionBusy) return
+    if (!selectedDevice || actionBusy
+        || !requireCapability("devices.setting.set")) return
     trackProtocolAction(live.setDeviceSetting(
       String(selectedDevice.uid), String(setting), String(value)),
       "Could not change device setting")
   }
 
   function switchSource(source, sourceIp) {
-    if (!selectedDevice || actionBusy) return
+    if (!selectedDevice || actionBusy || !requireCapability("sources.switch")) return
     var sourceRoom = String(sourceIp || "") !== "" ? roomForIp(sourceIp) : null
     if (String(sourceIp || "") !== "" && !sourceRoom) {
       setRequestError("The selected line-in room is no longer available",
@@ -579,15 +611,19 @@ Item {
     if (!item || !selectedDevice || item.playable === false) return
     if (contentKind !== "favorites" && actionBusy) return
     if (contentKind === "favorites") {
+      if (!requireCapability("content.favorite.play")) return
       live.playFavorite(String(item.id), String(item.title || "Favorite"))
     } else if (contentKind === "queue") {
+      if (!requireCapability("queue.item.play")) return
       trackProtocolAction(live.playQueueItem(
         String(selectedDevice.uid), Number(item.index), String(item.id)),
         "Could not play queue item")
     } else if (contentKind === "apple") {
+      if (!requireCapability("content.apple.play")) return
       trackProtocolAction(live.playApple(
         String(selectedDevice.uid), String(item.url)), "Could not play Apple Music result")
     } else if (contentKind === "global") {
+      if (!requireCapability("content.global.play")) return
       trackProtocolAction(live.playGlobal(
         String(selectedDevice.uid), String(item.id), contentTerm),
         "Could not play Global Player result")
@@ -599,7 +635,8 @@ Item {
   }
 
   function playAppleAlbum(item) {
-    if (!item || !selectedDevice || actionBusy || String(item.album_url || "") === "") return
+    if (!item || !selectedDevice || actionBusy || String(item.album_url || "") === ""
+        || !requireCapability("content.apple.album.play")) return
     trackProtocolAction(live.playAppleAlbum(
       String(selectedDevice.uid), String(item.album_url)), "Could not play Apple Music album")
   }
@@ -607,6 +644,7 @@ Item {
   function enqueueContent(item, mode) {
     if (!item || !selectedDevice || actionBusy || item.playable === false) return
     if (contentKind !== "library" && contentKind !== "playlist") return
+    if (!requireCapability("queue.content.enqueue")) return
     trackProtocolAction(live.enqueueContent(
       String(selectedDevice.uid), contentKind, contentTerm,
       String(item.id), Number(item.index || 0), String(mode)),
@@ -614,7 +652,7 @@ Item {
   }
 
   function playlistAction(action, value) {
-    if (!selectedDevice || actionBusy) return
+    if (!selectedDevice || actionBusy || !requireCapability("playlists.mutate")) return
     trackProtocolAction(live.mutatePlaylist(
       String(selectedDevice.uid), String(action), String(value || "")),
       "Could not update Sonos playlist")
@@ -622,13 +660,14 @@ Item {
 
   function playlistTrackAction(action, item) {
     if (!item || !selectedDevice || actionBusy || contentKind !== "playlist") return
+    if (!requireCapability("playlists.track.mutate")) return
     trackProtocolAction(live.mutatePlaylistTrack(
       String(selectedDevice.uid), String(action), contentTerm,
       Number(item.index || 0), String(item.id)), "Could not update Sonos playlist")
   }
 
   function startLibraryUpdate() {
-    if (selectedDevice && !actionBusy)
+    if (selectedDevice && !actionBusy && requireCapability("library.update.start"))
       trackProtocolAction(live.startLibraryUpdate(String(selectedDevice.uid)),
                           "Could not update the music library")
   }
@@ -646,11 +685,12 @@ Item {
   }
 
   function ensureFavorites() {
-    if (String(liveFavorites.state || "") === "not_loaded") live.refreshFavorites()
+    if (String(liveFavorites.state || "") === "not_loaded"
+        && hasCapability("content.favorites.refresh")) live.refreshFavorites()
   }
 
   function saveAlarm(editor) {
-    if (!editor || !selectedDevice || actionBusy) return
+    if (!editor || !selectedDevice || actionBusy || !requireCapability("alarms.save")) return
     trackProtocolAction(live.saveAlarm(String(selectedDevice.uid), {
       alarmId: String(editor.id || "new"),
       time: String(editor.time || "07:00"),
@@ -664,34 +704,34 @@ Item {
   }
 
   function toggleAlarm(id, enabled) {
-    if (selectedDevice && !actionBusy)
+    if (selectedDevice && !actionBusy && requireCapability("alarms.toggle"))
       trackProtocolAction(live.toggleAlarm(
         String(selectedDevice.uid), String(id), Boolean(enabled)),
         "Could not change Sonos alarm")
   }
 
   function deleteAlarm(id) {
-    if (selectedDevice && !actionBusy)
+    if (selectedDevice && !actionBusy && requireCapability("alarms.delete"))
       trackProtocolAction(live.deleteAlarm(String(selectedDevice.uid), String(id)),
                           "Could not delete Sonos alarm")
   }
 
   function removeQueueItem(index, itemId) {
-    if (selectedDevice && !actionBusy)
+    if (selectedDevice && !actionBusy && requireCapability("queue.item.remove"))
       trackProtocolAction(live.removeQueueItem(
         String(selectedDevice.uid), Number(index), String(itemId)),
         "Could not remove queue item")
   }
 
   function clearQueue() {
-    if (selectedDevice && !actionBusy)
+    if (selectedDevice && !actionBusy && requireCapability("queue.clear"))
       trackProtocolAction(live.clearQueue(String(selectedDevice.uid)),
                           "Could not clear Sonos queue")
   }
 
   function requestVolume(value) {
     var device = selectedDevice
-    if (!device || !target) return
+    if (!device || !target || !requireCapability("volume.group.set")) return
     var volume = Math.max(0, Math.min(100, Math.round(Number(value))))
     queuedVolume = volume
     queuedVolumeGroupUid = String(target.groupUid || "")

@@ -14,6 +14,8 @@ Item {
 
   readonly property var sound: service ? service.soundDetails : ({})
   readonly property var playback: service ? service.playbackDetails : ({})
+  readonly property bool canSetSound: service
+    && service.hasCapability("sound.setting.set")
   readonly property bool hasSettings: available(sound.bass)
     || available(sound.treble) || available(sound.balance)
     || available(sound.loudness) || available(sound.night_mode)
@@ -90,6 +92,7 @@ Item {
         foreground: root.foreground
         focusable: true
         enabled: root.service && !root.service.actionBusy
+          && root.canSetSound
           && numberSetting.current > numberSetting.minimum
         onClicked: root.service.setSound(numberSetting.setting,
           Math.max(numberSetting.minimum, numberSetting.current - numberSetting.step))
@@ -107,6 +110,7 @@ Item {
         integer: true
         value: numberSetting.current
         enabled: root.service && !root.service.actionBusy
+          && root.canSetSound
         onReleased: function(value) {
           root.service.setSound(numberSetting.setting, Math.round(value))
         }
@@ -118,6 +122,7 @@ Item {
         foreground: root.foreground
         focusable: true
         enabled: root.service && !root.service.actionBusy
+          && root.canSetSound
           && numberSetting.current < numberSetting.maximum
         onClicked: root.service.setSound(numberSetting.setting,
           Math.min(numberSetting.maximum, numberSetting.current + numberSetting.step))
@@ -205,7 +210,7 @@ Item {
         foreground: root.foreground
         accent: Color.accent
         fontFamily: root.fontFamily
-        enabled: root.service && !root.service.actionBusy
+        enabled: root.service && !root.service.actionBusy && root.canSetSound
         onClicked: root.service.setSound("loudness", checked ? "off" : "on")
       }
 
@@ -222,6 +227,7 @@ Item {
         fontFamily: root.fontFamily
         enabled: root.service && !root.service.actionBusy
           && root.playback.play_mode_supported === true
+          && root.service.hasCapability("playback.option.set")
         onClicked: root.service.setPlaybackOption("crossfade", checked ? "off" : "on")
       }
 
@@ -234,7 +240,7 @@ Item {
         foreground: root.foreground
         accent: Color.accent
         fontFamily: root.fontFamily
-        enabled: root.service && !root.service.actionBusy
+        enabled: root.service && !root.service.actionBusy && root.canSetSound
         onClicked: root.service.setSound("night-mode", checked ? "off" : "on")
       }
 
@@ -247,7 +253,7 @@ Item {
         foreground: root.foreground
         accent: Color.accent
         fontFamily: root.fontFamily
-        enabled: root.service && !root.service.actionBusy
+        enabled: root.service && !root.service.actionBusy && root.canSetSound
         onClicked: root.service.setSound(
           "speech-enhancement", checked ? "off" : "on")
       }
@@ -267,7 +273,7 @@ Item {
         foreground: root.foreground
         accent: Color.accent
         fontFamily: root.fontFamily
-        enabled: root.service && !root.service.actionBusy
+        enabled: root.service && !root.service.actionBusy && root.canSetSound
         onClicked: root.service.setSound("sub-enabled", checked ? "off" : "on")
       }
 
@@ -300,7 +306,7 @@ Item {
         foreground: root.foreground
         accent: Color.accent
         fontFamily: root.fontFamily
-        enabled: root.service && !root.service.actionBusy
+        enabled: root.service && !root.service.actionBusy && root.canSetSound
         onClicked: root.service.setSound("surround-enabled", checked ? "off" : "on")
       }
 
@@ -313,7 +319,7 @@ Item {
         foreground: root.foreground
         accent: Color.accent
         fontFamily: root.fontFamily
-        enabled: root.service && !root.service.actionBusy
+        enabled: root.service && !root.service.actionBusy && root.canSetSound
         onClicked: root.service.setSound("surround-mode", checked ? "off" : "on")
       }
 

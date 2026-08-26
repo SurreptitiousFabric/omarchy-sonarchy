@@ -117,6 +117,10 @@ Item {
     return text === "" ? String(fallback || "Not reported") : text
   }
 
+  function can(operation) {
+    return service && service.hasCapability(operation)
+  }
+
   Timer {
     id: confirmTimer
     interval: 5000
@@ -367,6 +371,7 @@ Item {
           bordered: true
           focusable: true
           enabled: root.service && !root.service.actionBusy
+            && root.can("alarms.save")
             && /^([01]\d|2[0-3]):[0-5]\d$/.test(root.alarmTime)
           onClicked: root.service.saveAlarm({
             id: root.alarmId,
@@ -405,6 +410,7 @@ Item {
             foreground: root.foreground
             focusable: true
             enabled: root.service && !root.service.alarmsLoading
+              && root.can("alarms.list")
             onClicked: root.service.loadAlarms()
           }
         }
@@ -435,6 +441,7 @@ Item {
                 bordered: true
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
+                  && root.can("alarms.toggle")
                 onClicked: root.service.toggleAlarm(String(alarmCard.modelData.id),
                   alarmCard.modelData.enabled !== true)
               }
@@ -455,6 +462,7 @@ Item {
                 foreground: root.confirmation === alarmCard.deleteKey ? Color.urgent : root.foreground
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
+                  && root.can("alarms.delete")
                 onClicked: if (root.arm(alarmCard.deleteKey))
                   root.service.deleteAlarm(String(alarmCard.modelData.id))
               }
@@ -545,6 +553,7 @@ Item {
           bordered: true
           focusable: true
           enabled: root.service && !root.service.actionBusy && root.lineInIp !== ""
+            && root.can("sources.switch")
           onClicked: root.service.switchSource("line-in", root.lineInIp)
         }
 
@@ -569,6 +578,7 @@ Item {
           bordered: true
           focusable: true
           enabled: root.service && !root.service.actionBusy
+            && root.can("sources.switch")
           onClicked: root.service.switchSource("tv", "")
         }
 
@@ -654,6 +664,7 @@ Item {
           accent: Color.accent
           fontFamily: root.fontFamily
           enabled: root.service && !root.service.actionBusy
+            && root.can("devices.setting.set")
           onClicked: root.service.setDeviceSetting(
             "tv-autoplay", root.deviceInfo.tv_autoplay === true ? "off" : "on")
         }
@@ -669,6 +680,7 @@ Item {
           accent: Color.accent
           fontFamily: root.fontFamily
           enabled: root.service && !root.service.actionBusy
+            && root.can("devices.setting.set")
           onClicked: root.service.setDeviceSetting(
             "status-light", root.deviceInfo.status_light === true ? "off" : "on")
         }
@@ -684,6 +696,7 @@ Item {
           accent: Color.accent
           fontFamily: root.fontFamily
           enabled: root.service && !root.service.actionBusy
+            && root.can("devices.setting.set")
           onClicked: root.service.setDeviceSetting(
             "buttons-enabled", root.deviceInfo.buttons_enabled === true ? "off" : "on")
         }
@@ -699,6 +712,7 @@ Item {
           accent: Color.accent
           fontFamily: root.fontFamily
           enabled: root.service && !root.service.actionBusy
+            && root.can("devices.setting.set")
           onClicked: root.service.setDeviceSetting(
             "trueplay", root.deviceInfo.trueplay === true ? "off" : "on")
         }

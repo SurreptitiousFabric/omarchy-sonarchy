@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from sonarchy_backend.contracts import CAPABILITY_NAMES
 from sonarchy_backend.protocol import (
     MAX_PROTOCOL_LINE_BYTES,
     PROTOCOL_OPERATIONS,
@@ -707,6 +708,7 @@ def test_snapshot_capabilities_come_from_topology_and_advertised_actions():
 
     capabilities = decoded(output)[0]["capabilities"]
     assert capabilities == sorted(capabilities)
+    assert set(capabilities) <= CAPABILITY_NAMES
     assert "playback.next" in capabilities
     assert "playback.seek" in capabilities
     assert "playback.previous" not in capabilities

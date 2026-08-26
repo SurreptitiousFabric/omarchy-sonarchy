@@ -61,11 +61,7 @@ Item {
     playlistNameField.text = ""
     if (!service) return
     if (searchable && sourceKind !== "library") {
-      service.contentKind = sourceKind
-      service.contentTerm = ""
-      service.contentItems = []
-      service.contentTotal = 0
-      service.contentMeta = ({})
+      service.prepareContentSearch(sourceKind)
     } else {
       service.loadContent(sourceKind, "")
     }
@@ -96,6 +92,22 @@ Item {
     if (service.contentKind === "playlist")
       return String(service.contentMeta.playlistTitle || "PLAYLIST").toUpperCase()
     return "RESULTS"
+  }
+
+  function can(operation) {
+    return service && service.hasCapability(operation)
+  }
+
+  function canPlayCurrentKind() {
+    if (!service) return false
+    var kind = String(service.contentKind || "")
+    if (kind === "favorites") return can("content.favorite.play")
+    if (kind === "queue") return can("queue.item.play")
+    if (kind === "apple") return can("content.apple.play")
+    if (kind === "global") return can("content.global.play")
+    if (kind === "library" || kind === "playlist")
+      return can("queue.content.enqueue")
+    return kind === "playlists" && can("content.browse")
   }
 
   Timer {
@@ -169,6 +181,7 @@ Item {
           bordered: true
           focusable: true
           enabled: root.service && !root.service.contentLoading
+            && root.can("content.browse")
             && queryField.text.trim() !== ""
           onClicked: root.runSearch()
         }
@@ -228,6 +241,7 @@ Item {
           bordered: true
           focusable: true
           enabled: root.service && !root.service.actionBusy
+            && root.can("playlists.mutate")
             && playlistNameField.text.trim() !== ""
           onClicked: root.service.playlistAction("create", playlistNameField.text)
         }
@@ -239,6 +253,7 @@ Item {
           bordered: true
           focusable: true
           enabled: root.service && !root.service.actionBusy
+            && root.can("playlists.mutate")
             && playlistNameField.text.trim() !== ""
           onClicked: root.service.playlistAction("save-queue", playlistNameField.text)
         }
@@ -315,6 +330,7 @@ Item {
             focusable: true
             enabled: root.service && !root.service.actionBusy
               && !root.service.contentMeta.updating
+              && root.can("library.update.start")
             onClicked: root.service.startLibraryUpdate()
           }
 
@@ -325,6 +341,8 @@ Item {
             focusable: true
             iconSpinning: root.service ? root.service.contentLoading : false
             enabled: root.service && !root.service.contentLoading
+              && (root.sourceKind === "favorites"
+                  ? root.can("content.favorites.refresh") : root.can("content.browse"))
             onClicked: root.service.reloadContent()
           }
 
@@ -336,7 +354,7 @@ Item {
             foreground: root.confirmation === "queue-clear" ? Color.urgent : root.foreground
             bordered: true
             focusable: true
-            enabled: root.service && !root.service.actionBusy
+            enabled: root.service && !root.service.actionBusy && root.can("queue.clear")
             onClicked: if (root.arm("queue-clear")) root.service.clearQueue()
           }
 
@@ -348,6 +366,7 @@ Item {
             bordered: true
             focusable: true
             enabled: root.service && !root.service.actionBusy
+              && root.can("playlists.mutate")
             onClicked: root.service.playlistAction("play", root.service.contentTerm)
           }
 
@@ -359,6 +378,7 @@ Item {
             bordered: true
             focusable: true
             enabled: root.service && !root.service.actionBusy
+              && root.can("playlists.mutate")
             onClicked: if (root.arm("playlist-delete"))
               root.service.playlistAction("delete", root.service.contentTerm)
           }
@@ -459,7 +479,8 @@ Item {
                 foreground: root.foreground
                 focusable: true
                 selected: modelData.current === true
-                enabled: root.service && !root.service.actionBusy && modelData.playable !== false
+                enabled: root.service && !root.service.actionBusy
+                  && root.canPlayCurrentKind() && modelData.playable !== false
                 opacity: enabled ? 1.0 : 0.35
                 onClicked: root.service.playContent(modelData)
               }
@@ -473,6 +494,7 @@ Item {
                 bordered: true
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
+                  && root.can("content.apple.album.play")
                 onClicked: root.service.playAppleAlbum(modelData)
               }
 
@@ -483,7 +505,8 @@ Item {
                 foreground: root.foreground
                 bordered: true
                 focusable: true
-                enabled: root.service && !root.service.actionBusy && modelData.playable !== false
+                enabled: root.service && !root.service.actionBusy
+                  && root.can("queue.content.enqueue") && modelData.playable !== false
                 onClicked: root.service.enqueueContent(modelData, "next")
               }
 
@@ -494,7 +517,8 @@ Item {
                 foreground: root.foreground
                 bordered: true
                 focusable: true
-                enabled: root.service && !root.service.actionBusy && modelData.playable !== false
+                enabled: root.service && !root.service.actionBusy
+                  && root.can("queue.content.enqueue") && modelData.playable !== false
                 onClicked: root.service.enqueueContent(modelData, "end")
               }
 
@@ -504,7 +528,8 @@ Item {
                 tooltipText: "Move up"
                 foreground: root.foreground
                 focusable: true
-                enabled: root.service && !root.service.actionBusy && Number(modelData.index) > 0
+                enabled: root.service && !root.service.actionBusy
+                  && root.can("playlists.track.mutate") && Number(modelData.index) > 0
                 onClicked: root.service.playlistTrackAction("up", modelData)
               }
 
@@ -515,6 +540,7 @@ Item {
                 foreground: root.foreground
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
+                  && root.can("playlists.track.mutate")
                   && Number(modelData.index) < root.service.contentItems.length - 1
                 onClicked: root.service.playlistTrackAction("down", modelData)
               }
@@ -528,6 +554,9 @@ Item {
                 foreground: root.confirmation === resultCard.rowKey ? Color.urgent : root.foreground
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
+                  && (root.service.contentKind === "queue"
+                      ? root.can("queue.item.remove")
+                      : root.can("playlists.track.mutate"))
                 onClicked: {
                   if (!root.arm(resultCard.rowKey)) return
                   if (root.service.contentKind === "queue")

@@ -40,8 +40,10 @@ Item {
   function enqueueContent(item, mode) { store.enqueueContent(item, mode) }
   function ensureFavorites() { store.ensureFavorites() }
   function formatTime(value) { return store.formatTime(value) }
+  function hasCapability(name) { return store.hasCapability(name) }
   function loadAlarms() { store.loadAlarms() }
   function loadContent(kind, term) { store.loadContent(kind, term) }
+  function prepareContentSearch(kind) { store.prepareContentSearch(kind) }
   function movePlaybackToRoom(roomUid) { store.movePlaybackToRoom(roomUid) }
   function playAppleAlbum(item) { store.playAppleAlbum(item) }
   function playContent(item) { store.playContent(item) }

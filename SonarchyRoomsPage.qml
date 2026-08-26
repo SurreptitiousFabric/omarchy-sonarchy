@@ -160,6 +160,7 @@ Item {
           bordered: true
           focusable: true
           enabled: root.service && !root.service.actionBusy
+            && root.service.hasCapability("devices.rename")
             && renameField.text.trim() !== ""
             && root.device
             && renameField.text.trim() !== String(root.device.name || "")
@@ -215,7 +216,8 @@ Item {
             leftAlign: true
             selected: root.service && root.service.target
               && String(root.service.target.groupUid) === String(modelData.uid)
-            enabled: !selected
+            enabled: !selected && root.service
+              && root.service.hasCapability("selection.group.set")
             onClicked: root.service.selectSession(String(modelData.uid))
           }
         }
@@ -267,6 +269,7 @@ Item {
               focusable: true
               selected: exactRoom
               enabled: !exactRoom && !blockedMove && root.service && !root.service.actionBusy
+                && root.service.hasCapability("playback.room.move")
               tooltipText: blockedMove
                 ? "Change group membership below before moving audio here"
                 : (exactRoom ? "Current room" : "Use this room")
@@ -328,6 +331,7 @@ Item {
               foreground: root.foreground
               focusable: true
               enabled: root.service && !root.service.actionBusy
+                && root.service.hasCapability("volume.room.set")
                 && Number(roomRow.modelData.volume || 0) > 0
               onClicked: root.service.adjustRoomVolume(
                 String(roomRow.modelData.uid), -Math.max(1, root.volumeStep))
@@ -344,6 +348,7 @@ Item {
               integer: true
               value: Number(roomRow.modelData.volume || 0)
               enabled: root.service && !root.service.actionBusy
+                && root.service.hasCapability("volume.room.set")
               onReleased: function(value) {
                 root.service.setRoomVolume(String(roomRow.modelData.uid), value)
               }
@@ -355,6 +360,7 @@ Item {
               foreground: root.foreground
               focusable: true
               enabled: root.service && !root.service.actionBusy
+                && root.service.hasCapability("volume.room.set")
                 && Number(roomRow.modelData.volume || 0) < 100
               onClicked: root.service.adjustRoomVolume(
                 String(roomRow.modelData.uid), Math.max(1, root.volumeStep))
@@ -366,6 +372,8 @@ Item {
               tooltipText: roomRow.modelData.mute ? "Unmute room" : "Mute room"
               foreground: root.foreground
               focusable: true
+              enabled: root.service && !root.service.actionBusy
+                && root.service.hasCapability("mute.room.set")
               onClicked: root.service.setRoomMute(
                 String(roomRow.modelData.uid), !roomRow.modelData.mute)
             }
@@ -400,7 +408,8 @@ Item {
             iconText: "󰓅"
             foreground: root.foreground
             bordered: true
-            enabled: !root.groupingApplying
+            enabled: !root.groupingApplying && root.service
+              && root.service.hasCapability("topology.members.set")
             focusable: true
             onClicked: root.stageEverywhere()
           }
@@ -428,7 +437,8 @@ Item {
               foreground: root.foreground
               selected: root.roomStaged(String(modelData.uid))
               focusable: true
-              enabled: !root.groupingApplying
+              enabled: !root.groupingApplying && root.service
+                && root.service.hasCapability("topology.members.set")
               onClicked: root.toggleStagedRoom(String(modelData.uid))
             }
           }
@@ -456,6 +466,7 @@ Item {
             active: root.groupingDirty
             enabled: root.groupingDirty && root.stagedRoomUids.length > 0
               && !root.groupingApplying
+              && root.service && root.service.hasCapability("topology.members.set")
             onClicked: root.applyStagedRooms()
           }
         }

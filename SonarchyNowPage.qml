@@ -27,6 +27,9 @@ Item {
     ? String(service.playbackDetails.repeat) : "off"
   readonly property bool playModeSupported: service
     && service.playbackDetails.play_mode_supported === true
+  readonly property bool canSeek: service && service.hasCapability("playback.seek")
+  readonly property bool canSetGroupVolume: service
+    && service.hasCapability("volume.group.set")
   readonly property bool editing: sleepPicker.popupOpen
 
   function nextRepeatMode() {
@@ -228,6 +231,7 @@ Item {
             foreground: root.foreground
             focusable: true
             enabled: root.service && !root.service.actionBusy
+              && root.canSeek
               && Number(root.live.positionSec || 0) > 0
             opacity: enabled ? 0.82 : 0.35
             onClicked: root.service.seek(
@@ -245,7 +249,7 @@ Item {
             step: 1
             integer: true
             value: Number(root.live.positionSec || 0)
-            enabled: root.service && !root.service.actionBusy
+            enabled: root.service && !root.service.actionBusy && root.canSeek
             onReleased: function(value) { root.service.seek(value) }
           }
 
@@ -256,6 +260,7 @@ Item {
             foreground: root.foreground
             focusable: true
             enabled: root.service && !root.service.actionBusy
+              && root.canSeek
               && Number(root.live.positionSec || 0) < Number(root.live.durationSec || 0)
             opacity: enabled ? 0.82 : 0.35
             onClicked: root.service.seek(Math.min(
@@ -303,6 +308,7 @@ Item {
             foreground: root.foreground
             focusable: true
             enabled: root.service && !root.service.actionBusy
+              && root.service.hasCapability("playback.previous")
             opacity: enabled ? 1.0 : 0.35
             onClicked: root.service.runAction("previous")
           }
@@ -317,6 +323,7 @@ Item {
             horizontalPadding: Style.space(14)
             verticalPadding: Style.space(9)
             enabled: root.service && !root.service.actionBusy
+              && root.service.hasCapability("playback.toggle")
             opacity: enabled ? 1.0 : 0.4
             onClicked: root.service.runAction("play-pause")
           }
@@ -327,6 +334,7 @@ Item {
             foreground: root.foreground
             focusable: true
             enabled: root.service && !root.service.actionBusy
+              && root.service.hasCapability("playback.next")
             opacity: enabled ? 1.0 : 0.35
             onClicked: root.service.runAction("next")
           }
@@ -341,6 +349,7 @@ Item {
           foreground: root.foreground
           focusable: true
           enabled: root.service && !root.service.actionBusy
+            && root.service.hasCapability("playback.stop")
           opacity: enabled ? 0.62 : 0.28
           onClicked: root.service.runAction("stop")
         }
@@ -390,6 +399,8 @@ Item {
             foreground: root.foreground
             focusable: true
             selected: root.device && root.device.muted
+            enabled: root.service && !root.service.actionBusy
+              && root.service.hasCapability("mute.group.set")
             onClicked: root.service.runAction("mute-toggle")
           }
 
@@ -403,6 +414,7 @@ Item {
             step: Math.max(1, root.volumeStep)
             integer: true
             value: root.device ? Number(root.device.volume || 0) : 0
+            enabled: root.service && !root.service.actionBusy && root.canSetGroupVolume
             opacity: root.device && root.device.muted ? 0.48 : 1.0
             onMoved: function(value) { if (root.service) root.service.requestVolume(value) }
             onReleased: function(value) { if (root.service) root.service.requestVolume(value) }
@@ -441,6 +453,7 @@ Item {
             focusable: true
             selected: root.service && root.service.playbackDetails.shuffle === true
             enabled: root.service && !root.service.actionBusy && root.playModeSupported
+              && root.service.hasCapability("playback.option.set")
             opacity: enabled ? 1.0 : 0.35
             onClicked: root.service.setPlaybackOption(
               "shuffle", root.service.playbackDetails.shuffle === true ? "off" : "on")
@@ -455,6 +468,7 @@ Item {
             focusable: true
             selected: root.repeatMode !== "off"
             enabled: root.service && !root.service.actionBusy && root.playModeSupported
+              && root.service.hasCapability("playback.option.set")
             opacity: enabled ? 1.0 : 0.35
             onClicked: root.service.setPlaybackOption("repeat", root.nextRepeatMode())
           }
@@ -472,6 +486,8 @@ Item {
           text: "SLEEP TIMER"
           foreground: root.foreground
           fontFamily: root.fontFamily
+          enabled: root.service && !root.service.actionBusy
+            && root.service.hasCapability("playback.option.set")
         }
 
         SonarchyDropdown {
