@@ -2,7 +2,10 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-from sonarchy_backend.artwork_probe import speaker_artwork_available
+from sonarchy_backend.artwork_probe import (
+    SPEAKER_ARTWORK_TIMEOUT,
+    speaker_artwork_available,
+)
 
 
 @patch("sonarchy_backend.artwork_probe.requests.get")
@@ -17,8 +20,12 @@ def test_probe_accepts_only_successful_images_without_redirects(get):
         headers={"Accept": "image/*"},
         stream=True,
         allow_redirects=False,
-        timeout=(0.5, 1.0),
+        timeout=SPEAKER_ARTWORK_TIMEOUT,
     )
+
+
+def test_probe_allows_slow_speaker_responses_without_relaxing_connect_timeout():
+    assert SPEAKER_ARTWORK_TIMEOUT == (0.5, 5.0)
 
 
 @patch("sonarchy_backend.artwork_probe.requests.get")

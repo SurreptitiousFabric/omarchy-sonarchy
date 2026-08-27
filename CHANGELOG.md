@@ -72,6 +72,8 @@
 - Added per-room volume and mute controls directly beneath Group Volume on the
   Now page. Now and the all-room mixer share one Omarchy-themed row that reads
   authoritative room volume/mute values instead of the active group aggregate.
+- Allowed slow speaker-local artwork responses up to five seconds while
+  retaining the short connection timeout and existing image validation.
 
 ## 4.1.0 — 2026-08-26
 

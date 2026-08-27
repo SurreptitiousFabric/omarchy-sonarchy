@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import requests
 
+SPEAKER_ARTWORK_TIMEOUT = (0.5, 5.0)
+
 
 def speaker_artwork_available(url: str) -> bool:
     """Check a pre-authorized speaker-local artwork URL without retaining its body."""
@@ -11,7 +13,7 @@ def speaker_artwork_available(url: str) -> bool:
             headers={"Accept": "image/*"},
             stream=True,
             allow_redirects=False,
-            timeout=(0.5, 1.0),
+            timeout=SPEAKER_ARTWORK_TIMEOUT,
         ) as response:
             if response.status_code != 200:
                 return False
