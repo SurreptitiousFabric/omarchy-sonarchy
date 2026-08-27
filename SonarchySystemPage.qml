@@ -14,43 +14,27 @@ Item {
   property string section: "alarms"
   property string confirmation: ""
 
-  property string alarmId: "new"
-  property string alarmRoomUid: ""
-  property string alarmTime: "07:00"
-  property string alarmRecurrence: "DAILY"
-  property int alarmDuration: 0
-  property int alarmVolume: 25
-  property bool alarmEnabled: true
-  property bool alarmGrouped: false
-  property string alarmProgram: "chime"
   property string lineInRoomUid: ""
 
   readonly property var deviceInfo: service ? service.deviceDetails : ({})
   readonly property bool hasTvSource: deviceInfo.tv_autoplay !== null
     && deviceInfo.tv_autoplay !== undefined
   readonly property var lineInSources: lineInOptions()
-  readonly property var alarmRooms: alarmRoomOptions()
-  readonly property bool alarmRoomAvailable: optionContains(alarmRooms, alarmRoomUid)
-  readonly property bool editing: alarmTimeField.activeFocus
-    || sectionPicker.popupOpen || recurrencePicker.popupOpen
-    || durationPicker.popupOpen || programPicker.popupOpen
-    || alarmRoomPicker.popupOpen || lineInPicker.popupOpen
+  readonly property bool editing: alarmEditor.editing
+    || sectionPicker.popupOpen || lineInPicker.popupOpen
 
   onVisibleChanged: {
     if (!visible || !service) return
     service.refreshDetails()
     service.loadAlarms()
     service.ensureFavorites()
-    root.selectAvailableAlarmRoom()
     root.selectAvailableLineIn()
   }
 
   onDeviceChanged: {
-    root.selectAvailableAlarmRoom()
     root.selectAvailableLineIn()
     if (visible && service) service.refreshDetails()
   }
-  onAlarmRoomsChanged: root.selectAvailableAlarmRoom()
   onLineInSourcesChanged: root.selectAvailableLineIn()
 
   function ensureVisible(item) {
@@ -74,72 +58,6 @@ Item {
     confirmation = key
     confirmTimer.restart()
     return false
-  }
-
-  function resetAlarm() {
-    alarmId = "new"
-    alarmRoomUid = device ? String(device.uid || "") : ""
-    alarmTime = "07:00"
-    alarmRecurrence = "DAILY"
-    alarmDuration = 0
-    alarmVolume = device ? Number(device.volume || 25) : 25
-    alarmEnabled = true
-    alarmGrouped = false
-    alarmProgram = "chime"
-    alarmTimeField.text = alarmTime
-  }
-
-  function editAlarm(item) {
-    alarmId = String(item.id)
-    alarmRoomUid = String(item.room_uid || "")
-    alarmTime = String(item.time || "07:00")
-    alarmRecurrence = String(item.recurrence || "DAILY")
-    alarmDuration = Number(item.duration || 0)
-    alarmVolume = Number(item.volume || 25)
-    alarmEnabled = item.enabled === true
-    alarmGrouped = item.include_grouped === true
-    alarmProgram = "keep"
-    alarmTimeField.text = alarmTime
-  }
-
-  function alarmRoomOptions() {
-    var options = []
-    var rooms = service ? service.rooms : []
-    for (var i = 0; i < rooms.length; i++) {
-      if (rooms[i].online === false) continue
-      options.push({ value: String(rooms[i].uid), label: String(rooms[i].name) })
-    }
-    return options
-  }
-
-  function optionContains(options, value) {
-    for (var i = 0; i < options.length; i++) {
-      if (String(options[i].value) === String(value || "")) return true
-    }
-    return false
-  }
-
-  function selectAvailableAlarmRoom() {
-    var options = alarmRoomOptions()
-    if (optionContains(options, alarmRoomUid)) return
-    var selectedUid = device ? String(device.uid || "") : ""
-    alarmRoomUid = optionContains(options, selectedUid)
-      ? selectedUid : (options.length > 0 ? String(options[0].value) : "")
-  }
-
-  function alarmProgramOptions() {
-    var options = []
-    if (alarmId !== "new") options.push({ value: "keep", label: "Keep current sound" })
-    options.push({ value: "chime", label: "Sonos Chime" })
-    var favorites = service && service.liveFavorites && service.liveFavorites.items
-      ? service.liveFavorites.items : []
-    for (var i = 0; i < favorites.length; i++) {
-      options.push({
-        value: "favorite:" + String(favorites[i].id),
-        label: String(favorites[i].title || "Sonos Favorite")
-      })
-    }
-    return options
   }
 
   function lineInOptions() {
@@ -225,214 +143,15 @@ Item {
         spacing: Style.space(9)
         visible: root.section === "alarms"
 
-        Item {
+        SonarchyAlarmEditor {
+          id: alarmEditor
           width: parent.width
-          implicitHeight: Math.max(alarmHeader.implicitHeight, newAlarmButton.implicitHeight)
-
-          PanelSectionHeader {
-            id: alarmHeader
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.alarmId === "new" ? "NEW ALARM" : "EDIT ALARM"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
-
-          Button {
-            id: newAlarmButton
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            text: "New"
-            iconText: "󰐕"
-            foreground: root.foreground
-            bordered: true
-            focusable: true
-            onClicked: root.resetAlarm()
-          }
-        }
-
-        SonarchyDropdown {
-          id: alarmRoomPicker
-          width: parent.width
-          label: "ROOM"
-          value: root.alarmRoomUid
-          options: root.alarmRooms
+          bar: root.bar
+          service: root.service
+          device: root.device
+          scrollTarget: systemFlick
           foreground: root.foreground
           fontFamily: root.fontFamily
-          onChanged: function(value) { root.alarmRoomUid = String(value) }
-        }
-
-        Row {
-          width: parent.width
-          spacing: Style.space(7)
-
-          TextField {
-            id: alarmTimeField
-            width: Style.space(95)
-            placeholderText: "HH:MM"
-            text: root.alarmTime
-            foreground: root.foreground
-            accent: Color.accent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            onTextChanged: root.alarmTime = text.trim()
-            Keys.onEscapePressed: focus = false
-          }
-
-          SonarchyDropdown {
-            id: recurrencePicker
-            width: parent.width - alarmTimeField.width - parent.spacing
-            label: "REPEATS"
-            value: root.alarmRecurrence
-            options: [
-              { value: "ONCE", label: "Once" },
-              { value: "DAILY", label: "Daily" },
-              { value: "WEEKDAYS", label: "Weekdays" },
-              { value: "WEEKENDS", label: "Weekends" }
-            ]
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onChanged: function(value) { root.alarmRecurrence = String(value) }
-          }
-        }
-
-        SonarchyDropdown {
-          id: durationPicker
-          width: parent.width
-          label: "DURATION"
-          value: String(root.alarmDuration)
-          options: [
-            { value: "0", label: "No limit" },
-            { value: "15", label: "15 minutes" },
-            { value: "30", label: "30 minutes" },
-            { value: "45", label: "45 minutes" },
-            { value: "60", label: "1 hour" },
-            { value: "90", label: "1½ hours" },
-            { value: "120", label: "2 hours" }
-          ]
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          onChanged: function(value) { root.alarmDuration = Number(value) }
-        }
-
-        SonarchyDropdown {
-          id: programPicker
-          width: parent.width
-          label: "SOUND"
-          value: root.alarmProgram
-          options: root.alarmProgramOptions()
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          onChanged: function(value) { root.alarmProgram = String(value) }
-        }
-
-        Item {
-          width: parent.width
-          implicitHeight: Math.max(alarmVolumeHeader.implicitHeight, alarmVolumeValue.implicitHeight)
-
-          PanelSectionHeader {
-            id: alarmVolumeHeader
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: "ALARM VOLUME"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
-
-          Text {
-            id: alarmVolumeValue
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.alarmVolume + "%"
-            color: Qt.darker(root.foreground, 1.35)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
-          }
-        }
-
-        Row {
-          width: parent.width
-          spacing: Style.space(6)
-
-          Button {
-            text: "−"
-            tooltipText: "Lower alarm volume"
-            foreground: root.foreground
-            focusable: true
-            enabled: root.alarmVolume > 0
-            onClicked: root.alarmVolume = Math.max(0, root.alarmVolume - 1)
-          }
-
-          SonarchySlider {
-            scrollTarget: systemFlick
-            width: parent.width - parent.children[0].width - parent.children[2].width
-              - parent.spacing * 2
-            anchors.verticalCenter: parent.verticalCenter
-            bar: root.bar
-            minimum: 0
-            maximum: 100
-            step: 1
-            integer: true
-            value: root.alarmVolume
-            onMoved: function(value) { root.alarmVolume = Math.round(value) }
-            onReleased: function(value) { root.alarmVolume = Math.round(value) }
-          }
-
-          Button {
-            text: "+"
-            tooltipText: "Raise alarm volume"
-            foreground: root.foreground
-            focusable: true
-            enabled: root.alarmVolume < 100
-            onClicked: root.alarmVolume = Math.min(100, root.alarmVolume + 1)
-          }
-        }
-
-        SonarchyToggle {
-          width: parent.width
-          label: "Enabled"
-          description: "Allow this alarm to run"
-          checked: root.alarmEnabled
-          foreground: root.foreground
-          accent: Color.accent
-          fontFamily: root.fontFamily
-          onClicked: root.alarmEnabled = !root.alarmEnabled
-        }
-
-        SonarchyToggle {
-          width: parent.width
-          label: "Include grouped rooms"
-          description: "Play on rooms grouped with the alarm room"
-          checked: root.alarmGrouped
-          foreground: root.foreground
-          accent: Color.accent
-          fontFamily: root.fontFamily
-          onClicked: root.alarmGrouped = !root.alarmGrouped
-        }
-
-        Button {
-          width: parent.width
-          text: root.alarmId === "new" ? "Create alarm" : "Save alarm"
-          iconText: "󰆓"
-          foreground: root.foreground
-          bordered: true
-          focusable: true
-          enabled: root.service && !root.service.actionBusy
-            && root.can("alarms.save")
-            && root.alarmRoomAvailable
-            && /^([01]\d|2[0-3]):[0-5]\d$/.test(root.alarmTime)
-          onClicked: root.service.saveAlarm({
-            id: root.alarmId,
-            time: root.alarmTime,
-            recurrence: root.alarmRecurrence,
-            duration: root.alarmDuration,
-            volume: root.alarmVolume,
-            enabled: root.alarmEnabled,
-            includeGrouped: root.alarmGrouped,
-            program: root.alarmProgram,
-            roomUid: root.alarmRoomUid
-          })
         }
 
         PanelSeparator { foreground: root.foreground }
@@ -502,7 +221,7 @@ Item {
                 foreground: root.foreground
                 bordered: true
                 focusable: true
-                onClicked: root.editAlarm(alarmCard.modelData)
+                onClicked: alarmEditor.editAlarm(alarmCard.modelData)
               }
 
               Button {

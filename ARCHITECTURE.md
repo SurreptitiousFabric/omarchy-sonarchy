@@ -32,6 +32,9 @@ QML must not add subprocess-based command paths.
 compatibility view model and user actions, `SonarchyProtocolRouter.qml` owns
 correlated results and timers, `SonarchyArtwork.qml` owns bounded artwork state
 and URL policy, and `LiveService.qml` alone owns the backend process/protocol.
+`SonarchyAlarmEditor.qml` owns the alarm draft, room and program options, input
+validation, and save projection; `SonarchySystemPage.qml` composes it with the
+saved-alarm list and read-only device/source sections.
 
 ## Omarchy visual language
 

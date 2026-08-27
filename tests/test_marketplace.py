@@ -307,18 +307,24 @@ def test_alarm_mutations_use_the_persistent_backend_and_no_process_remains():
 
 def test_alarm_editor_uses_authoritative_keyboard_reachable_room_options():
     system_page = (ROOT / "SonarchySystemPage.qml").read_text()
+    alarm_editor = (ROOT / "SonarchyAlarmEditor.qml").read_text()
     store = (ROOT / "SonarchyStore.qml").read_text()
     live = (ROOT / "LiveService.qml").read_text()
     router = (ROOT / "SonarchyProtocolRouter.qml").read_text()
 
-    assert "function alarmRoomOptions()" in system_page
-    assert "var rooms = service ? service.rooms : []" in system_page
-    assert "if (rooms[i].online === false) continue" in system_page
-    assert "id: alarmRoomPicker" in system_page
-    assert 'label: "ROOM"' in system_page
-    assert "alarmRoomPicker.popupOpen" in system_page
-    assert 'alarmRoomUid = String(item.room_uid || "")' in system_page
-    assert "&& root.alarmRoomAvailable" in system_page
+    assert "SonarchyAlarmEditor {" in system_page
+    assert "alarmEditor.editing" in system_page
+    assert "alarmEditor.editAlarm(alarmCard.modelData)" in system_page
+    assert "scrollTarget: systemFlick" in system_page
+    assert "property string alarmRoomUid" not in system_page
+    assert "function alarmRoomOptions()" in alarm_editor
+    assert "var rooms = service ? service.rooms : []" in alarm_editor
+    assert "if (rooms[i].online === false) continue" in alarm_editor
+    assert "id: alarmRoomPicker" in alarm_editor
+    assert 'label: "ROOM"' in alarm_editor
+    assert "alarmRoomPicker.popupOpen" in alarm_editor
+    assert 'alarmRoomUid = String(item.room_uid || "")' in alarm_editor
+    assert "&& editor.alarmRoomAvailable" in alarm_editor
     assert 'alarmRoomUid: String(editor.roomUid || "")' in store
     assert "alarmRoomUid: alarm.alarmRoomUid" in live
     assert 'failedOperation.indexOf("alarms.") === 0' in router
@@ -426,6 +432,7 @@ def test_production_components_stay_within_size_guardrails():
         "SonarchyArtwork.qml",
         "LiveService.qml",
         "SonarchySystemPage.qml",
+        "SonarchyAlarmEditor.qml",
         "SonarchyInfoRow.qml",
     )
 
@@ -517,14 +524,17 @@ def test_protocol_requests_keep_background_and_action_state_correlated():
 
 
 def test_page_sliders_scroll_the_page_without_wheel_mutations():
-    pages = "\n".join(path.read_text() for path in sorted(ROOT.glob("Sonarchy*Page.qml")))
+    controls = "\n".join(
+        path.read_text()
+        for path in (*sorted(ROOT.glob("Sonarchy*Page.qml")), ROOT / "SonarchyAlarmEditor.qml")
+    )
     slider = (ROOT / "SonarchySlider.qml").read_text()
     runtime_test = (ROOT / "tests/qml/tst_SonarchySlider.qml").read_text()
     runtime_runner = (ROOT / "tests/qml/run-component-tests.sh").read_text()
 
-    assert "PanelSlider {" not in pages
-    assert pages.count("SonarchySlider {") == 5
-    assert pages.count("scrollTarget:") == 5
+    assert "PanelSlider {" not in controls
+    assert controls.count("SonarchySlider {") == 5
+    assert controls.count("scrollTarget:") >= controls.count("SonarchySlider {")
     assert "MouseArea {" in slider
     assert "acceptedButtons: Qt.NoButton" in slider
     assert "event.accepted = true" in slider
