@@ -143,6 +143,14 @@ architecture note explaining why further separation would worsen cohesion.
 `Service.qml` remains a thin public facade below 350 lines. Each internal QML
 service component remains below 800 lines and has one named responsibility.
 
+Current reviewed QML modules above the 600-line trigger are:
+
+| Module | Reviewed responsibility | Existing separation boundary |
+|---|---|---|
+| `SonarchyStore.qml` | Page-facing state projection and capability-gated user actions | Content navigation, artwork, protocol routing, and process ownership are separate components |
+| `SonarchyBrowsePage.qml` | Browse/search presentation and keyboard interaction | Requests, authoritative results, validation, and mutations remain in the Store/backend |
+| `BarWidget.qml` | Root bar/popup composition and shared spatial focus routing | Pages, navigation, reusable controls, state, and backend protocol ownership remain separate |
+
 ## Verification gates
 
 - One persistent backend process and no one-shot `Process` in `Service.qml`.

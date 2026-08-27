@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 267 automated Python tests pass with 83% branch coverage, alongside
+- [x] All 292 automated Python tests pass with 84% branch coverage, alongside
   17 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
