@@ -22,7 +22,7 @@ owners.
 - Alarm create, room-aware edit, enable/disable, and delete, including Favorite sounds
 - Line-in and TV source switching
 - EQ, home-theater, Sub, surround, and supported device controls
-- Speaker model, versions, battery, microphone, voice, and source information
+- Speaker model, versions, battery, microphone, voice, source, and reported TV audio format
 - Owner-only state, cached discovery, automatic reconnect, and keyboard controls
 
 Destructive queue, playlist, and alarm actions require the same focused action

@@ -78,6 +78,19 @@ def _battery(speaker: Any) -> dict[str, Any] | None:
     }
 
 
+def _tv_audio_format(speaker: Any) -> dict[str, str] | None:
+    if _optional_bool(speaker, "is_soundbar") is not True:
+        return None
+    value = clean(_optional(speaker, "soundbar_audio_input_format"))[:80]
+    if not value:
+        return {"state": "unavailable", "label": "Temporarily unavailable"}
+    if value.lower().startswith("unknown audio input format"):
+        return {"state": "unknown", "label": "Unknown format"}
+    if value.lower() in {"no input connected", "no input", "no audio", "pcm 2.0 no audio"}:
+        return {"state": "idle", "label": value}
+    return {"state": "active", "label": value}
+
+
 def project_device_details(speaker: Any) -> dict[str, Any]:
     coordinator = coordinator_for(speaker)
     speaker_ip = clean(getattr(speaker, "ip_address", ""))
@@ -143,6 +156,7 @@ def project_device_details(speaker: Any) -> dict[str, Any]:
             "hardware_version": clean(speaker_info.get("hardware_version")),
             "channel": clean(_optional(speaker, "channel")),
             "source": source,
+            "tv_audio_format": _tv_audio_format(speaker),
             "tv_autoplay": selected_tv_autoplay,
             "status_light": _optional_bool(speaker, "status_light"),
             "buttons_enabled": _optional_bool(speaker, "buttons_enabled"),

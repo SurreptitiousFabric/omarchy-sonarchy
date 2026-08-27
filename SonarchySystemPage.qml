@@ -644,13 +644,21 @@ Item {
           onClicked: root.service.switchSource("tv", "")
         }
 
-        Text {
-          width: parent.width
-          text: "Current source: " + root.valueText(root.deviceInfo.source, "Unknown")
-          color: Qt.darker(root.foreground, 1.35)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          wrapMode: Text.WordWrap
+        SonarchyInfoRow {
+          label: "Current source"
+          value: root.valueText(root.deviceInfo.source, "Unknown")
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+        }
+
+        SonarchyInfoRow {
+          visible: root.deviceInfo.tv_audio_format !== null
+            && root.deviceInfo.tv_audio_format !== undefined
+          label: "TV format"
+          value: root.deviceInfo.tv_audio_format
+            ? String(root.deviceInfo.tv_audio_format.label || "Unknown format") : "Unknown format"
+          foreground: root.foreground
+          fontFamily: root.fontFamily
         }
       }
 
@@ -687,14 +695,12 @@ Item {
           wrapMode: Text.WordWrap
         }
 
-        Text {
-          width: parent.width
+        SonarchyInfoRow {
           visible: String(root.deviceInfo.serial_number || "") !== ""
-          text: "Serial: " + String(root.deviceInfo.serial_number)
-          color: Qt.darker(root.foreground, 1.4)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
+          label: "Serial"
+          value: String(root.deviceInfo.serial_number || "")
+          foreground: root.foreground
+          fontFamily: root.fontFamily
         }
 
         Text {
@@ -777,17 +783,15 @@ Item {
             "trueplay", root.deviceInfo.trueplay === true ? "off" : "on")
         }
 
-        Text {
-          width: parent.width
+        SonarchyInfoRow {
           visible: root.deviceInfo.mic_enabled !== null
             && root.deviceInfo.mic_enabled !== undefined
-          text: "Microphone: " + (root.deviceInfo.mic_enabled === true ? "on" : "off")
-            + "  ·  Voice service: "
+          label: "Microphone"
+          value: (root.deviceInfo.mic_enabled === true ? "on" : "off")
+            + "  ·  Voice service "
             + (root.deviceInfo.voice_service_configured === true ? "configured" : "not configured")
-          color: Qt.darker(root.foreground, 1.4)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
+          foreground: root.foreground
+          fontFamily: root.fontFamily
         }
       }
     }

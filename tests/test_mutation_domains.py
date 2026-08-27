@@ -1115,3 +1115,45 @@ def test_device_details_project_supported_state_without_private_autoplay_identit
     assert details["device"]["battery"]["level"] == 80
     assert details["group"]["members"][0]["uid"] == "R1"
     assert "RoomUUID" not in str(details)
+
+
+@pytest.mark.parametrize(
+    ("reported", "state"),
+    (
+        ("Stereo", "active"),
+        ("Dolby 5.1", "active"),
+        ("No input connected", "idle"),
+        ("No audio", "idle"),
+        ("Unknown audio input format: 123", "unknown"),
+    ),
+)
+def test_tv_audio_format_normalizes_supported_soundbar_values(reported, state):
+    room = SettingsSpeaker()
+    room.soundbar_audio_input_format = reported
+
+    details = project_device_details(room)
+
+    expected_label = "Unknown format" if state == "unknown" else reported
+    assert details["device"]["tv_audio_format"] == {
+        "state": state,
+        "label": expected_label,
+    }
+
+
+def test_tv_audio_format_is_absent_for_unsupported_rooms():
+    room = SettingsSpeaker()
+    room.is_soundbar = False
+
+    assert project_device_details(room)["device"]["tv_audio_format"] is None
+
+
+def test_tv_audio_format_reports_unavailable_without_raising_on_malformed_response():
+    class MalformedFormatSpeaker(SettingsSpeaker):
+        @property
+        def soundbar_audio_input_format(self):
+            raise ValueError("malformed HTAudioIn")
+
+    assert project_device_details(MalformedFormatSpeaker())["device"]["tv_audio_format"] == {
+        "state": "unavailable",
+        "label": "Temporarily unavailable",
+    }

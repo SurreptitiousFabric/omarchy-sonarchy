@@ -324,6 +324,20 @@ def test_alarm_editor_uses_authoritative_keyboard_reachable_room_options():
     assert 'failedOperation.indexOf("alarms.") === 0' in router
 
 
+def test_tv_audio_format_uses_the_shared_read_only_information_row():
+    system_page = (ROOT / "SonarchySystemPage.qml").read_text()
+    info_row = (ROOT / "SonarchyInfoRow.qml").read_text()
+    devices = (ROOT / "sonarchy_backend/domains/devices.py").read_text()
+
+    assert '"tv_audio_format": _tv_audio_format(speaker)' in devices
+    assert system_page.count("SonarchyInfoRow {") >= 2
+    assert 'label: "TV format"' in system_page
+    assert "root.deviceInfo.tv_audio_format !== null" in system_page
+    assert "required property string label" in info_row
+    assert "required property string value" in info_row
+    assert "font.pixelSize: Style.font.bodySmall" in info_row
+
+
 def test_page_navigation_follows_the_now_playing_content():
     widget = (ROOT / "BarWidget.qml").read_text()
     navigation = (ROOT / "SonarchyNavigation.qml").read_text()
@@ -411,6 +425,8 @@ def test_production_components_stay_within_size_guardrails():
         "SonarchyProtocolRouter.qml",
         "SonarchyArtwork.qml",
         "LiveService.qml",
+        "SonarchySystemPage.qml",
+        "SonarchyInfoRow.qml",
     )
 
     assert len(facade.splitlines()) <= 350

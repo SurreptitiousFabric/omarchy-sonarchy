@@ -48,6 +48,10 @@
 - Added active-household room selection to alarm creation and editing, with
   backend household validation and full cached-field restoration when Sonos
   rejects an existing-alarm update.
+- Added quiet read-only TV audio format reporting for compatible soundbars,
+  preserving active, idle, unavailable, unknown, and unsupported states, and
+  extracted a shared Omarchy-themed information row to keep the System page
+  within its 800-line health guard.
 
 ## 4.1.0 — 2026-08-26
 

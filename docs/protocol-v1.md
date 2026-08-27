@@ -49,6 +49,13 @@ change rooms through Sonos's native update operation; if that update is
 rejected, every locally cached alarm field is restored before an authoritative
 alarm refresh.
 
+Successful `devices.details.get` results include `device.tv_audio_format` only
+as a non-null object for speakers that positively report soundbar support. Its
+`state` is `active`, `idle`, `unavailable`, or `unknown`, and `label` contains a
+bounded normalized display value. Unsupported rooms use `null`; probe errors
+become `unavailable` without failing the rest of device details. Sonarchy does
+not infer a format that the speaker did not report.
+
 ## Result
 
 ```json
