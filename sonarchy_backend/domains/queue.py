@@ -50,6 +50,42 @@ def queue_action(
     return {"ok": True, "action": action, "message": message}
 
 
+def move_queue_item(
+    speaker: Any,
+    index: int,
+    expected_item_id: str,
+    target_index: int,
+    expected_target_id: str,
+) -> dict[str, Any]:
+    coordinator = coordinator_for(speaker)
+    queue_items = list(coordinator.get_queue(max_items=100, full_album_art_uri=False))
+
+    def verify(position: int, expected_id: str, label: str) -> None:
+        expected = validate_identifier(expected_id, label)
+        if not 0 <= position < len(queue_items):
+            raise ValueError("The queue changed; refresh it and try again")
+        actual = clean(item_attr(queue_items[position], "item_id")) or str(position)
+        if actual != expected:
+            raise ValueError("The queue changed; refresh it and try again")
+
+    verify(index, expected_item_id, "queue item identifier")
+    verify(target_index, expected_target_id, "queue destination identifier")
+    if target_index != index:
+        # Sonos uses one-based positions and inserts relative to the queue
+        # before removal. Moving down therefore skips over the destination.
+        insert_before = target_index + (2 if target_index > index else 1)
+        coordinator.avTransport.ReorderTracksInQueue(
+            [
+                ("InstanceID", 0),
+                ("StartingIndex", index + 1),
+                ("NumberOfTracks", 1),
+                ("InsertBefore", insert_before),
+                ("UpdateID", 0),
+            ]
+        )
+    return {"ok": True, "action": "queue-move", "message": "Moved queue item"}
+
+
 def _validate_search_term(raw: Any) -> str:
     value = clean(raw)
     if not value:
@@ -177,10 +213,10 @@ def enqueue_content_item(
 
 
 def queue_service(backend: QueuePort) -> DomainService:
-    def index_arg(args: dict[str, Any]) -> int:
-        value = number_arg(args, "index")
+    def index_arg(args: dict[str, Any], key: str = "index") -> int:
+        value = number_arg(args, key)
         if int(value) != value:
-            raise ValueError("index must be an integer")
+            raise ValueError(f"{key} must be an integer")
         return int(value)
 
     def context_arg(args: dict[str, Any]) -> str:
@@ -202,6 +238,13 @@ def queue_service(backend: QueuePort) -> DomainService:
                 "remove-queue",
                 index_arg(args),
                 string_arg(args, "itemId"),
+            ),
+            "queue.item.move": lambda args: backend.move_queue_item(
+                string_arg(args, "roomUid"),
+                index_arg(args),
+                string_arg(args, "itemId"),
+                index_arg(args, "targetIndex"),
+                string_arg(args, "targetItemId"),
             ),
             "queue.clear": lambda args: backend.queue_action(
                 string_arg(args, "roomUid"), "clear-queue"

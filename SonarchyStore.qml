@@ -702,6 +702,15 @@ Item {
         "Could not remove queue item")
   }
 
+  function moveQueueItem(index, itemId, targetIndex, targetItemId) {
+    if (Number(index) === Number(targetIndex)) return
+    if (selectedDevice && !actionBusy && requireCapability("queue.item.move"))
+      trackProtocolAction(live.moveQueueItem(
+        String(selectedDevice.uid), Number(index), String(itemId),
+        Number(targetIndex), String(targetItemId)),
+        "Could not move queue item")
+  }
+
   function clearQueue() {
     if (selectedDevice && !actionBusy && requireCapability("queue.clear"))
       trackProtocolAction(live.clearQueue(String(selectedDevice.uid)),

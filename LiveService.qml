@@ -224,6 +224,12 @@ Item {
       roomUid: roomUid, index: index, itemId: itemId
     })
   }
+  function moveQueueItem(roomUid, index, itemId, targetIndex, targetItemId) {
+    return sendCommand("queue.item.move", {
+      roomUid: roomUid, index: index, itemId: itemId,
+      targetIndex: targetIndex, targetItemId: targetItemId
+    })
+  }
   function clearQueue(roomUid) {
     return sendCommand("queue.clear", { roomUid: roomUid })
   }

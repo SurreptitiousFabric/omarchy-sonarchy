@@ -74,6 +74,9 @@
   authoritative room volume/mute values instead of the active group aggregate.
 - Allowed slow speaker-local artwork responses up to five seconds while
   retaining the short connection timeout and existing image validation.
+- Added current-queue reordering through a dedicated drag handle, focusable
+  move buttons, and row-scoped Alt+Up/Alt+Down shortcuts. Moves revalidate both
+  source and destination identities before the queue domain calls Sonos.
 
 ## 4.1.0 — 2026-08-26
 

@@ -397,9 +397,15 @@ def test_queue_is_a_dedicated_capability_driven_keyboard_page():
     assert '{ value: "queue", label: "Current queue" }' not in browse_page
     assert 'service.loadContent("queue", "")' in queue_page
     assert 'root.can("queue.item.play")' in queue_page
+    assert 'root.can("queue.item.move")' in queue_page
     assert 'root.can("queue.item.remove")' in queue_page
     assert 'root.can("queue.clear")' in queue_page
     assert "root.service.removeQueueItem(" in queue_page
+    assert "service.moveQueueItem(" in queue_page
+    assert 'sequence: "Alt+Up"' in queue_page
+    assert 'sequence: "Alt+Down"' in queue_page
+    assert 'objectName: "queueDragHandle:"' in queue_page
+    assert "preventStealing: true" in queue_page
     assert 'root.arm("queue-clear")' in queue_page
     assert "function ensureVisible(item)" in queue_page
 

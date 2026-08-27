@@ -304,6 +304,17 @@ PROTOCOL_ACTION_CASES = (
         {"roomUid": "R1", "index": 2, "itemId": "Q:2"},
         ("queue_action", "R1", "remove-queue", 2, "Q:2"),
     ),
+    (
+        "queue.item.move",
+        {
+            "roomUid": "R1",
+            "index": 2,
+            "itemId": "Q:2",
+            "targetIndex": 0,
+            "targetItemId": "Q:0",
+        },
+        ("move_queue_item", "R1", 2, "Q:2", 0, "Q:0"),
+    ),
     ("queue.clear", {"roomUid": "R1"}, ("queue_action", "R1", "clear-queue")),
     (
         "queue.content.enqueue",

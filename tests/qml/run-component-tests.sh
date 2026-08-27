@@ -23,7 +23,7 @@ trap cleanup EXIT
 mkdir -p "$TEST_ROOT/imports" "$TEST_ROOT/tests"
 cp -R "$PROJECT_ROOT/tests/qml/imports/." "$TEST_ROOT/imports/"
 ln -s "$OMARCHY_SLIDER" "$TEST_ROOT/imports/qs/Ui/PanelSlider.qml"
-for component in SonarchyAlarmDraft.qml SonarchyContentState.qml SonarchyErrorState.qml SonarchySlider.qml; do
+for component in SonarchyAlarmDraft.qml SonarchyContentState.qml SonarchyErrorState.qml SonarchyQueuePage.qml SonarchySlider.qml; do
   ln -s "$PROJECT_ROOT/$component" "$TEST_ROOT/tests/$component"
 done
 for test_file in "$PROJECT_ROOT"/tests/qml/tst_*.qml; do

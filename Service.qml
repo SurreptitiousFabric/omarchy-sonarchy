@@ -60,6 +60,9 @@ Item {
   function refresh() { store.refresh() }
   function refreshDetails() { store.refreshDetails() }
   function reloadContent() { store.reloadContent() }
+  function moveQueueItem(index, itemId, targetIndex, targetItemId) {
+    store.moveQueueItem(index, itemId, targetIndex, targetItemId)
+  }
   function removeQueueItem(index, itemId) { store.removeQueueItem(index, itemId) }
   function renameRoom(name) { store.renameRoom(name) }
   function requestVolume(value) { store.requestVolume(value) }

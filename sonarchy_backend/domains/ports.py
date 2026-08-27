@@ -122,6 +122,15 @@ class QueuePort(Protocol):
         self, room_uid: str, action: str, index: int | None = None, item_id: str = ""
     ) -> dict[str, Any]: ...
 
+    def move_queue_item(
+        self,
+        room_uid: str,
+        index: int,
+        item_id: str,
+        target_index: int,
+        target_item_id: str,
+    ) -> dict[str, Any]: ...
+
     def enqueue_content_item(
         self,
         room_uid: str,

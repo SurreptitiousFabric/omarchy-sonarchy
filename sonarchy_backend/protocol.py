@@ -60,6 +60,7 @@ PROTOCOL_OPERATIONS = frozenset(
         "devices.setting.set",
         "sources.switch",
         "queue.item.play",
+        "queue.item.move",
         "queue.item.remove",
         "queue.clear",
         "queue.content.enqueue",

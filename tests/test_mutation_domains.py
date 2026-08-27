@@ -37,6 +37,7 @@ from sonarchy_backend.domains.queue import (
     enqueue_content_item,
     find_library_item,
     find_playlist_track,
+    move_queue_item,
     queue_action,
     queue_service,
 )
@@ -269,6 +270,54 @@ def test_queue_identity_failures_do_not_mutate(index, expected_id):
 def test_queue_rejects_unknown_action():
     with pytest.raises(ValueError, match="Unsupported queue action"):
         queue_action(speaker(), "replace-queue")
+
+
+@pytest.mark.parametrize(
+    ("source", "target", "insert_before"),
+    ((2, 0, 1), (0, 2, 4), (1, 2, 4)),
+)
+def test_queue_move_translates_zero_based_positions_for_sonos(source, target, insert_before):
+    queued = [item(f"Q:{index}") for index in range(3)]
+    reorder = Mock()
+    room = speaker(
+        get_queue=Mock(return_value=queued),
+        avTransport=SimpleNamespace(ReorderTracksInQueue=reorder),
+    )
+
+    payload = move_queue_item(
+        room,
+        source,
+        f"Q:{source}",
+        target,
+        f"Q:{target}",
+    )
+
+    assert payload["action"] == "queue-move"
+    reorder.assert_called_once_with(
+        [
+            ("InstanceID", 0),
+            ("StartingIndex", source + 1),
+            ("NumberOfTracks", 1),
+            ("InsertBefore", insert_before),
+            ("UpdateID", 0),
+        ]
+    )
+
+
+def test_queue_move_rejects_stale_destination_and_ignores_same_row_drop():
+    queued = [item("Q:0"), item("Q:1")]
+    reorder = Mock()
+    room = speaker(
+        get_queue=Mock(return_value=queued),
+        avTransport=SimpleNamespace(ReorderTracksInQueue=reorder),
+    )
+
+    with pytest.raises(ValueError, match="queue changed"):
+        move_queue_item(room, 0, "Q:0", 1, "Q:stale")
+    reorder.assert_not_called()
+
+    move_queue_item(room, 0, "Q:0", 0, "Q:0")
+    reorder.assert_not_called()
 
 
 @pytest.mark.parametrize("action", ("play-queue", "remove-queue", "clear-queue"))

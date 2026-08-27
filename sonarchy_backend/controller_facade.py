@@ -8,7 +8,7 @@ from .domains.browse import browse_content
 from .domains.content import play_apple, play_apple_album, play_global, start_library_update
 from .domains.devices import project_device_details
 from .domains.playlists import playlist_action, playlist_track_action
-from .domains.queue import enqueue_content_item, queue_action
+from .domains.queue import enqueue_content_item, move_queue_item, queue_action
 from .domains.settings import rename_room as rename_sonos_room
 from .domains.settings import set_device as set_sonos_device
 from .domains.settings import set_playback_option as set_sonos_playback_option
@@ -74,6 +74,16 @@ class DomainFacadeMixin:
         self, room_uid: str, action: str, index: int | None = None, item_id: str = ""
     ) -> dict[str, Any]:
         return queue_action(self._zone(room_uid), action, index, item_id)
+
+    def move_queue_item(
+        self,
+        room_uid: str,
+        index: int,
+        item_id: str,
+        target_index: int,
+        target_item_id: str,
+    ) -> dict[str, Any]:
+        return move_queue_item(self._zone(room_uid), index, item_id, target_index, target_item_id)
 
     def enqueue_content_item(
         self,
