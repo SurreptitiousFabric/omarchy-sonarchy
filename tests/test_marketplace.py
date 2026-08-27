@@ -308,6 +308,8 @@ def test_alarm_mutations_use_the_persistent_backend_and_no_process_remains():
 def test_alarm_editor_uses_authoritative_keyboard_reachable_room_options():
     system_page = (ROOT / "SonarchySystemPage.qml").read_text()
     alarm_editor = (ROOT / "SonarchyAlarmEditor.qml").read_text()
+    alarm_draft = (ROOT / "SonarchyAlarmDraft.qml").read_text()
+    alarm_runtime_test = (ROOT / "tests/qml/tst_SonarchyAlarmDraft.qml").read_text()
     store = (ROOT / "SonarchyStore.qml").read_text()
     live = (ROOT / "LiveService.qml").read_text()
     router = (ROOT / "SonarchyProtocolRouter.qml").read_text()
@@ -317,14 +319,20 @@ def test_alarm_editor_uses_authoritative_keyboard_reachable_room_options():
     assert "alarmEditor.editAlarm(alarmCard.modelData)" in system_page
     assert "scrollTarget: systemFlick" in system_page
     assert "property string alarmRoomUid" not in system_page
-    assert "function alarmRoomOptions()" in alarm_editor
-    assert "var rooms = service ? service.rooms : []" in alarm_editor
-    assert "if (rooms[i].online === false) continue" in alarm_editor
+    assert "SonarchyAlarmDraft {" in alarm_editor
     assert "id: alarmRoomPicker" in alarm_editor
     assert 'label: "ROOM"' in alarm_editor
     assert "alarmRoomPicker.popupOpen" in alarm_editor
-    assert 'alarmRoomUid = String(item.room_uid || "")' in alarm_editor
-    assert "&& editor.alarmRoomAvailable" in alarm_editor
+    assert "&& draft.valid" in alarm_editor
+    assert "saveAlarm(draft.savePayload())" in alarm_editor
+    assert "function alarmRoomOptions()" in alarm_draft
+    assert "var rooms = service ? service.rooms : []" in alarm_draft
+    assert "if (rooms[i].online === false) continue" in alarm_draft
+    assert 'alarmRoomUid = String(item.room_uid || "")' in alarm_draft
+    assert "readonly property bool valid" in alarm_draft
+    assert "function savePayload()" in alarm_draft
+    assert "test_edit_projects_every_field_and_exact_save_payload" in alarm_runtime_test
+    assert "test_validation_rejects_bad_time_and_missing_room" in alarm_runtime_test
     assert 'alarmRoomUid: String(editor.roomUid || "")' in store
     assert "alarmRoomUid: alarm.alarmRoomUid" in live
     assert 'failedOperation.indexOf("alarms.") === 0' in router
@@ -433,6 +441,7 @@ def test_production_components_stay_within_size_guardrails():
         "LiveService.qml",
         "SonarchySystemPage.qml",
         "SonarchyAlarmEditor.qml",
+        "SonarchyAlarmDraft.qml",
         "SonarchyInfoRow.qml",
     )
 

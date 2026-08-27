@@ -52,9 +52,10 @@
   preserving active, idle, unavailable, unknown, and unsupported states, and
   extracted a shared Omarchy-themed information row to keep the System page
   within its 800-line health guard.
-- Extracted the alarm draft, validation, room/program options, and save form
-  into one Omarchy-themed component, leaving the System page as a 518-line
-  composition layer and enforcing both components' size and ownership gates.
+- Extracted the alarm draft, validation, room/program options, and exact save
+  projection into a directly runtime-tested model beneath the Omarchy-themed
+  form, leaving the System page as a 518-line composition layer and enforcing
+  each component's size and ownership gates.
 
 ## 4.1.0 — 2026-08-26
 
