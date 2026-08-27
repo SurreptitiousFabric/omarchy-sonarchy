@@ -172,9 +172,25 @@ marketplace capabilities. See [OFFICIAL_APP_GAPS.md](OFFICIAL_APP_GAPS.md) for
 what remains exclusive to, or safer in, the official Sonos app. The complete
 keyboard-first walkthrough is in the [user guide](USER_GUIDE.md).
 
-The runtime boundaries and refactoring target are documented in
-[ARCHITECTURE.md](ARCHITECTURE.md), with decisions and the persistent protocol
-under [`docs/`](docs/).
+## Understand the system
+
+Start at the [documentation map](docs/README.md). The system model separates
+four questions that otherwise become tangled:
+
+- [capabilities](docs/system-model/capabilities.md): what a person can do;
+- [BPMN-oriented journeys](docs/system-model/journeys.md): how important goals,
+  decisions, validation, and recovery flow;
+- [state models](docs/system-model/state-models.md): which transitions are legal
+  in the current room, source, and backend state; and
+- [architecture](ARCHITECTURE.md): which QML, protocol, domain, and adapter layer
+  owns each rule.
+
+The proposed local-AI and bespoke-playlist direction is documented separately
+in the [AI and MCP roadmap](docs/ai-mcp-roadmap.md) and tracked by
+[roadmap issue #10](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/10).
+It is not a current feature. In particular, an Apple Music account connected to
+Sonos does not currently grant Sonarchy access to the user's private Apple
+library.
 
 ## Remove
 
