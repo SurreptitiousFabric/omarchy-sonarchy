@@ -27,6 +27,9 @@ not available.
 
 Automatic radio-art matching can be disabled with the `enrichRadioArtwork`
 bar setting. Disabling popup artwork also disables matching.
+Speaker-local artwork URLs are checked through a bounded, no-redirect streamed
+request before QML receives them. Missing images therefore fall back without
+placing a private speaker address in Qt's image-transfer warning output.
 
 The private Python environment contains only executable dependencies and a
 hash of the checked-in lock file. There are no analytics identifiers, account

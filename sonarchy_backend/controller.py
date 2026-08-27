@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from .artwork_probe import speaker_artwork_available
 from .controller_common import NETWORK_SCAN_RETRY_SEC
 from .controller_common import ControllerError as ControllerError
 from .controller_discovery import DiscoveryMixin
@@ -31,10 +32,12 @@ class SonosController(
         soco_factory: Callable[[str], Any] | None = None,
         network_scan_fn: Callable[..., Any] | None = None,
         persistent_state: PersistentState | None = None,
+        artwork_probe_fn: Callable[[str], bool] | None = None,
     ) -> None:
         self._discover_fn = discover_fn
         self._soco_factory = soco_factory
         self._network_scan_fn = network_scan_fn
+        self._artwork_probe_fn = artwork_probe_fn or speaker_artwork_available
         self.state = persistent_state or PersistentState.load()
         self._zones: dict[str, Any] = {}
         self._target_group: Any | None = None
@@ -55,5 +58,6 @@ class SonosController(
         self._favorites_household_id = ""
         self._transport_state_cache: dict[str, str] = {}
         self._playback_cache: dict[str, dict[str, Any]] = {}
+        self._artwork_availability_cache: dict[str, tuple[bool, float]] = {}
         self._line_in_available: dict[str, bool] = {}
         self._line_in_checked_at: dict[str, float] = {}

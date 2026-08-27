@@ -27,6 +27,9 @@
   the workflow before creating any jobs.
 - Updated the immutable Mise action pin to v4.3.0 so CI runs natively on the
   current GitHub Actions Node.js 24 runtime.
+- Preflighted allowlisted speaker-local artwork through a bounded in-memory
+  availability cache so stale 404 URLs fall back before Qt can log a private
+  speaker address.
 - Prevented vertical page scrolling over a slider from changing playback,
   room, sound, or alarm values; a headless real-event test now proves the page
   scrolls without a slider mutation and intentional pointer dragging remains

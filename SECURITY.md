@@ -22,7 +22,9 @@ Expected traffic is limited to:
 - explicit HTTPS Apple catalog searches and optional, popup-scoped radio-track
   artwork matching against the same public endpoint;
 - Global Player and compatible Favorite/TuneIn traffic requested by the user;
-- allowlisted public HTTPS artwork and exact speaker-local HTTP artwork on 1400.
+- allowlisted public HTTPS artwork and exact speaker-local HTTP artwork on 1400;
+  bounded, no-redirect availability probes prevent missing local art from
+  reaching Qt's raw image-transfer logger.
 
 The event callback is not a control server. It accepts only `NOTIFY` requests
 whose subscription ID exists and whose source address exactly matches that

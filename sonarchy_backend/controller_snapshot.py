@@ -10,13 +10,31 @@ from typing import Any
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 
-from .controller_common import ControllerError
+from .controller_common import (
+    ARTWORK_AVAILABILITY_CACHE_LIMIT,
+    ARTWORK_AVAILABILITY_TTL_SEC,
+    ControllerError,
+)
 from .model import choose_target_group, clamp_volume, group_label, parse_sonos_time
 
 LOG = logging.getLogger(__name__)
 
 
 class SnapshotMixin:
+    def _available_artwork_url(self, url: str) -> str:
+        if not url.startswith("http://"):
+            return url
+        now = time.monotonic()
+        cached = self._artwork_availability_cache.get(url)
+        if cached and now - cached[1] < ARTWORK_AVAILABILITY_TTL_SEC:
+            return url if cached[0] else ""
+        available = bool(self._artwork_probe_fn(url))
+        self._artwork_availability_cache.pop(url, None)
+        self._artwork_availability_cache[url] = (available, now)
+        while len(self._artwork_availability_cache) > ARTWORK_AVAILABILITY_CACHE_LIMIT:
+            self._artwork_availability_cache.pop(next(iter(self._artwork_availability_cache)))
+        return url if available else ""
+
     def refresh(self, *, rediscover: bool = True) -> dict[str, Any]:
         if not rediscover and self._zones:
             zones = list(self._zones.values())
@@ -268,13 +286,17 @@ class SnapshotMixin:
             or "UNKNOWN"
         )
         coordinator_ip = getattr(coordinator, "ip_address", "")
-        track_artwork = self._safe_artwork_url(
-            track.get("album_art", ""),
-            coordinator_ip,
+        track_artwork = self._available_artwork_url(
+            self._safe_artwork_url(
+                track.get("album_art", ""),
+                coordinator_ip,
+            )
         )
-        station_artwork = self._safe_artwork_url(
-            media["artworkUrl"],
-            coordinator_ip,
+        station_artwork = self._available_artwork_url(
+            self._safe_artwork_url(
+                media["artworkUrl"],
+                coordinator_ip,
+            )
         )
         artwork = track_artwork or station_artwork
         artwork_kind = "track" if track_artwork else ("station" if station_artwork else "")

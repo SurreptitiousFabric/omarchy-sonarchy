@@ -186,6 +186,7 @@ def make_controller(tmp_path):
         soco_factory=lambda host: living,
         network_scan_fn=lambda **kwargs: set(),
         persistent_state=state,
+        artwork_probe_fn=lambda url: True,
     )
     return controller, living, kitchen, group
 
@@ -272,6 +273,42 @@ def test_radio_uses_media_metadata_when_track_metadata_is_blank(tmp_path):
     assert snapshot["playback"]["artworkUrl"] == "https://cdn.radiotime.com/station.png"
     assert snapshot["playback"]["artworkKind"] == "station"
     assert snapshot["playback"]["metadataState"] == "fresh"
+
+
+def test_unavailable_local_track_art_falls_back_and_is_cached(tmp_path):
+    controller, living, _, _ = make_controller(tmp_path)
+    living._transport = "PLAYING"
+    living.music_source = "RADIO"
+    living.avTransport.media_info = {
+        "CurrentURI": "x-sonosapi-stream:station",
+        "CurrentURIMetaData": (
+            '<DIDL-Lite xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">'
+            "<item><upnp:albumArtURI>https://cdn.radiotime.com/station.png"
+            "</upnp:albumArtURI></item></DIDL-Lite>"
+        ),
+    }
+    probed = []
+    controller._artwork_probe_fn = lambda url: probed.append(url) or False
+
+    first = controller.refresh()
+    second = controller.refresh(rediscover=False)
+
+    assert first["playback"]["artworkUrl"] == "https://cdn.radiotime.com/station.png"
+    assert first["playback"]["artworkKind"] == "station"
+    assert second["playback"]["artworkUrl"] == first["playback"]["artworkUrl"]
+    assert len(probed) == 1
+
+
+def test_artwork_availability_cache_is_bounded(tmp_path):
+    controller, _, _, _ = make_controller(tmp_path)
+    controller._artwork_probe_fn = lambda url: False
+
+    for index in range(129):
+        controller._available_artwork_url(f"http://10.0.0.2:1400/art/{index}")
+
+    assert len(controller._artwork_availability_cache) == 128
+    assert "http://10.0.0.2:1400/art/0" not in controller._artwork_availability_cache
+    assert "http://10.0.0.2:1400/art/128" in controller._artwork_availability_cache
 
 
 def test_complete_media_title_replaces_truncated_track_title(tmp_path):

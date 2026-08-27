@@ -57,7 +57,7 @@ debug overlays.
 | Alarms | safe alarm projection and mutations | raw credential-bearing program metadata in QML |
 | Devices | details, capabilities, sound and supported device settings | topology mutation |
 | Sources | validated TV and household line-in switching | arbitrary URI playback |
-| Artwork | safe URL policy and optional public-catalog enrichment | transport control |
+| Artwork | safe URL policy, bounded speaker-image availability probes, and optional public-catalog enrichment | transport control |
 | State | selected room, cached hosts, state revision and atomic persistence | network calls |
 
 External catalogs are adapters beneath Content. SoCo is an infrastructure
