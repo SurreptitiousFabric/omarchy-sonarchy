@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .capabilities import line_in_available
-from .common import DomainService, string_arg
+from .capabilities import line_in_available, queue_transport_active, tv_autoplay_enabled
+from .common import DomainService, clean, coordinator_for, safe_call, string_arg
 from .ports import SettingsPort
 
 NUMBER_SETTINGS = {
@@ -39,28 +39,10 @@ TV_AUTOPLAY_SETTING = "tv-autoplay"
 DEVICE_SETTINGS = frozenset({*DEVICE_BOOLEAN_SETTINGS, TV_AUTOPLAY_SETTING})
 
 
-def _clean(value: Any) -> str:
-    text = str(value or "").strip()
-    return "" if text == "NOT_IMPLEMENTED" else text
-
-
-def _safe(call: Any, fallback: Any) -> Any:
-    try:
-        return call()
-    except Exception:  # noqa: BLE001 - optional SoCo properties fail inconsistently
-        return fallback
-
-
-def _coordinator(speaker: Any) -> Any:
-    return (
-        _safe(lambda: speaker.group.coordinator if speaker.group else speaker, speaker) or speaker
-    )
-
-
 def _parse_bool(raw: str | bool) -> bool:
     if isinstance(raw, bool):
         return raw
-    value = _clean(raw).casefold()
+    value = clean(raw).casefold()
     if value in {"1", "true", "yes", "on"}:
         return True
     if value in {"0", "false", "no", "off"}:
@@ -68,52 +50,35 @@ def _parse_bool(raw: str | bool) -> bool:
     raise ValueError("Expected on or off")
 
 
-def _queue_transport_active(coordinator: Any) -> bool | None:
-    response = _safe(lambda: coordinator.avTransport.GetMediaInfo([("InstanceID", 0)]), None)
-    if not isinstance(response, dict) or "CurrentURI" not in response:
-        return None
-    return _clean(response.get("CurrentURI")).casefold().startswith("x-rincon-queue:")
-
-
-def _tv_autoplay(speaker: Any) -> bool | None:
-    response = _safe(lambda: speaker.deviceProperties.GetAutoplayRoomUUID([("Source", "")]), None)
-    if not isinstance(response, dict) or "RoomUUID" not in response:
-        return None
-    return bool(_clean(response.get("RoomUUID")))
-
-
-tv_autoplay_enabled = _tv_autoplay
-
-
 def stop_playback(speaker: Any) -> dict[str, Any]:
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     coordinator.stop()
     return {
         "ok": True,
         "action": "stop",
-        "coordinator_ip": _clean(getattr(coordinator, "ip_address", "")),
+        "coordinator_ip": clean(getattr(coordinator, "ip_address", "")),
         "message": "Stopped",
     }
 
 
 def rename_room(speaker: Any, name: str) -> dict[str, Any]:
-    room_name = _clean(name)
+    room_name = clean(name)
     if not room_name:
         raise ValueError("Room name cannot be empty")
     if len(room_name) > 64 or any(ord(character) < 32 for character in room_name):
         raise ValueError("Room name is too long or contains control characters")
     speaker.player_name = room_name
-    response = _safe(lambda: speaker.deviceProperties.GetZoneAttributes([]), None)
-    if isinstance(response, dict) and _clean(response.get("CurrentZoneName")) != room_name:
+    response = safe_call(lambda: speaker.deviceProperties.GetZoneAttributes([]), None)
+    if isinstance(response, dict) and clean(response.get("CurrentZoneName")) != room_name:
         raise ValueError("Sonos did not confirm the room name change")
     return {"ok": True, "action": "rename", "name": room_name, "message": f"Renamed to {room_name}"}
 
 
 def set_playback_option(speaker: Any, option: str, value: str) -> dict[str, Any]:
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     if (
         option in {"shuffle", "repeat", "crossfade"}
-        and _queue_transport_active(coordinator) is False
+        and queue_transport_active(coordinator) is False
     ):
         raise ValueError(
             "Play modes are available only while the Sonos queue is the active source. "
@@ -124,7 +89,7 @@ def set_playback_option(speaker: Any, option: str, value: str) -> dict[str, Any]
         coordinator.shuffle = enabled
         message = "Shuffle on" if enabled else "Shuffle off"
     elif option == "repeat":
-        mode = _clean(value).casefold()
+        mode = clean(value).casefold()
         if mode not in {"off", "all", "one"}:
             raise ValueError("Repeat must be off, all, or one")
         coordinator.repeat = {"off": False, "all": True, "one": "ONE"}[mode]
@@ -134,7 +99,7 @@ def set_playback_option(speaker: Any, option: str, value: str) -> dict[str, Any]
         coordinator.cross_fade = enabled
         message = "Crossfade on" if enabled else "Crossfade off"
     elif option == "sleep":
-        if _clean(value).casefold() == "off":
+        if clean(value).casefold() == "off":
             seconds = None
             message = "Sleep timer cancelled"
         else:
@@ -180,15 +145,15 @@ def set_device(speaker: Any, setting: str, value: str) -> dict[str, Any]:
         raise ValueError("Unsupported device setting")
     enabled = _parse_bool(value)
     if setting == TV_AUTOPLAY_SETTING:
-        if _tv_autoplay(speaker) is None:
+        if tv_autoplay_enabled(speaker) is None:
             raise ValueError("TV Autoplay is not available on this speaker")
-        room_uuid = _clean(_safe(lambda: speaker.uid, ""))
+        room_uuid = clean(safe_call(lambda: speaker.uid, ""))
         if enabled and not room_uuid:
             raise ValueError("Sonos did not provide the room identity needed for TV Autoplay")
         speaker.deviceProperties.SetAutoplayRoomUUID(
             [("RoomUUID", room_uuid if enabled else ""), ("Source", "")]
         )
-        if _tv_autoplay(speaker) is not enabled:
+        if tv_autoplay_enabled(speaker) is not enabled:
             raise ValueError("Sonos did not confirm the TV Autoplay change")
     else:
         setattr(speaker, DEVICE_BOOLEAN_SETTINGS[setting], enabled)
@@ -197,17 +162,16 @@ def set_device(speaker: Any, setting: str, value: str) -> dict[str, Any]:
 
 
 def switch_source(speaker: Any, source: str, source_speaker: Any | None = None) -> dict[str, Any]:
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     if source == "line-in":
         line_in = source_speaker or speaker
-        visible = list(_safe(lambda: speaker.visible_zones, set()) or set())
+        visible = list(safe_call(lambda: speaker.visible_zones, set()) or set())
         if all(
-            _clean(getattr(zone, "ip_address", "")) != _clean(speaker.ip_address)
-            for zone in visible
+            clean(getattr(zone, "ip_address", "")) != clean(speaker.ip_address) for zone in visible
         ):
             visible.append(speaker)
-        expected_ip = _clean(getattr(line_in, "ip_address", ""))
-        if all(_clean(getattr(zone, "ip_address", "")) != expected_ip for zone in visible):
+        expected_ip = clean(getattr(line_in, "ip_address", ""))
+        if all(clean(getattr(zone, "ip_address", "")) != expected_ip for zone in visible):
             raise ValueError("Line-in source is not part of this Sonos household")
         if not line_in_available(line_in):
             raise ValueError("Line-in is not available on the selected Sonos room")

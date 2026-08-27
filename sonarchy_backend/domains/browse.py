@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import ipaddress
-import re
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urljoin, urlparse
-
-from soco.music_services import MusicService
 
 from ..apple_catalog import (
     apple_artwork_url,
@@ -15,10 +12,20 @@ from ..apple_catalog import (
     public_apple_music_url,
 )
 from .common import DomainService, number_arg, string_arg
+from .media import (
+    PLAYLIST_ID_PATTERN,
+    clean,
+    favorite_reference,
+    global_results,
+    item_attr,
+    safe_call,
+    safe_index,
+    validate_identifier,
+    validate_playlist_id,
+)
 from .ports import BrowsePort
 
 CONTENT_KINDS = frozenset({"queue", "apple", "global", "library", "playlists", "playlist"})
-PLAYLIST_ID_PATTERN = re.compile(r"SQ:\d+")
 PUBLIC_ARTWORK_SUFFIXES = (
     ".mzstatic.com",
     ".scdn.co",
@@ -29,25 +36,6 @@ PUBLIC_ARTWORK_SUFFIXES = (
     ".radioplayer.cloud",
 )
 PUBLIC_ARTWORK_HOSTS = ("static.mytuner-radio.net",)
-
-
-def clean(value: Any) -> str:
-    text = str(value or "").strip()
-    return "" if text == "NOT_IMPLEMENTED" else text
-
-
-def safe_call(call: Any, fallback: Any) -> Any:
-    try:
-        return call()
-    except Exception:  # noqa: BLE001 - optional SoCo metadata is inconsistent
-        return fallback
-
-
-def safe_index(raw: Any, fallback: int = -1) -> int:
-    try:
-        return int(raw)
-    except TypeError, ValueError:
-        return fallback
 
 
 def validate_private_ip(raw: str) -> str:
@@ -106,13 +94,6 @@ def result_total(result: Any) -> int:
     return safe_index(safe_call(lambda: result.total_matches, len(result)), len(result))
 
 
-def item_attr(item: Any, name: str, fallback: Any = "") -> Any:
-    try:
-        return getattr(item, name)
-    except Exception:  # noqa: BLE001 - third-party metadata properties are optional
-        return fallback
-
-
 def queue_content(coordinator: Any, limit: int) -> dict[str, Any]:
     result = coordinator.get_queue(max_items=limit, full_album_art_uri=False)
     coordinator_ip = clean(getattr(coordinator, "ip_address", ""))
@@ -136,13 +117,6 @@ def queue_content(coordinator: Any, limit: int) -> dict[str, Any]:
     return {"ok": True, "kind": "queue", "items": items, "total": result_total(result)}
 
 
-def favorite_reference(item: Any) -> Any:
-    reference = item.reference
-    if not getattr(reference, "resources", None):
-        raise ValueError("This Sonos Favorite is not directly playable")
-    return reference
-
-
 def favorites_content(coordinator: Any, limit: int) -> dict[str, Any]:
     result = coordinator.music_library.get_sonos_favorites(max_items=limit)
     coordinator_ip = clean(getattr(coordinator, "ip_address", ""))
@@ -159,20 +133,6 @@ def favorites_content(coordinator: Any, limit: int) -> dict[str, Any]:
             }
         )
     return {"ok": True, "kind": "favorites", "items": items, "total": result_total(result)}
-
-
-def validate_identifier(raw: Any, label: str, maximum: int = 512) -> str:
-    value = clean(raw)
-    if not value or len(value) > maximum or any(ord(character) < 32 for character in value):
-        raise ValueError(f"Invalid {label}")
-    return value
-
-
-def validate_playlist_id(raw: Any) -> str:
-    value = validate_identifier(raw, "Sonos playlist identifier", 32)
-    if not PLAYLIST_ID_PATTERN.fullmatch(value):
-        raise ValueError("Invalid Sonos playlist identifier")
-    return value
 
 
 def didl_item_payload(item: Any, index: int, coordinator_ip: str) -> dict[str, Any]:
@@ -289,20 +249,6 @@ def apple_content(
             }
         )
     return {"ok": True, "kind": "apple", "items": items, "total": len(items)}
-
-
-def global_results(
-    coordinator: Any,
-    term: str,
-    limit: int,
-    *,
-    music_service_factory: Callable[..., Any] = MusicService,
-) -> Any:
-    query = validate_identifier(term, "search text", 120) if clean(term) else ""
-    if not query:
-        return []
-    service = music_service_factory("Global Player", device=coordinator)
-    return service.search("stations", query, count=limit)
 
 
 def global_content(coordinator: Any, term: str, limit: int) -> dict[str, Any]:

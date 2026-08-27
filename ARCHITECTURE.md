@@ -84,6 +84,13 @@ Domain modules may share immutable protocol models and validation helpers. They
 must not import QML concepts, subprocess launchers, or another domain's private
 implementation.
 
+`domains/common.py` owns neutral value normalization, safe optional reads, and
+single-read coordinator selection. `domains/media.py` owns stable item identity
+checks and provider-item lookup shared by Browse, Content, Queue, Playlists, and
+Alarms. `domains/capabilities.py` owns bounded positive/nullable source and
+device probes. None registers protocol handlers; an AST gate prevents handler
+domains from importing one another.
+
 ## State and capabilities
 
 Every authoritative snapshot carries a monotonically increasing `revision` for

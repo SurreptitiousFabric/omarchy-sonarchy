@@ -4,7 +4,27 @@ from typing import Any
 
 import requests
 
+from .common import clean, safe_call
+
 LINE_IN_QUERY_TIMEOUT_SEC = 1.5
+
+
+def tv_autoplay_enabled(speaker: Any) -> bool | None:
+    """Project TV Autoplay support and state without guessing from a model name."""
+    response = safe_call(
+        lambda: speaker.deviceProperties.GetAutoplayRoomUUID([("Source", "")]), None
+    )
+    if not isinstance(response, dict) or "RoomUUID" not in response:
+        return None
+    return bool(clean(response.get("RoomUUID")))
+
+
+def queue_transport_active(speaker: Any) -> bool | None:
+    """Return whether the authoritative transport URI is the Sonos queue."""
+    response = safe_call(lambda: speaker.avTransport.GetMediaInfo([("InstanceID", 0)]), None)
+    if not isinstance(response, dict) or "CurrentURI" not in response:
+        return None
+    return clean(response.get("CurrentURI")).casefold().startswith("x-rincon-queue:")
 
 
 def line_in_available(speaker: Any) -> bool:

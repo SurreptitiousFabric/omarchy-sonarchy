@@ -6,6 +6,9 @@
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,
   alarm, artwork, playback, topology, and mixer domains with narrow ports.
+- Moved cross-domain metadata, identity, lookup, and device-capability helpers
+  into neutral support modules and enforce that handler domains never import
+  one another's private implementation.
 - Split the QML service into a 76-line public facade, cohesive store, protocol
   router, artwork owner, and the single process-owning live protocol client.
 - Added exact operation inventory tests, correlated result handling, stable

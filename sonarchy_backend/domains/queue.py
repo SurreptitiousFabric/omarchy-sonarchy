@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from .browse import clean, item_attr, safe_call, safe_index, validate_identifier
-from .common import DomainService, number_arg, string_arg
+from .common import DomainService, coordinator_for, number_arg, string_arg
+from .media import (
+    clean,
+    find_playlist_track,
+    item_attr,
+    safe_call,
+    safe_index,
+    validate_identifier,
+)
 from .ports import QueuePort
-
-
-def _coordinator(speaker: Any) -> Any:
-    return (
-        safe_call(lambda: speaker.group.coordinator if speaker.group else speaker, speaker)
-        or speaker
-    )
 
 
 def queue_action(
@@ -20,7 +20,7 @@ def queue_action(
     index: int | None = None,
     expected_item_id: str = "",
 ) -> dict[str, Any]:
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     if action in {"play-queue", "remove-queue"}:
         if index is None or index < 0:
             raise ValueError("Queue index is required")
@@ -66,23 +66,6 @@ def find_library_item(coordinator: Any, item_id: str, term: str) -> Any:
     raise ValueError("The library item is no longer available")
 
 
-def find_playlist_track(
-    coordinator: Any, playlist_id: str, index: int, item_id: str
-) -> tuple[Any, Any, int]:
-    from .browse import validate_playlist_id
-
-    playlist = coordinator.get_sonos_playlist_by_attr("item_id", validate_playlist_id(playlist_id))
-    result = coordinator.music_library.browse(ml_item=playlist, max_items=100)
-    position = int(index)
-    if position < 0 or position >= len(result):
-        raise ValueError("The playlist changed; refresh it and try again")
-    track = result[position]
-    expected_id = validate_identifier(item_id, "playlist item identifier")
-    if clean(item_attr(track, "item_id")) != expected_id:
-        raise ValueError("The playlist changed; refresh it and try again")
-    return playlist, track, len(result)
-
-
 def enqueue_content_item(
     speaker: Any,
     kind: str,
@@ -91,7 +74,7 @@ def enqueue_content_item(
     index: int,
     mode: str,
 ) -> dict[str, Any]:
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     if kind == "library":
         item = find_library_item(coordinator, item_id, context)
     elif kind == "playlist":

@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 241 automated tests pass with 82% branch coverage.
+- [x] All 244 automated tests pass with 82% branch coverage.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
 - [x] A headless real-event QML test loads Omarchy's installed `PanelSlider`,

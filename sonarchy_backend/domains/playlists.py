@@ -2,17 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from .browse import clean, item_attr, safe_call, safe_index, validate_playlist_id
-from .common import DomainService, number_arg, string_arg
+from .common import DomainService, coordinator_for, number_arg, string_arg
+from .media import (
+    clean,
+    find_playlist_track,
+    item_attr,
+    safe_index,
+    validate_playlist_id,
+)
 from .ports import PlaylistsPort
-from .queue import find_playlist_track
-
-
-def _coordinator(speaker: Any) -> Any:
-    return (
-        safe_call(lambda: speaker.group.coordinator if speaker.group else speaker, speaker)
-        or speaker
-    )
 
 
 def _optional(target: Any, name: str) -> Any:
@@ -32,7 +30,7 @@ def validate_playlist_title(raw: Any) -> str:
 
 
 def playlist_action(speaker: Any, action: str, value: str) -> dict[str, Any]:
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     if action == "create":
         playlist = coordinator.create_sonos_playlist(validate_playlist_title(value))
         message = f"Created {clean(item_attr(playlist, 'title'))}"
@@ -59,7 +57,7 @@ def playlist_action(speaker: Any, action: str, value: str) -> dict[str, Any]:
 def playlist_track_action(
     speaker: Any, action: str, playlist_id: str, index: int, item_id: str
 ) -> dict[str, Any]:
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     playlist, _, count = find_playlist_track(coordinator, playlist_id, index, item_id)
     if action == "remove":
         coordinator.remove_from_sonos_playlist(playlist, index)

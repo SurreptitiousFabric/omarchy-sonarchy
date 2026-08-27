@@ -8,17 +8,10 @@ from soco.music_services import MusicService
 from soco.plugins.sharelink import ShareLinkPlugin
 
 from ..apple_catalog import public_apple_album_url, public_apple_music_url
-from .browse import clean, global_results, item_attr, safe_call, validate_identifier
-from .common import DomainService, string_arg
+from .capabilities import tv_autoplay_enabled
+from .common import DomainService, coordinator_for, string_arg
+from .media import clean, global_results, item_attr, safe_call, validate_identifier
 from .ports import ContentPort
-from .settings import tv_autoplay_enabled
-
-
-def _coordinator(speaker: Any) -> Any:
-    return (
-        safe_call(lambda: speaker.group.coordinator if speaker.group else speaker, speaker)
-        or speaker
-    )
 
 
 def play_apple(
@@ -27,7 +20,7 @@ def play_apple(
     validated = public_apple_music_url(url)
     if not validated:
         raise ValueError("Expected an Apple Music link")
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     position = share_link_factory(coordinator).add_share_link_to_queue(validated)
     coordinator.play_from_queue(max(0, int(position) - 1))
     return {"ok": True, "action": "play-apple", "message": "Playing from Apple Music"}
@@ -39,7 +32,7 @@ def play_apple_album(
     validated = public_apple_album_url(url)
     if not validated:
         raise ValueError("Expected an Apple Music album link")
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     try:
         source = coordinator.music_source
     except Exception:  # noqa: BLE001 - optional SoCo source is inconsistent
@@ -63,7 +56,7 @@ def play_global(
     results_fn: Callable[[Any, str, int], Any] | None = None,
     metadata_fn: Callable[[Any], str] = to_didl_string,
 ) -> dict[str, Any]:
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     expected = validate_identifier(item_id, "Global Player item identifier")
     results = (
         results_fn(coordinator, term, 50)
@@ -86,7 +79,7 @@ def play_global(
 
 
 def start_library_update(speaker: Any) -> dict[str, Any]:
-    coordinator = _coordinator(speaker)
+    coordinator = coordinator_for(speaker)
     if bool(safe_call(lambda: coordinator.music_library.library_updating, False)):
         return {
             "ok": True,

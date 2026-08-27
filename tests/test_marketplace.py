@@ -1,3 +1,4 @@
+import ast
 import json
 import re
 import stat
@@ -360,6 +361,38 @@ def test_production_components_stay_within_size_guardrails():
     for path in (ROOT / "sonarchy_backend").rglob("*.py"):
         assert len(path.read_text().splitlines()) <= 800, path.relative_to(ROOT)
     assert re.search(r"\bProcess\s*\{", service_implementation()) is None
+
+
+def test_handler_domains_do_not_import_each_others_private_implementations():
+    handler_domains = {
+        "alarms",
+        "artwork",
+        "browse",
+        "content",
+        "devices",
+        "mixer",
+        "playback",
+        "playlists",
+        "queue",
+        "settings",
+        "topology",
+    }
+    domain_root = ROOT / "sonarchy_backend/domains"
+
+    for domain in sorted(handler_domains):
+        tree = ast.parse((domain_root / f"{domain}.py").read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or not node.module:
+                continue
+            if node.level == 1:
+                imported_domain = node.module.split(".", 1)[0]
+            elif node.module.startswith("sonarchy_backend.domains."):
+                imported_domain = node.module.split(".")[2]
+            else:
+                continue
+            assert imported_domain not in handler_domains - {domain}, (
+                f"{domain} imports private handler domain {imported_domain}"
+            )
 
 
 def test_pages_use_omarchy_tokens_without_debug_chrome():

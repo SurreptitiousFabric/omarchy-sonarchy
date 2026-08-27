@@ -22,6 +22,33 @@ class DomainService:
         return handler(args)
 
 
+def clean(value: Any) -> str:
+    text = str(value or "").strip()
+    return "" if text == "NOT_IMPLEMENTED" else text
+
+
+def safe_call(call: Callable[[], Any], fallback: Any) -> Any:
+    try:
+        return call()
+    except Exception:  # noqa: BLE001 - optional Sonos properties fail inconsistently
+        return fallback
+
+
+def safe_index(raw: Any, fallback: int = -1) -> int:
+    try:
+        return int(raw)
+    except TypeError, ValueError:
+        return fallback
+
+
+def coordinator_for(speaker: Any) -> Any:
+    def resolve() -> Any:
+        group = speaker.group
+        return getattr(group, "coordinator", None) or speaker
+
+    return safe_call(resolve, speaker)
+
+
 def string_arg(args: dict[str, Any], name: str) -> str:
     value = args.get(name)
     if not isinstance(value, str) or not value.strip():

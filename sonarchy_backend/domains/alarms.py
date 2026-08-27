@@ -8,21 +8,17 @@ from typing import Any
 from soco.alarms import Alarm, get_alarms
 from soco.data_structures import to_didl_string
 
-from .browse import favorite_reference, item_attr
-from .common import DomainService, bool_arg, number_arg, string_arg
+from .common import (
+    DomainService,
+    bool_arg,
+    clean,
+    coordinator_for,
+    number_arg,
+    safe_call,
+    string_arg,
+)
+from .media import favorite_reference, item_attr
 from .ports import AlarmsPort
-
-
-def _clean(value: Any) -> str:
-    text = str(value or "").strip()
-    return "" if text == "NOT_IMPLEMENTED" else text
-
-
-def _safe(call: Callable[[], Any], fallback: Any) -> Any:
-    try:
-        return call()
-    except Exception:  # noqa: BLE001 - stale optional alarm metadata is non-fatal
-        return fallback
 
 
 def project_alarms(
@@ -30,21 +26,23 @@ def project_alarms(
 ) -> dict[str, Any]:
     alarms = list(alarm_loader(speaker))
     items = []
-    for alarm in sorted(alarms, key=lambda value: (value.start_time, _clean(value.alarm_id))):
-        program_uri = _clean(alarm.program_uri)
+    for alarm in sorted(alarms, key=lambda value: (value.start_time, clean(value.alarm_id))):
+        program_uri = clean(alarm.program_uri)
         items.append(
             {
-                "id": _clean(alarm.alarm_id),
+                "id": clean(alarm.alarm_id),
                 "time": alarm.start_time.strftime("%H:%M"),
                 "duration": 0
                 if alarm.duration is None
                 else alarm.duration.hour * 60 + alarm.duration.minute,
-                "recurrence": _clean(alarm.recurrence),
+                "recurrence": clean(alarm.recurrence),
                 "enabled": bool(alarm.enabled),
                 "volume": int(alarm.volume),
                 "include_grouped": bool(alarm.include_linked_zones),
-                "room_uid": _clean(alarm.room_uuid),
-                "room": _clean(_safe(lambda alarm=alarm: alarm.zone.player_name, "Unknown room")),
+                "room_uid": clean(alarm.room_uuid),
+                "room": clean(
+                    safe_call(lambda alarm=alarm: alarm.zone.player_name, "Unknown room")
+                ),
                 "program": "Chime"
                 if program_uri in {"", "x-rincon-buzzer:0"}
                 else "Saved Sonos content",
@@ -53,14 +51,8 @@ def project_alarms(
     return {"ok": True, "kind": "alarms", "items": items, "total": len(items)}
 
 
-def _coordinator(speaker: Any) -> Any:
-    return (
-        _safe(lambda: speaker.group.coordinator if speaker.group else speaker, speaker) or speaker
-    )
-
-
 def parse_alarm_time(raw: str) -> time:
-    match = re.fullmatch(r"([01]\d|2[0-3]):([0-5]\d)", _clean(raw))
+    match = re.fullmatch(r"([01]\d|2[0-3]):([0-5]\d)", clean(raw))
     if not match:
         raise ValueError("Alarm time must be HH:MM")
     return time(hour=int(match.group(1)), minute=int(match.group(2)))
@@ -69,11 +61,11 @@ def parse_alarm_time(raw: str) -> time:
 def alarm_by_id(
     speaker: Any, alarm_id: str, *, alarm_loader: Callable[[Any], Any] = get_alarms
 ) -> Any:
-    expected = _clean(alarm_id)
+    expected = clean(alarm_id)
     if not re.fullmatch(r"\d+", expected):
         raise ValueError("Invalid alarm identifier")
     for alarm in alarm_loader(speaker):
-        if _clean(alarm.alarm_id) == expected:
+        if clean(alarm.alarm_id) == expected:
             return alarm
     raise ValueError("The alarm no longer exists")
 
@@ -84,7 +76,7 @@ def alarm_program(
     *,
     metadata_fn: Callable[[Any], str] = to_didl_string,
 ) -> tuple[str | None, str]:
-    value = _clean(raw)
+    value = clean(raw)
     if value == "chime":
         return None, ""
     if not value.startswith("favorite:"):
@@ -94,7 +86,7 @@ def alarm_program(
         (
             item
             for item in coordinator.music_library.get_sonos_favorites(max_items=200)
-            if _clean(item_attr(item, "item_id")) == expected
+            if clean(item_attr(item, "item_id")) == expected
         ),
         None,
     )
@@ -119,22 +111,22 @@ def save_alarm(
     alarm_loader: Callable[[Any], Any] = get_alarms,
     metadata_fn: Callable[[Any], str] = to_didl_string,
 ) -> dict[str, Any]:
-    recurrence_value = _clean(recurrence).upper()
+    recurrence_value = clean(recurrence).upper()
     if recurrence_value not in {"ONCE", "DAILY", "WEEKDAYS", "WEEKENDS"}:
         raise ValueError("Unsupported alarm recurrence")
     duration_value = int(duration_minutes)
     if duration_value not in {0, 15, 30, 45, 60, 90, 120}:
         raise ValueError("Unsupported alarm duration")
-    if _clean(alarm_id) == "new":
+    if clean(alarm_id) == "new":
         alarm = alarm_factory(speaker)
         alarm.program_uri, alarm.program_metadata = alarm_program(
-            _coordinator(speaker), program, metadata_fn=metadata_fn
+            coordinator_for(speaker), program, metadata_fn=metadata_fn
         )
     else:
         alarm = alarm_by_id(speaker, alarm_id, alarm_loader=alarm_loader)
-        if _clean(program) != "keep":
+        if clean(program) != "keep":
             alarm.program_uri, alarm.program_metadata = alarm_program(
-                _coordinator(speaker), program, metadata_fn=metadata_fn
+                coordinator_for(speaker), program, metadata_fn=metadata_fn
             )
     alarm.start_time = parse_alarm_time(start)
     alarm.recurrence = recurrence_value
@@ -145,7 +137,7 @@ def save_alarm(
     alarm.enabled = bool(enabled)
     alarm.include_linked_zones = bool(include_grouped)
     saved_id = alarm.save()
-    return {"ok": True, "action": "alarm-save", "id": _clean(saved_id), "message": "Alarm saved"}
+    return {"ok": True, "action": "alarm-save", "id": clean(saved_id), "message": "Alarm saved"}
 
 
 def toggle_alarm(

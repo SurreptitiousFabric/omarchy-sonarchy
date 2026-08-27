@@ -12,7 +12,12 @@ from sonarchy_backend.domains.alarms import (
     save_alarm,
     toggle_alarm,
 )
-from sonarchy_backend.domains.capabilities import line_in_available
+from sonarchy_backend.domains.capabilities import (
+    line_in_available,
+    queue_transport_active,
+    tv_autoplay_enabled,
+)
+from sonarchy_backend.domains.common import coordinator_for
 from sonarchy_backend.domains.content import (
     play_apple,
     play_apple_album,
@@ -81,6 +86,50 @@ class Transport:
 
     def GetMediaInfo(self, _args):
         return {"CurrentURI": self.uri}
+
+
+def test_shared_coordinator_projection_handles_groups_and_stale_state():
+    coordinator = object()
+
+    class GroupedSpeaker:
+        group_reads = 0
+
+        @property
+        def group(self):
+            self.group_reads += 1
+            if self.group_reads > 1:
+                raise RuntimeError("group state changed during projection")
+            return SimpleNamespace(coordinator=coordinator)
+
+    grouped = GroupedSpeaker()
+    assert coordinator_for(grouped) is coordinator
+    assert grouped.group_reads == 1
+
+    class StaleSpeaker:
+        @property
+        def group(self):
+            raise RuntimeError("stale topology")
+
+    stale = StaleSpeaker()
+    assert coordinator_for(stale) is stale
+
+
+def test_shared_capability_projections_preserve_authoritative_tristate():
+    autoplay = SimpleNamespace(
+        deviceProperties=SimpleNamespace(GetAutoplayRoomUUID=Mock(return_value={"RoomUUID": "R1"}))
+    )
+    assert tv_autoplay_enabled(autoplay) is True
+    autoplay.deviceProperties.GetAutoplayRoomUUID.return_value = {"RoomUUID": ""}
+    assert tv_autoplay_enabled(autoplay) is False
+    autoplay.deviceProperties.GetAutoplayRoomUUID.return_value = {}
+    assert tv_autoplay_enabled(autoplay) is None
+
+    transport = SimpleNamespace(avTransport=Transport())
+    assert queue_transport_active(transport) is True
+    transport.avTransport.uri = "x-sonosapi-stream:station"
+    assert queue_transport_active(transport) is False
+    transport.avTransport.GetMediaInfo = Mock(return_value={})
+    assert queue_transport_active(transport) is None
 
 
 class AudioIn:
