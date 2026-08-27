@@ -365,11 +365,34 @@ def test_page_navigation_follows_the_now_playing_content():
     assert "function moveCursor(delta)" in navigation
     assert "changed(nextValue)" in navigation
     assert 'else if (key === "1") root.activePage = "now"' in widget
-    assert 'else if (key === "5") root.activePage = "system"' in widget
+    assert 'else if (key === "3") root.activePage = "queue"' in widget
+    assert 'else if (key === "6") root.activePage = "system"' in widget
     assert "id: positionLabel" in now_page
     assert "id: durationLabel" in now_page
     assert "anchors.left: parent.left" in now_page
     assert "anchors.right: parent.right" in now_page
+
+
+def test_queue_is_a_dedicated_capability_driven_keyboard_page():
+    widget = (ROOT / "BarWidget.qml").read_text()
+    browse_page = (ROOT / "SonarchyBrowsePage.qml").read_text()
+    queue_page = (ROOT / "SonarchyQueuePage.qml").read_text()
+
+    assert "SonarchyQueuePage {" in widget
+    assert 'readonly property bool currentPage: root.activePage === "queue"' in widget
+    assert '{ value: "queue", label: "Queue"' in widget
+    assert 'else if (key === "3") root.activePage = "queue"' in widget
+    assert 'activePage === "queue" ? queuePage' in widget
+    assert 'else if (activePage === "queue") service.loadContent("queue", "")' in widget
+    assert 'else if (key === "r") root.refreshPanel()' in widget
+    assert '{ value: "queue", label: "Current queue" }' not in browse_page
+    assert 'service.loadContent("queue", "")' in queue_page
+    assert 'root.can("queue.item.play")' in queue_page
+    assert 'root.can("queue.item.remove")' in queue_page
+    assert 'root.can("queue.clear")' in queue_page
+    assert "root.service.removeQueueItem(" in queue_page
+    assert 'root.arm("queue-clear")' in queue_page
+    assert "function ensureVisible(item)" in queue_page
 
 
 def test_shared_omarchy_dropdowns_and_toggles_are_in_the_keyboard_focus_route():
@@ -395,6 +418,7 @@ def test_shared_omarchy_dropdowns_and_toggles_are_in_the_keyboard_focus_route():
         "BarWidget.qml",
         "SonarchyNowPage.qml",
         "SonarchyBrowsePage.qml",
+        "SonarchyQueuePage.qml",
         "SonarchySoundPage.qml",
         "SonarchySystemPage.qml",
     ):
@@ -442,6 +466,7 @@ def test_production_components_stay_within_size_guardrails():
         "SonarchySystemPage.qml",
         "SonarchyAlarmEditor.qml",
         "SonarchyAlarmDraft.qml",
+        "SonarchyQueuePage.qml",
         "SonarchyInfoRow.qml",
     )
 

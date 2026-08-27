@@ -74,19 +74,21 @@ While the popup is focused:
 - `M`: mute
 - `S`: stop
 - `R`: refresh
-- `1` / `2` / `3` / `4` / `5`: Now / Browse / Rooms / Sound / System
+- `1` / `2` / `3` / `4` / `5` / `6`: Now / Browse / Queue / Rooms / Sound / System
 - `Escape`: leave a text field, close a dropdown, or close the popup
 
 Every action has a keyboard path. Number controls include focusable minus and
 plus buttons because Omarchy's shared visual slider is pointer-oriented.
-The fixed bottom dock keeps the five pages available without interrupting the
+The fixed bottom dock keeps the six pages available without interrupting the
 artwork, transport, and volume flow above it.
 
-The five pages are:
+The six pages are:
 
 - **Now:** metadata, seeking, transport, volume, play mode, and sleep timer.
-- **Browse:** Favorites, queue, Sonos Playlists, paged local-library folders and
+- **Browse:** Favorites, Sonos Playlists, paged local-library folders and
   search, Apple catalog, and Global Player.
+- **Queue:** the current Sonos queue, with play, remove, refresh, and confirmed
+  clear controls.
 - **Rooms:** rename, playback sessions, room handoff, all-room mixer, and staged
   grouping.
 - **Sound:** EQ and supported speaker, Sub, surround, and home-theater settings.

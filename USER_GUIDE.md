@@ -25,13 +25,13 @@ Inside the popup:
 | `M` | Mute or unmute the selected group |
 | `S` | Stop |
 | `R` | Refresh |
-| `1`–`5` | Open Now, Browse, Rooms, Sound, or System |
+| `1`–`6` | Open Now, Browse, Queue, Rooms, Sound, or System |
 | `Escape` | Leave a field or dropdown, then close the popup |
 
 Everything has a keyboard path. Sliders also have focusable minus and plus
 buttons, so a pointer is never required.
 
-The five-page dock stays below the current page. Focus it with `J`, `K`, or
+The six-page dock stays below the current page. Focus it with `J`, `K`, or
 `Tab`, move across it with `H`/`L` or the arrow keys, and press `Enter` to
 switch. The number keys remain the fastest direct route.
 
@@ -76,7 +76,6 @@ Use the Browse selector to choose a source:
 
 - **Sonos Favorites:** saved items reported by the household. Artwork appears
   when the favourite supplies a safe speaker-local or approved media URL.
-- **Current queue:** play or remove an exact item, or clear the queue.
 - **Sonos playlists:** create a playlist, save the current queue, play/delete a
   playlist, and move or remove its tracks.
 - **Local music library:** browse the categories and folders actually reported
@@ -111,6 +110,14 @@ The second press is the confirmation; doing nothing lets it expire.
 Library navigation is revalidated against the speaker on every request. If the
 Sonos index changes while a folder or page is open, Sonarchy asks you to return
 to the library root or refresh instead of opening or playing a different item.
+
+## Queue page
+
+The dedicated Queue page shows the current Sonos queue for the selected room.
+The active item is highlighted. You can play an exact item, remove it after a
+second confirmation, refresh the list, or clear the whole queue after a second
+confirmation. Queue actions re-check the item identity so a stale list cannot
+silently act on a different track.
 
 ## Rooms page
 

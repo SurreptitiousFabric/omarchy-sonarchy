@@ -79,6 +79,18 @@ TestCase {
     compare(subject.currentContextKey(), '[{"id":"A:ARTIST","index":7}]:0')
   }
 
+  function test_queue_view_supersedes_an_inflight_browse_request() {
+    subject.load("library", "", [], 0)
+    subject.load("queue", "", [], 0)
+
+    compare(fakeLive.calls.length, 1)
+    compare(subject.kind, "queue")
+    compare(subject.pendingKind, "queue")
+    compare(subject.pendingTerm, "")
+    compare(subject.pendingPath.length, 0)
+    compare(subject.pendingOffset, 0)
+  }
+
   function test_library_back_and_page_preserve_navigation_context() {
     subject.path = [{ id: "A:ARTIST", index: 2 }]
     subject.kind = "library"

@@ -36,6 +36,9 @@ and URL policy, and `LiveService.qml` alone owns the backend process/protocol.
 options, input validation, and exact save projection. `SonarchyAlarmEditor.qml`
 is the visual form over that model; `SonarchySystemPage.qml` composes it with
 the saved-alarm list and read-only device/source sections.
+`SonarchyQueuePage.qml` is the dedicated current-queue presentation; it consumes
+the Store's authoritative content projection and capability-gated actions and
+does not own a second queue model or protocol path.
 
 ## Omarchy visual language
 

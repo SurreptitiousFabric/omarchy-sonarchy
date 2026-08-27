@@ -86,7 +86,6 @@ Item {
     if (searchable && service.contentTerm === "") {
       return "Type something to search"
     }
-    if (service.contentKind === "queue") return "The queue is empty"
     if (service.contentKind === "favorites") return "No Sonos Favorites found"
     if (service.contentKind === "playlists") return "No Sonos playlists found"
     if (service.contentKind === "playlist") return "This playlist is empty"
@@ -95,7 +94,6 @@ Item {
 
   function resultHeading() {
     if (!service) return "RESULTS"
-    if (service.contentKind === "queue") return "QUEUE"
     if (service.contentKind === "favorites") return "FAVORITES"
     if (service.contentKind === "library")
       return String(service.contentMeta.currentTitle || "LOCAL LIBRARY").toUpperCase()
@@ -113,7 +111,6 @@ Item {
     if (!service) return false
     var kind = String(service.contentKind || "")
     if (kind === "favorites") return can("content.favorite.play")
-    if (kind === "queue") return can("queue.item.play")
     if (kind === "apple") return can("content.apple.play")
     if (kind === "global") return can("content.global.play")
     if (kind === "library" || kind === "playlist")
@@ -153,7 +150,6 @@ Item {
         value: root.sourceKind
         options: [
           { value: "favorites", label: "Sonos Favorites" },
-          { value: "queue", label: "Current queue" },
           { value: "playlists", label: "Sonos playlists" },
           { value: "library", label: "Local music library" },
           { value: "apple", label: "Apple Music catalog" },
@@ -421,18 +417,6 @@ Item {
           }
 
           Button {
-            visible: root.service && root.service.contentKind === "queue"
-              && root.service.contentItems.length > 0
-            iconText: "󰅖"
-            text: root.confirmation === "queue-clear" ? "Confirm clear" : "Clear"
-            foreground: root.confirmation === "queue-clear" ? Color.urgent : root.foreground
-            bordered: true
-            focusable: true
-            enabled: root.service && !root.service.actionBusy && root.can("queue.clear")
-            onClicked: if (root.arm("queue-clear")) root.service.clearQueue()
-          }
-
-          Button {
             visible: root.service && root.service.contentKind === "playlist"
             text: "Play all"
             iconText: "󰐊"
@@ -532,8 +516,7 @@ Item {
                 anchors.centerIn: parent
                 visible: resultArtwork.status !== Image.Ready
                 text: modelData.browsable === true ? "󰉋"
-                  : (root.service && root.service.contentKind === "playlists" ? "󰒛"
-                     : (root.service && root.service.contentKind === "queue" ? "󰎇" : "󰐊"))
+                  : (root.service && root.service.contentKind === "playlists" ? "󰒛" : "󰐊")
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.iconLarge
@@ -663,22 +646,17 @@ Item {
               }
 
               Button {
-                visible: root.service && (root.service.contentKind === "queue"
-                  || root.service.contentKind === "playlist")
+                visible: root.service && root.service.contentKind === "playlist"
                 iconText: "󰅖"
                 tooltipText: root.confirmation === resultCard.rowKey
                   ? "Press again to confirm" : "Remove"
                 foreground: root.confirmation === resultCard.rowKey ? Color.urgent : root.foreground
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
-                  && (root.service.contentKind === "queue"
-                      ? root.can("queue.item.remove")
-                      : root.can("playlists.track.mutate"))
+                  && root.can("playlists.track.mutate")
                 onClicked: {
                   if (!root.arm(resultCard.rowKey)) return
-                  if (root.service.contentKind === "queue")
-                    root.service.removeQueueItem(Number(modelData.index), String(modelData.id))
-                  else root.service.playlistTrackAction("remove", modelData)
+                  root.service.playlistTrackAction("remove", modelData)
                 }
               }
             }

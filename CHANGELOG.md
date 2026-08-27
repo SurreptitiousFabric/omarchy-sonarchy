@@ -56,6 +56,9 @@
   projection into a directly runtime-tested model beneath the Omarchy-themed
   form, leaving the System page as a 518-line composition layer and enforcing
   each component's size and ownership gates.
+- Promoted the current Sonos queue from a buried Browse source to a dedicated
+  keyboard-accessible Queue tab with refresh, play, identity-checked removal,
+  confirmed clear, active-item highlighting, and no duplicated backend state.
 
 ## 4.1.0 — 2026-08-26
 

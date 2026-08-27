@@ -77,11 +77,7 @@ BarWidget {
       foreground: root.panelForeground
       focusable: true
       enabled: root.service && !root.service.loading
-      onClicked: {
-        root.service.refresh()
-        root.service.refreshDetails()
-        if (root.activePage === "browse") root.service.reloadContent()
-      }
+      onClicked: root.refreshPanel()
     }
   }
 
@@ -94,6 +90,14 @@ BarWidget {
   function syncArtworkPreference() {
     if (service)
       service.radioArtworkEnrichmentEnabled = showArtwork && enrichRadioArtwork
+  }
+
+  function refreshPanel() {
+    if (!service) return
+    service.refresh()
+    service.refreshDetails()
+    if (activePage === "browse") service.reloadContent()
+    else if (activePage === "queue") service.loadContent("queue", "")
   }
 
   onServiceChanged: syncArtworkPreference()
@@ -205,9 +209,10 @@ BarWidget {
 
   function ensureFocusedVisible(item) {
     var page = activePage === "browse" ? browsePage
-      : (activePage === "rooms" ? roomsPage
-         : (activePage === "sound" ? soundPage
-            : (activePage === "system" ? systemPage : nowPage)))
+      : (activePage === "queue" ? queuePage
+         : (activePage === "rooms" ? roomsPage
+            : (activePage === "sound" ? soundPage
+               : (activePage === "system" ? systemPage : nowPage))))
     if (page && typeof page.ensureVisible === "function") page.ensureVisible(item)
   }
 
@@ -322,8 +327,8 @@ BarWidget {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: nowPage.editing || roomsPage.editing || browsePage.editing || systemPage.editing
-        || roomPicker.popupOpen
+      blocked: nowPage.editing || browsePage.editing || queuePage.editing
+        || roomsPage.editing || systemPage.editing || roomPicker.popupOpen
       onMoveRequested: function(dx, dy) {
         if (dy !== 0) root.moveControlFocus(dy > 0)
         else if (dx !== 0 && root.activeControl() === pageTabs)
@@ -341,12 +346,13 @@ BarWidget {
         else if (key === "p") root.service.runAction("previous")
         else if (key === "m") root.service.runAction("mute-toggle")
         else if (key === "s") root.service.runAction("stop")
-        else if (key === "r") root.service.refresh()
+        else if (key === "r") root.refreshPanel()
         else if (key === "1") root.activePage = "now"
         else if (key === "2") root.activePage = "browse"
-        else if (key === "3") root.activePage = "rooms"
-        else if (key === "4") root.activePage = "sound"
-        else if (key === "5") root.activePage = "system"
+        else if (key === "3") root.activePage = "queue"
+        else if (key === "4") root.activePage = "rooms"
+        else if (key === "5") root.activePage = "sound"
+        else if (key === "6") root.activePage = "system"
       }
 
       Column {
@@ -435,6 +441,25 @@ BarWidget {
             }
           }
 
+          SonarchyQueuePage {
+            id: queuePage
+            anchors.fill: parent
+            readonly property bool currentPage: root.activePage === "queue"
+            visible: currentPage || opacity > 0.01
+            enabled: currentPage
+            opacity: currentPage ? 1.0 : 0.0
+            z: currentPage ? 1 : 0
+            service: root.service
+            device: root.device
+            foreground: root.panelForeground
+            fontFamily: root.bar.fontFamily
+            showArtwork: root.showArtwork
+
+            Behavior on opacity {
+              NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
+          }
+
           SonarchyRoomsPage {
             id: roomsPage
             anchors.fill: parent
@@ -502,6 +527,7 @@ BarWidget {
           options: [
             { value: "now", label: "Now", icon: "󰐊" },
             { value: "browse", label: "Browse", icon: "󰍉" },
+            { value: "queue", label: "Queue", icon: "󰎇" },
             { value: "rooms", label: "Rooms", icon: "󰓅" },
             { value: "sound", label: "Sound", icon: "󰕾" },
             { value: "system", label: "System", icon: "󰒓" }

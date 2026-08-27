@@ -51,7 +51,7 @@ mise exec -- python -m ruff check .
 mise exec -- python -m ruff format --check .
 mise exec -- python -m coverage run -m pytest -q
 mise exec -- python -m coverage report
-/usr/lib/qt6/bin/qmllint BarWidget.qml LiveService.qml Service.qml SonarchyAlarmDraft.qml SonarchyAlarmEditor.qml SonarchyNowPage.qml SonarchyBrowsePage.qml SonarchyRoomsPage.qml SonarchySoundPage.qml SonarchySystemPage.qml
+/usr/lib/qt6/bin/qmllint BarWidget.qml LiveService.qml Service.qml SonarchyAlarmDraft.qml SonarchyAlarmEditor.qml SonarchyNowPage.qml SonarchyBrowsePage.qml SonarchyQueuePage.qml SonarchyRoomsPage.qml SonarchySoundPage.qml SonarchySystemPage.qml
 ```
 
 Also run the marketplace's deterministic baseline against the exact release
