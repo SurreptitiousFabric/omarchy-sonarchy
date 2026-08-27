@@ -66,6 +66,9 @@
 - Added a Global Player compatibility retry that preserves the original query
   first and retries provider-friendly capitalization only after an empty
   result, so searches such as `classic fm` do not depend on title case.
+- Fixed Apple artist/album arrows falling through to single-track playback by
+  explicitly qualifying the delegate row, centralizing browse-before-play
+  activation in the Store, and rejecting browsable rows at the playback gate.
 
 ## 4.1.0 — 2026-08-26
 

@@ -34,6 +34,7 @@ Item {
 
   function adjustRoomVolume(roomUid, delta) { store.adjustRoomVolume(roomUid, delta) }
   function adjustVolume(delta) { store.adjustVolume(delta) }
+  function activateContent(item) { store.activateContent(item) }
   function applyMembers(roomUids) { store.applyMembers(roomUids) }
   function clearError() { store.clearError() }
   function clearQueue() { store.clearQueue() }
@@ -48,7 +49,6 @@ Item {
   function libraryPage(offset) { store.libraryPage(offset) }
   function loadContent(kind, term, path, offset) { store.loadContent(kind, term, path, offset) }
   function openLibraryItem(item) { store.openLibraryItem(item) }
-  function openAppleItem(item) { store.openAppleItem(item) }
   function prepareContentSearch(kind) { store.prepareContentSearch(kind) }
   function searchContent(kind, term) { store.searchContent(kind, term) }
   function movePlaybackToRoom(roomUid) { store.movePlaybackToRoom(roomUid) }

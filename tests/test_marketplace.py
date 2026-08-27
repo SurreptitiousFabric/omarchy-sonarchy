@@ -198,6 +198,15 @@ def test_content_reads_use_the_persistent_backend_not_a_one_shot_process():
     assert 'sendCommand("content.browse"' in live_service
 
 
+def test_browsable_content_uses_one_activation_route_and_cannot_fall_through_to_playback():
+    service = service_implementation()
+    browse_page = (ROOT / "SonarchyBrowsePage.qml").read_text()
+
+    assert "root.service.activateContent(resultCard.modelData)" in browse_page
+    assert "if (contentState.openItem(item)) return" in service
+    assert "item.browsable === true" in service
+
+
 def test_library_browse_has_keyboard_routes_for_hierarchy_search_and_pages():
     service = service_implementation()
     browse_page = (ROOT / "SonarchyBrowsePage.qml").read_text()

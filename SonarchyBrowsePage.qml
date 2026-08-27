@@ -578,16 +578,8 @@ Item {
                       || (root.canPlayCurrentKind() && modelData.playable !== false))
                 opacity: enabled ? 1.0 : 0.35
                 onClicked: {
-                  if (root.service.contentKind === "library" && modelData.browsable === true) {
-                    browseFlick.contentY = 0
-                    root.service.openLibraryItem(modelData)
-                  } else if (String(root.service.contentKind || "").indexOf("apple") === 0
-                             && modelData.browsable === true) {
-                    browseFlick.contentY = 0
-                    root.service.openAppleItem(modelData)
-                  } else {
-                    root.service.playContent(modelData)
-                  }
+                  if (resultCard.modelData.browsable === true) browseFlick.contentY = 0
+                  root.service.activateContent(resultCard.modelData)
                 }
               }
 

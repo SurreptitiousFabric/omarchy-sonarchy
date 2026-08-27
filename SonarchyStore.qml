@@ -396,8 +396,11 @@ Item {
   function reloadContent() { contentState.reload() }
   function openLibraryItem(item) { contentState.openLibraryItem(item) }
   function libraryBack() { contentState.libraryBack() }
-  function openAppleItem(item) { contentState.openAppleItem(item) }
   function appleBack() { contentState.appleBack() }
+  function activateContent(item) {
+    if (contentState.openItem(item)) return
+    playContent(item)
+  }
   function libraryPage(offset) { contentState.libraryPage(offset) }
   function contentContextKey() { return contentState.currentContextKey() }
 
@@ -568,7 +571,7 @@ Item {
   }
 
   function playContent(item) {
-    if (!item || !selectedDevice || item.playable === false) return
+    if (!item || item.browsable === true || !selectedDevice || item.playable === false) return
     if (contentKind !== "favorites" && actionBusy) return
     if (contentKind === "favorites") {
       if (!requireCapability("content.favorite.play")) return

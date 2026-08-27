@@ -175,13 +175,23 @@ Item {
   }
 
   function openAppleItem(item) {
-    if (kind.indexOf("apple") !== 0 || !item || item.browsable !== true) return
+    if (kind.indexOf("apple") !== 0 || !item || item.browsable !== true) return false
     var nextKind = String(item.browse_kind || "")
-    if (nextKind !== "apple-artist" && nextKind !== "apple-album") return
+    if (nextKind !== "apple-artist" && nextKind !== "apple-album") return false
     var nextHistory = appleHistory.slice()
     nextHistory.push({ kind: kind, term: term })
     appleHistory = nextHistory
     load(nextKind, String(item.id || ""), [], 0)
+    return true
+  }
+
+  function openItem(item) {
+    if (!item || item.browsable !== true) return false
+    if (kind === "library") {
+      openLibraryItem(item)
+      return true
+    }
+    return openAppleItem(item)
   }
 
   function appleBack() {

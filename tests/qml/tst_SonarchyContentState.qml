@@ -154,4 +154,16 @@ TestCase {
     compare(subject.kind, "apple")
     compare(subject.term, "new artist")
   }
+
+  function test_item_activation_opens_browsable_apple_rows_only() {
+    subject.kind = "apple"
+    compare(subject.openItem({
+      id: "20", browse_kind: "apple-album", browsable: true
+    }), true)
+    compare(subject.kind, "apple-album")
+
+    subject.requestId = ""
+    compare(subject.openItem({ id: "30", browsable: false, playable: true }), false)
+    compare(subject.openItem({ id: "40", browsable: true, browse_kind: "bad" }), false)
+  }
 }
