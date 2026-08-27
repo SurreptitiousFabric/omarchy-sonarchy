@@ -291,6 +291,34 @@ Item {
             font.pixelSize: Style.font.caption
           }
         }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(6)
+          visible: root.service && root.service.targetGroupRooms.length > 1
+
+          PanelSectionHeader {
+            text: "ROOMS IN GROUP"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Repeater {
+            model: root.service ? root.service.targetGroupRooms : []
+
+            delegate: SonarchyRoomVolumeRow {
+              required property var modelData
+              width: parent.width
+              service: root.service
+              room: modelData
+              bar: root.bar
+              scrollTarget: nowFlick
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              volumeStep: root.volumeStep
+            }
+          }
+        }
       }
 
       Item {

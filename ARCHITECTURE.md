@@ -39,6 +39,9 @@ the saved-alarm list and read-only device/source sections.
 `SonarchyQueuePage.qml` is the dedicated current-queue presentation; it consumes
 the Store's authoritative content projection and capability-gated actions and
 does not own a second queue model or protocol path.
+`SonarchyRoomVolumeRow.qml` is the shared authoritative per-room volume/mute
+control used by the current-group Now view and the all-room mixer; pages do not
+reimplement its room-field selection or action routing.
 
 ## Omarchy visual language
 

@@ -309,74 +309,16 @@ Item {
         Repeater {
           model: root.service ? root.service.rooms : []
 
-          delegate: Row {
-            id: roomRow
+          delegate: SonarchyRoomVolumeRow {
             required property var modelData
             width: roomMixer.width
-            spacing: Style.space(6)
-
-            Text {
-              width: Style.space(100)
-              anchors.verticalCenter: parent.verticalCenter
-              text: String(roomRow.modelData.name || "Sonos")
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              elide: Text.ElideRight
-            }
-
-            Button {
-              anchors.verticalCenter: parent.verticalCenter
-              text: "−"
-              foreground: root.foreground
-              focusable: true
-              enabled: root.service && !root.service.actionBusy
-                && root.service.hasCapability("volume.room.set")
-                && Number(roomRow.modelData.volume || 0) > 0
-              onClicked: root.service.adjustRoomVolume(
-                String(roomRow.modelData.uid), -Math.max(1, root.volumeStep))
-            }
-
-            SonarchySlider {
-              scrollTarget: roomsFlick
-              bar: root.bar
-              anchors.verticalCenter: parent.verticalCenter
-              width: Math.max(Style.space(70), roomMixer.width - Style.space(228))
-              minimum: 0
-              maximum: 100
-              step: Math.max(1, root.volumeStep)
-              integer: true
-              value: Number(roomRow.modelData.volume || 0)
-              enabled: root.service && !root.service.actionBusy
-                && root.service.hasCapability("volume.room.set")
-              onReleased: function(value) {
-                root.service.setRoomVolume(String(roomRow.modelData.uid), value)
-              }
-            }
-
-            Button {
-              anchors.verticalCenter: parent.verticalCenter
-              text: "+"
-              foreground: root.foreground
-              focusable: true
-              enabled: root.service && !root.service.actionBusy
-                && root.service.hasCapability("volume.room.set")
-                && Number(roomRow.modelData.volume || 0) < 100
-              onClicked: root.service.adjustRoomVolume(
-                String(roomRow.modelData.uid), Math.max(1, root.volumeStep))
-            }
-
-            Button {
-              anchors.verticalCenter: parent.verticalCenter
-              iconText: roomRow.modelData.mute ? "󰝟" : "󰓄"
-              tooltipText: roomRow.modelData.mute ? "Unmute room" : "Mute room"
-              foreground: root.foreground
-              focusable: true
-              enabled: root.service && !root.service.actionBusy
-                && root.service.hasCapability("mute.room.set")
-              onClicked: root.service.setRoomMute(
-                String(roomRow.modelData.uid), !roomRow.modelData.mute)
-            }
+            service: root.service
+            room: modelData
+            bar: root.bar
+            scrollTarget: roomsFlick
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            volumeStep: root.volumeStep
           }
         }
       }

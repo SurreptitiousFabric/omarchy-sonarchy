@@ -69,6 +69,9 @@
 - Fixed Apple artist/album arrows falling through to single-track playback by
   explicitly qualifying the delegate row, centralizing browse-before-play
   activation in the Store, and rejecting browsable rows at the playback gate.
+- Added per-room volume and mute controls directly beneath Group Volume on the
+  Now page. Now and the all-room mixer share one Omarchy-themed row that reads
+  authoritative room volume/mute values instead of the active group aggregate.
 
 ## 4.1.0 — 2026-08-26
 

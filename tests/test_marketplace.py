@@ -477,6 +477,7 @@ def test_production_components_stay_within_size_guardrails():
         "SonarchyAlarmDraft.qml",
         "SonarchyQueuePage.qml",
         "SonarchyInfoRow.qml",
+        "SonarchyRoomVolumeRow.qml",
     )
 
     assert len(facade.splitlines()) <= 350
@@ -486,6 +487,24 @@ def test_production_components_stay_within_size_guardrails():
     for path in (ROOT / "sonarchy_backend").rglob("*.py"):
         assert len(path.read_text().splitlines()) <= 800, path.relative_to(ROOT)
     assert re.search(r"\bProcess\s*\{", service_implementation()) is None
+
+
+def test_group_volume_exposes_shared_authoritative_per_room_controls():
+    now_page = (ROOT / "SonarchyNowPage.qml").read_text()
+    rooms_page = (ROOT / "SonarchyRoomsPage.qml").read_text()
+    room_row = (ROOT / "SonarchyRoomVolumeRow.qml").read_text()
+    store = service_implementation()
+
+    assert 'text: "ROOMS IN GROUP"' in now_page
+    assert "root.service.targetGroupRooms.length > 1" in now_page
+    assert now_page.count("SonarchyRoomVolumeRow {") == 1
+    assert rooms_page.count("SonarchyRoomVolumeRow {") == 1
+    assert "room.room_volume !== undefined" in room_row
+    assert "room.room_muted !== undefined" in room_row
+    assert "root.service.setRoomVolume(String(root.room.uid), value)" in room_row
+    assert "root.service.setRoomMute(String(root.room.uid), !root.roomMuted)" in room_row
+    assert "readonly property var targetGroupRooms" in store
+    assert "room.room_volume !== undefined ? room.room_volume : room.volume" in store
 
 
 def test_handler_domains_do_not_import_each_others_private_implementations():
@@ -569,7 +588,11 @@ def test_protocol_requests_keep_background_and_action_state_correlated():
 def test_page_sliders_scroll_the_page_without_wheel_mutations():
     controls = "\n".join(
         path.read_text()
-        for path in (*sorted(ROOT.glob("Sonarchy*Page.qml")), ROOT / "SonarchyAlarmEditor.qml")
+        for path in (
+            *sorted(ROOT.glob("Sonarchy*Page.qml")),
+            ROOT / "SonarchyAlarmEditor.qml",
+            ROOT / "SonarchyRoomVolumeRow.qml",
+        )
     )
     slider = (ROOT / "SonarchySlider.qml").read_text()
     runtime_test = (ROOT / "tests/qml/tst_SonarchySlider.qml").read_text()

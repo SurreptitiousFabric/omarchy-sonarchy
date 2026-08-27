@@ -52,6 +52,8 @@ playback state. It provides:
 
 - previous, play/pause, stop, and next;
 - seek back or forward by ten seconds when the source supports seeking;
+- whole-group volume/mute plus separate volume and mute controls for every room
+  in the current group;
 - group volume and mute;
 - shuffle, repeat, and crossfade where supported; and
 - a sleep timer.

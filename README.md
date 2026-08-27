@@ -84,7 +84,8 @@ artwork, transport, and volume flow above it.
 
 The six pages are:
 
-- **Now:** metadata, seeking, transport, volume, play mode, and sleep timer.
+- **Now:** metadata, seeking, transport, group and grouped-room volume, play
+  mode, and sleep timer.
 - **Browse:** Favorites, Sonos Playlists, paged local-library folders and
   search, Apple artist/album/song catalog navigation, and Global Player.
 - **Queue:** the current Sonos queue, with play, remove, refresh, and confirmed

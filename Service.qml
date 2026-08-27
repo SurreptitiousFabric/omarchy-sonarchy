@@ -31,6 +31,7 @@ Item {
   readonly property alias sessions: store.sessions
   readonly property alias soundDetails: store.soundDetails
   readonly property alias target: store.target
+  readonly property alias targetGroupRooms: store.targetGroupRooms
 
   function adjustRoomVolume(roomUid, delta) { store.adjustRoomVolume(roomUid, delta) }
   function adjustVolume(delta) { store.adjustVolume(delta) }

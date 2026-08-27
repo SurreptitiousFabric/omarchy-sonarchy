@@ -116,6 +116,19 @@ Item {
     ? activeHousehold.rooms : []
   readonly property var groups: activeHousehold && activeHousehold.groups
     ? activeHousehold.groups : []
+  readonly property var targetGroupRooms: {
+    var result = []
+    var memberUids = target && target.memberUids ? target.memberUids : []
+    for (var i = 0; i < memberUids.length; i++) {
+      for (var j = 0; j < devices.length; j++) {
+        if (String(devices[j].uid) === String(memberUids[i])) {
+          result.push(devices[j])
+          break
+        }
+      }
+    }
+    return result
+  }
   readonly property var sessions: {
     var result = []
     for (var h = 0; h < households.length; h++) {
@@ -526,7 +539,9 @@ Item {
 
   function adjustRoomVolume(roomUid, delta) {
     var room = roomForUid(roomUid)
-    if (room) setRoomVolume(roomUid, Number(room.volume || 0) + Number(delta || 0))
+    if (!room) return
+    var current = room.room_volume !== undefined ? room.room_volume : room.volume
+    setRoomVolume(roomUid, Number(current || 0) + Number(delta || 0))
   }
 
   function setRoomMute(roomUid, mute) {
