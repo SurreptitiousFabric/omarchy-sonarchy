@@ -50,8 +50,8 @@ class FakeController:
         self.calls.append(("deviceDetails", room_uid))
         return {"ok": True, "ip": "device-address", "device": {"name": "Office"}}
 
-    def browse_content(self, room_uid, kind, term, limit):
-        self.calls.append(("browseContent", room_uid, kind, term, limit))
+    def browse_content(self, room_uid, kind, term, limit, context=None):
+        self.calls.append(("browseContent", room_uid, kind, term, limit, context))
         return {"ok": True, "kind": kind, "items": [], "total": 0}
 
     def list_alarms(self, room_uid):
@@ -314,8 +314,9 @@ PROTOCOL_ACTION_CASES = (
             "itemId": "L:1",
             "index": 0,
             "mode": "play",
+            "libraryPath": [],
         },
-        ("enqueue_content_item", "R1", "library", "song", "L:1", 0, "play"),
+        ("enqueue_content_item", "R1", "library", "song", "L:1", 0, "play", []),
     ),
     (
         "playlists.mutate",
@@ -495,10 +496,36 @@ def test_content_query_returns_value_without_snapshot_refresh():
         output,
     )
 
-    assert controller.calls == [("browseContent", "R1", "queue", "", 100)]
+    assert controller.calls == [("browseContent", "R1", "queue", "", 100, None)]
     messages = decoded(output)
     assert len(messages) == 1
     assert messages[0]["value"] == {"ok": True, "kind": "queue", "items": [], "total": 0}
+
+
+def test_library_content_query_forwards_hierarchy_and_page_context():
+    controller = FakeController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    context = {"path": [{"id": "A:ARTIST", "index": 3}], "offset": 40}
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "library-page",
+            "op": "content.browse",
+            "args": {
+                "roomUid": "R1",
+                "kind": "library",
+                "term": "",
+                "limit": 40,
+                "context": context,
+            },
+        },
+        output,
+    )
+
+    assert controller.calls == [("browseContent", "R1", "library", "", 40, context)]
+    assert decoded(output)[0]["ok"] is True
 
 
 def test_alarm_query_returns_value_without_snapshot_refresh():

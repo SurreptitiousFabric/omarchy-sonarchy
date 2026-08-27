@@ -67,8 +67,10 @@ Item {
           && router.store.contentRequestRoomUid === String(router.store.selectedDevice.uid || "")
           && router.store.contentRequestKind === router.store.contentKind
           && router.store.contentRequestTerm === router.store.contentTerm
+          && router.store.contentRequestContextKey === router.store.contentContextKey()
         router.store.contentRequestId = ""
         router.store.contentRequestRoomUid = ""
+        router.store.contentRequestContextKey = ""
         if (payload && payload.ok === true && Array.isArray(payload.items)
             && stillCurrentContent) {
           var safeItems = []
@@ -83,7 +85,13 @@ Item {
             shares: Array.isArray(payload.shares) ? payload.shares : [],
             updating: payload.updating === true,
             playlistId: String(payload.playlist_id || ""),
-            playlistTitle: String(payload.playlist_title || "")
+            playlistTitle: String(payload.playlist_title || ""),
+            breadcrumbs: Array.isArray(payload.breadcrumbs) ? payload.breadcrumbs : [],
+            currentTitle: String(payload.current_title || ""),
+            offset: Number(payload.offset || 0),
+            pageSize: Number(payload.page_size || 40),
+            hasPrevious: payload.has_previous === true,
+            hasNext: payload.has_next === true
           }
           router.store.clearRequestError(completedContentRequestId)
         } else if (stillCurrentContent) {
@@ -94,9 +102,15 @@ Item {
         if (router.store.pendingContentKind !== "") {
           var nextKind = router.store.pendingContentKind
           var nextTerm = router.store.pendingContentTerm
+          var nextPath = router.store.pendingContentPath
+          var nextOffset = router.store.pendingContentOffset
           router.store.pendingContentKind = ""
           router.store.pendingContentTerm = ""
-          Qt.callLater(function() { router.store.loadContent(nextKind, nextTerm) })
+          router.store.pendingContentPath = []
+          router.store.pendingContentOffset = 0
+          Qt.callLater(function() {
+            router.store.loadContent(nextKind, nextTerm, nextPath, nextOffset)
+          })
         }
         return
       }
@@ -162,8 +176,11 @@ Item {
         router.store.contentRequestRoomUid = ""
         router.store.contentRequestKind = ""
         router.store.contentRequestTerm = ""
+        router.store.contentRequestContextKey = ""
         router.store.pendingContentKind = ""
         router.store.pendingContentTerm = ""
+        router.store.pendingContentPath = []
+        router.store.pendingContentOffset = 0
         router.store.alarmsLoading = false
         router.store.alarmsRequestId = ""
         router.store.alarmsRequestRoomUid = ""

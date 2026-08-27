@@ -34,7 +34,7 @@ omarchy plugin validate .
 bash -n sonarchy-backend.sh
 bash tests/qml/run-component-tests.sh
 mise exec -- shellcheck sonarchy-backend.sh tests/qml/run-component-tests.sh
-/usr/lib/qt6/bin/qmllint BarWidget.qml LiveService.qml Service.qml SonarchyNowPage.qml SonarchyBrowsePage.qml SonarchyRoomsPage.qml SonarchySoundPage.qml SonarchySystemPage.qml
+/usr/lib/qt6/bin/qmllint BarWidget.qml LiveService.qml Service.qml SonarchyContentState.qml SonarchyNowPage.qml SonarchyBrowsePage.qml SonarchyRoomsPage.qml SonarchySoundPage.qml SonarchySystemPage.qml
 ```
 
 QML lint may report unresolved `qs.Commons`/`qs.Ui` imports when invoked outside

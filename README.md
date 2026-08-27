@@ -16,7 +16,7 @@ owners.
 - Real room rename
 - Sonos Favorites and current-queue playback, removal, and clearing
 - Sonos Playlist create, save-queue, browse, play, reorder, and delete actions
-- Local Sonos music-library track search and index refresh
+- Hierarchical, paged local Sonos music-library browsing, track search, and index refresh
 - Public Apple Music catalog and Global Player station search
 - Confidence-checked album artwork for radio tracks, with a station-logo fallback
 - Alarm create, edit, enable/disable, and delete, including Favorite sounds
@@ -81,8 +81,8 @@ artwork, transport, and volume flow above it.
 The five pages are:
 
 - **Now:** metadata, seeking, transport, volume, play mode, and sleep timer.
-- **Browse:** Favorites, queue, Sonos Playlists, local library, Apple catalog,
-  and Global Player.
+- **Browse:** Favorites, queue, Sonos Playlists, paged local-library folders and
+  search, Apple catalog, and Global Player.
 - **Rooms:** rename, playback sessions, room handoff, all-room mixer, and staged
   grouping.
 - **Sound:** EQ and supported speaker, Sub, surround, and home-theater settings.

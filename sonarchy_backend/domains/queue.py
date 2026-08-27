@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .common import DomainService, coordinator_for, number_arg, string_arg
+from .library import library_item_at, validate_library_context
 from .media import (
     clean,
     find_playlist_track,
@@ -55,15 +56,25 @@ def _validate_search_term(raw: Any) -> str:
     return value
 
 
-def find_library_item(coordinator: Any, item_id: str, term: str) -> Any:
-    expected_id = validate_identifier(item_id, "library item identifier")
-    result = coordinator.music_library.get_music_library_information(
-        "tracks", max_items=100, search_term=_validate_search_term(term)
+def find_library_item(
+    coordinator: Any,
+    item_id: str,
+    term: str,
+    index: int = 0,
+    library_path: Any = None,
+) -> Any:
+    path_value = [] if library_path is None else library_path
+    path, _ = validate_library_context({"path": path_value, "offset": 0})
+    query = _validate_search_term(term) if clean(term) else ""
+    if query and path:
+        raise ValueError("Library search must start from the library root")
+    return library_item_at(
+        coordinator.music_library,
+        path=path,
+        index=index,
+        item_id=item_id,
+        search_term=query,
     )
-    for item in result:
-        if clean(item_attr(item, "item_id")) == expected_id:
-            return item
-    raise ValueError("The library item is no longer available")
 
 
 def enqueue_content_item(
@@ -73,10 +84,11 @@ def enqueue_content_item(
     item_id: str,
     index: int,
     mode: str,
+    library_path: Any = None,
 ) -> dict[str, Any]:
     coordinator = coordinator_for(speaker)
     if kind == "library":
-        item = find_library_item(coordinator, item_id, context)
+        item = find_library_item(coordinator, item_id, context, index, library_path)
     elif kind == "playlist":
         _, item, _ = find_playlist_track(coordinator, context, index, item_id)
     else:
@@ -107,6 +119,12 @@ def queue_service(backend: QueuePort) -> DomainService:
             raise ValueError("index must be an integer")
         return int(value)
 
+    def context_arg(args: dict[str, Any]) -> str:
+        value = args.get("context", "")
+        if not isinstance(value, str):
+            raise ValueError("context must be a string")
+        return value
+
     return DomainService(
         {
             "queue.item.play": lambda args: backend.queue_action(
@@ -127,10 +145,11 @@ def queue_service(backend: QueuePort) -> DomainService:
             "queue.content.enqueue": lambda args: backend.enqueue_content_item(
                 string_arg(args, "roomUid"),
                 string_arg(args, "kind"),
-                string_arg(args, "context"),
+                context_arg(args),
                 string_arg(args, "itemId"),
                 index_arg(args),
                 string_arg(args, "mode"),
+                args.get("libraryPath", []),
             ),
         }
     )

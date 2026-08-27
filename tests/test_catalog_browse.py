@@ -29,6 +29,7 @@ from sonarchy_backend.domains.browse import (
     queue_content,
     validate_playlist_id,
 )
+from sonarchy_backend.domains.library import validate_library_context
 
 
 class Result(list):
@@ -60,7 +61,7 @@ class Response:
         self.closed = True
 
 
-def music_item(item_id="T:1", title="Track", *, playable=True):
+def music_item(item_id="T:1", title="Track", *, playable=True, browsable=False):
     return SimpleNamespace(
         item_id=item_id,
         title=title,
@@ -69,6 +70,7 @@ def music_item(item_id="T:1", title="Track", *, playable=True):
         album_art_uri="/getaa?s=1",
         resources=[SimpleNamespace(uri="x-test:item")] if playable else [],
         can_play=playable,
+        browsable=browsable,
     )
 
 
@@ -210,6 +212,94 @@ def test_queue_favorites_library_and_playlist_projections():
     assert didl_item_payload(track, 0, coordinator.ip_address)["playable"] is True
     with pytest.raises(ValueError, match="playlist identifier"):
         validate_playlist_id("bad")
+
+
+def test_library_browse_discovers_root_and_pages_nested_containers():
+    artists = music_item("A:ARTIST", "Artists", playable=False, browsable=True)
+    track = music_item("A:ARTIST/Artist/Track", "Track")
+
+    class Page(Result):
+        @property
+        def total_matches(self):
+            return 82
+
+    library = SimpleNamespace(
+        library_updating=False,
+        list_library_shares=Mock(return_value=["//server/music"]),
+        browse=Mock(side_effect=[Result([artists]), Result([artists]), Page([track])]),
+    )
+    coordinator = SimpleNamespace(ip_address="192.168.1.2", music_library=library)
+
+    root = library_content(coordinator, "", 40)
+    nested = library_content(
+        coordinator,
+        "",
+        40,
+        {"path": [{"id": "A:ARTIST", "index": 0}], "offset": 40},
+    )
+
+    assert root["items"][0]["browsable"] is True
+    assert nested["breadcrumbs"] == [{"id": "A:ARTIST", "index": 0, "title": "Artists"}]
+    assert nested["current_title"] == "Artists"
+    assert nested["items"][0]["index"] == 40
+    assert nested["has_previous"] is True
+    assert nested["has_next"] is True
+    assert library.browse.call_args_list[0].kwargs == {
+        "ml_item": None,
+        "start": 0,
+        "max_items": 40,
+        "full_album_art_uri": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "context",
+    (
+        [],
+        {"extra": True},
+        {"path": "A:ARTIST"},
+        {"path": [{"id": "A:ARTIST"}]},
+        {"path": [{"id": "bad\n", "index": 0}]},
+        {"offset": -1},
+    ),
+)
+def test_library_context_rejects_ambiguous_or_unsafe_shapes(context):
+    with pytest.raises(ValueError, match=r"[Ll]ibrary"):
+        validate_library_context(context)
+
+
+def test_library_browse_rejects_a_stale_container_path():
+    library = SimpleNamespace(
+        library_updating=False,
+        list_library_shares=Mock(return_value=[]),
+        browse=Mock(return_value=Result([music_item("A:ALBUM", browsable=True)])),
+    )
+    coordinator = SimpleNamespace(ip_address="192.168.1.2", music_library=library)
+    with pytest.raises(ValueError, match="library changed"):
+        library_content(
+            coordinator,
+            "",
+            40,
+            {"path": [{"id": "A:ARTIST", "index": 0}], "offset": 0},
+        )
+
+
+def test_library_track_search_uses_the_requested_page_offset():
+    library = SimpleNamespace(
+        library_updating=False,
+        list_library_shares=Mock(return_value=["//server/music"]),
+        get_music_library_information=Mock(return_value=Result([music_item()])),
+    )
+    coordinator = SimpleNamespace(ip_address="192.168.1.2", music_library=library)
+    payload = library_content(coordinator, "track", 40, {"path": [], "offset": 80})
+
+    assert payload["items"][0]["index"] == 80
+    assert library.get_music_library_information.call_args.kwargs == {
+        "start": 80,
+        "max_items": 40,
+        "search_term": "track",
+        "full_album_art_uri": False,
+    }
 
 
 def test_apple_and_global_content_normalize_provider_results():

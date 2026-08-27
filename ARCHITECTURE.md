@@ -87,9 +87,11 @@ implementation.
 `domains/common.py` owns neutral value normalization, safe optional reads, and
 single-read coordinator selection. `domains/media.py` owns stable item identity
 checks and provider-item lookup shared by Browse, Content, Queue, Playlists, and
-Alarms. `domains/capabilities.py` owns bounded positive/nullable source and
-device probes. None registers protocol handlers; an AST gate prevents handler
-domains from importing one another.
+Alarms. `domains/library.py` owns bounded library path/page validation,
+authoritative container resolution, and nested item identity checks shared by
+Browse and Queue. `domains/capabilities.py` owns bounded positive/nullable
+source and device probes. None registers protocol handlers; an AST gate
+prevents handler domains from importing one another.
 
 ## State and capabilities
 

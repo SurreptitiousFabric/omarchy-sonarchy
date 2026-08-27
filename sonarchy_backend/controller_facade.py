@@ -21,12 +21,19 @@ class DomainFacadeMixin:
     def device_details(self, room_uid: str) -> dict[str, Any]:
         return project_device_details(self._zone(room_uid))
 
-    def browse_content(self, room_uid: str, kind: str, term: str, limit: int) -> dict[str, Any]:
+    def browse_content(
+        self,
+        room_uid: str,
+        kind: str,
+        term: str,
+        limit: int,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         speaker = self._zone(room_uid)
         coordinator = self._safe(
             lambda: speaker.group.coordinator if speaker.group else speaker, speaker
         )
-        return browse_content(coordinator, kind, term, limit)
+        return browse_content(coordinator, kind, term, limit, context)
 
     def list_alarms(self, room_uid: str) -> dict[str, Any]:
         return project_alarms(self._zone(room_uid))
@@ -67,9 +74,18 @@ class DomainFacadeMixin:
         return queue_action(self._zone(room_uid), action, index, item_id)
 
     def enqueue_content_item(
-        self, room_uid: str, kind: str, context: str, item_id: str, index: int, mode: str
+        self,
+        room_uid: str,
+        kind: str,
+        context: str,
+        item_id: str,
+        index: int,
+        mode: str,
+        library_path: Any = None,
     ) -> dict[str, Any]:
-        return enqueue_content_item(self._zone(room_uid), kind, context, item_id, index, mode)
+        return enqueue_content_item(
+            self._zone(room_uid), kind, context, item_id, index, mode, library_path
+        )
 
     def playlist_action(self, room_uid: str, action: str, value: str) -> dict[str, Any]:
         return playlist_action(self._zone(room_uid), action, value)

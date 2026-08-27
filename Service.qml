@@ -42,7 +42,10 @@ Item {
   function formatTime(value) { return store.formatTime(value) }
   function hasCapability(name) { return store.hasCapability(name) }
   function loadAlarms() { store.loadAlarms() }
-  function loadContent(kind, term) { store.loadContent(kind, term) }
+  function libraryBack() { store.libraryBack() }
+  function libraryPage(offset) { store.libraryPage(offset) }
+  function loadContent(kind, term, path, offset) { store.loadContent(kind, term, path, offset) }
+  function openLibraryItem(item) { store.openLibraryItem(item) }
   function prepareContentSearch(kind) { store.prepareContentSearch(kind) }
   function movePlaybackToRoom(roomUid) { store.movePlaybackToRoom(roomUid) }
   function playAppleAlbum(item) { store.playAppleAlbum(item) }

@@ -24,6 +24,18 @@ The backend accepts only this canonical versioned shape. Missing versions,
 camelCase operation aliases, flattened arguments, and non-object `args` are
 rejected without executing a command.
 
+`content.browse` accepts an optional `context` object. Local-library requests
+use `{ "path": [{ "id": "…", "index": 0 }], "offset": 0 }`: every path
+segment carries the absolute index at which its ID was observed, depth is
+bounded, and the backend re-reads each segment before returning a page. The
+result includes authoritative breadcrumbs, page flags, and `browsable` and
+`playable` item capabilities. Existing non-library requests may omit context.
+
+`queue.content.enqueue` accepts an optional `libraryPath` with the same bounded
+segments. The backend re-resolves that path and verifies the selected absolute
+index and item ID before mutation; QML-supplied metadata is never treated as an
+authoritative Sonos object.
+
 ## Result
 
 ```json

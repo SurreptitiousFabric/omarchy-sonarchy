@@ -23,16 +23,18 @@ Item {
 
   property var devices: []
   property var details: ({})
-  property var contentItems: []
-  property var contentMeta: ({})
-  property int contentTotal: 0
-  property string contentKind: "favorites"
-  property string contentTerm: ""
+  property alias contentItems: contentState.items
+  property alias contentMeta: contentState.meta
+  property alias contentTotal: contentState.total
+  property alias contentKind: contentState.kind
+  property alias contentTerm: contentState.term
+  property alias contentPath: contentState.path
+  property alias contentOffset: contentState.offset
   property var alarms: []
   property bool alarmsLoading: false
 
   property bool detailsLoading: false
-  property bool contentLoading: false
+  property alias contentLoading: contentState.loading
   property bool panelOpen: false
   property bool radioArtworkEnrichmentEnabled: false
   property alias artworkCache: artwork.cache
@@ -59,12 +61,15 @@ Item {
 
   property string detailsRequestId: ""
   property string detailsRequestRoomUid: ""
-  property string contentRequestId: ""
-  property string contentRequestRoomUid: ""
-  property string contentRequestKind: ""
-  property string contentRequestTerm: ""
-  property string pendingContentKind: ""
-  property string pendingContentTerm: ""
+  property alias contentRequestId: contentState.requestId
+  property alias contentRequestRoomUid: contentState.requestRoomUid
+  property alias contentRequestKind: contentState.requestKind
+  property alias contentRequestTerm: contentState.requestTerm
+  property alias contentRequestContextKey: contentState.requestContextKey
+  property alias pendingContentKind: contentState.pendingKind
+  property alias pendingContentTerm: contentState.pendingTerm
+  property alias pendingContentPath: contentState.pendingPath
+  property alias pendingContentOffset: contentState.pendingOffset
   property string alarmsRequestId: ""
   property string alarmsRequestRoomUid: ""
 
@@ -73,6 +78,12 @@ Item {
 
   SonarchyErrorState {
     id: requestErrorState
+  }
+
+  SonarchyContentState {
+    id: contentState
+    store: root
+    live: live
   }
 
   readonly property var selectedDevice: {
@@ -127,6 +138,14 @@ Item {
 
   onSelectedIpChanged: {
     details = ({})
+    if (contentKind === "library") {
+      contentItems = []
+      contentTotal = 0
+      contentMeta = ({})
+      contentTerm = ""
+      contentPath = []
+      contentOffset = 0
+    }
     if (selectedIp === "" || contentKind === "queue") {
       if (contentKind !== "favorites") {
         contentItems = []
@@ -137,6 +156,8 @@ Item {
       Qt.callLater(root.refreshDetails)
       if (contentKind === "queue")
         Qt.callLater(function() { root.loadContent("queue", "") })
+      else if (contentKind === "library")
+        Qt.callLater(function() { root.loadContent("library", "", [], 0) })
     }
   }
 
@@ -365,93 +386,16 @@ Item {
     }
   }
 
-  function syncLiveFavorites() {
-    if (contentKind !== "favorites") return
-    var source = liveFavorites && liveFavorites.items ? liveFavorites.items : []
-    var items = []
-    for (var i = 0; i < source.length; i++) {
-      items.push({
-        id: String(source[i].id),
-        title: String(source[i].title || "Favorite"),
-        subtitle: String(source[i].kind || "favorite"),
-        kind: String(source[i].kind || "audio"),
-        album_art: safeArtworkUrl(source[i].albumArtUrl),
-        playable: true
-      })
-    }
-    contentItems = items
-    contentTotal = Number(liveFavorites.total || items.length)
-    contentLoading = String(liveFavorites.state || "") === "not_loaded"
-    if (String(liveFavorites.state || "") === "error") {
-      setRequestError(liveFavorites.error, "Could not load Sonos Favorites",
-                      "favorites-snapshot")
-    } else if (String(liveFavorites.state || "") !== "not_loaded") {
-      clearRequestError("favorites-snapshot")
-    }
+  function syncLiveFavorites() { contentState.syncFavorites() }
+  function loadContent(kind, term, path, offset) {
+    contentState.load(kind, term, path, offset)
   }
-
-  function loadContent(kind, term) {
-    var nextKind = String(kind || "favorites")
-    var nextTerm = String(term || "").trim()
-    contentKind = nextKind
-    contentTerm = nextTerm
-    contentMeta = ({})
-
-    if (nextKind === "favorites") {
-      syncLiveFavorites()
-      if (String(liveFavorites.state || "") === "not_loaded") {
-        contentLoading = true
-        live.refreshFavorites()
-      }
-      return
-    }
-    if (!selectedDevice || !live.hasCapability("content.browse")) {
-      contentItems = []
-      contentTotal = 0
-      return
-    }
-    if ((nextKind === "apple" || nextKind === "global") && nextTerm === "") {
-      contentItems = []
-      contentTotal = 0
-      contentLoading = false
-      return
-    }
-    if (contentRequestId !== "") {
-      pendingContentKind = nextKind
-      pendingContentTerm = nextTerm
-      return
-    }
-
-    contentLoading = true
-    contentRequestRoomUid = String(selectedDevice.uid || "")
-    contentRequestKind = nextKind
-    contentRequestTerm = nextTerm
-    var resultLimit = nextKind === "queue" ? 100 : 40
-    contentRequestId = live.requestContent(
-      contentRequestRoomUid, contentRequestKind, contentRequestTerm, resultLimit)
-    if (contentRequestId === "") {
-      contentLoading = false
-      contentRequestRoomUid = ""
-    }
-  }
-
-  function prepareContentSearch(kind) {
-    contentKind = String(kind || "")
-    contentTerm = ""
-    contentItems = []
-    contentTotal = 0
-    contentMeta = ({})
-    contentLoading = false
-  }
-
-  function reloadContent() {
-    if (contentKind === "favorites") {
-      contentLoading = true
-      live.refreshFavorites()
-    } else {
-      loadContent(contentKind, contentTerm)
-    }
-  }
+  function prepareContentSearch(kind) { contentState.prepareSearch(kind) }
+  function reloadContent() { contentState.reload() }
+  function openLibraryItem(item) { contentState.openLibraryItem(item) }
+  function libraryBack() { contentState.libraryBack() }
+  function libraryPage(offset) { contentState.libraryPage(offset) }
+  function contentContextKey() { return contentState.currentContextKey() }
 
   function optimisticDevicePatch(ip, patch) {
     var next = []
@@ -659,7 +603,7 @@ Item {
     if (!requireCapability("queue.content.enqueue")) return
     trackProtocolAction(live.enqueueContent(
       String(selectedDevice.uid), contentKind, contentTerm,
-      String(item.id), Number(item.index || 0), String(mode)),
+      String(item.id), Number(item.index || 0), String(mode), contentPath),
       "Could not add item to the Sonos queue")
   }
 

@@ -12,6 +12,7 @@ from ..apple_catalog import (
     public_apple_music_url,
 )
 from .common import DomainService, number_arg, string_arg
+from .library import is_library_container, resolve_library_path, validate_library_context
 from .media import (
     PLAYLIST_ID_PATTERN,
     clean,
@@ -146,33 +147,61 @@ def didl_item_payload(item: Any, index: int, coordinator_ip: str) -> dict[str, A
         "subtitle": " · ".join(part for part in (creator, album) if part),
         "album_art": album_art_url(item_attr(item, "album_art_uri"), coordinator_ip),
         "playable": bool(resources),
+        "browsable": is_library_container(item),
     }
 
 
-def library_content(coordinator: Any, term: str, limit: int) -> dict[str, Any]:
+def library_content(
+    coordinator: Any,
+    term: str,
+    limit: int,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     query = validate_identifier(term, "search text", 120) if clean(term) else ""
     library = coordinator.music_library
+    path, offset = validate_library_context(context)
+    if query and path:
+        raise ValueError("Library search must start from the library root")
     shares = safe_call(library.list_library_shares, []) or []
     updating = bool(safe_call(lambda: library.library_updating, False))
-    if not query:
-        return {
-            "ok": True,
-            "kind": "library",
-            "items": [],
-            "total": 0,
-            "shares": [clean(share)[:512] for share in shares[:32]],
-            "updating": updating,
-        }
-    result = library.get_music_library_information("tracks", max_items=limit, search_term=query)
+    if query:
+        breadcrumbs: list[dict[str, Any]] = []
+        result = library.get_music_library_information(
+            "tracks",
+            start=offset,
+            max_items=limit,
+            search_term=query,
+            full_album_art_uri=False,
+        )
+        current_title = "Search results"
+    else:
+        parent, breadcrumbs = resolve_library_path(library, path)
+        result = library.browse(
+            ml_item=parent,
+            start=offset,
+            max_items=limit,
+            full_album_art_uri=False,
+        )
+        current_title = breadcrumbs[-1]["title"] if breadcrumbs else "Local library"
     coordinator_ip = clean(getattr(coordinator, "ip_address", ""))
-    items = [didl_item_payload(item, index, coordinator_ip) for index, item in enumerate(result)]
+    items = [
+        didl_item_payload(item, offset + index, coordinator_ip) for index, item in enumerate(result)
+    ]
+    total = result_total(result)
     return {
         "ok": True,
         "kind": "library",
         "items": items,
-        "total": result_total(result),
+        "total": total,
         "shares": [clean(share)[:512] for share in shares[:32]],
         "updating": updating,
+        "breadcrumbs": breadcrumbs,
+        "path": [{"id": part["id"], "index": part["index"]} for part in breadcrumbs],
+        "current_title": current_title,
+        "offset": offset,
+        "page_size": limit,
+        "has_previous": offset > 0,
+        "has_next": offset + len(items) < total,
     }
 
 
@@ -275,7 +304,13 @@ def global_content(coordinator: Any, term: str, limit: int) -> dict[str, Any]:
     }
 
 
-def browse_content(coordinator: Any, kind: str, term: str, limit: int) -> dict[str, Any]:
+def browse_content(
+    coordinator: Any,
+    kind: str,
+    term: str,
+    limit: int,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if kind not in CONTENT_KINDS:
         raise ValueError(f"Unsupported content kind: {kind}")
     bounded_limit = max(1, min(int(limit), 100))
@@ -286,7 +321,7 @@ def browse_content(coordinator: Any, kind: str, term: str, limit: int) -> dict[s
     if kind == "queue":
         return queue_content(coordinator, bounded_limit)
     if kind == "library":
-        return library_content(coordinator, term, bounded_limit)
+        return library_content(coordinator, term, bounded_limit, context)
     if kind == "playlists":
         return playlists_content(coordinator, bounded_limit)
     if kind == "playlist":
@@ -302,6 +337,7 @@ def browse_service(backend: BrowsePort) -> DomainService:
                 string_arg(args, "kind"),
                 str(args.get("term", "")),
                 int(number_arg(args, "limit")),
+                args.get("context"),
             )
         },
         mutates=False,

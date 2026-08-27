@@ -69,7 +69,14 @@ class DevicesPort(Protocol):
 
 
 class BrowsePort(Protocol):
-    def browse_content(self, room_uid: str, kind: str, term: str, limit: int) -> dict[str, Any]: ...
+    def browse_content(
+        self,
+        room_uid: str,
+        kind: str,
+        term: str,
+        limit: int,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]: ...
 
 
 class AlarmsPort(Protocol):
@@ -115,7 +122,14 @@ class QueuePort(Protocol):
     ) -> dict[str, Any]: ...
 
     def enqueue_content_item(
-        self, room_uid: str, kind: str, context: str, item_id: str, index: int, mode: str
+        self,
+        room_uid: str,
+        kind: str,
+        context: str,
+        item_id: str,
+        index: int,
+        mode: str,
+        library_path: Any = None,
     ) -> dict[str, Any]: ...
 
 

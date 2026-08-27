@@ -10,12 +10,14 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 250 automated tests pass with 83% branch coverage.
+- [x] All 267 automated Python tests pass with 83% branch coverage, alongside
+  17 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
 - [x] Headless real-event QML tests load Omarchy's installed `PanelSlider`,
   prove wheel input scrolls without a slider mutation, preserve intentional
-  dragging, and enforce request-owned error clearing.
+  dragging, enforce request-owned error clearing, and cover content root,
+  nested, paging, Back, and Favorites state transitions.
 - [x] The marketplace v3 deterministic baseline reports no findings and only
   the disclosed, non-blocking `package-manager` review capability.
 - [x] The exact 12-package runtime environment is internally consistent and a
@@ -81,6 +83,10 @@ before Sonarchy claims real-device coverage for them.
   clear, and stale-item protection have passed without starting playback.
 - [ ] Play the disposable Sonos Playlist; create/save/reorder/remove/delete and
   unrelated-playlist preservation have passed without starting playback.
+- [ ] Browse every local-library category reported by the test household,
+  traverse at least two nested levels, move forward and backward across a
+  multi-page result when available, search and play one track, and confirm a
+  deliberately stale path is rejected without playing a different item.
 - [x] Create, edit, disable, re-enable, and delete a disposable alarm; verify
   that unrelated alarms are unchanged.
 - [x] Change and restore every supported sound and device setting exposed by

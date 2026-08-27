@@ -179,9 +179,10 @@ Item {
     return sendCommand(
       "artwork.radio.resolve", { title: title, artist: artist }, false, false)
   }
-  function requestContent(roomUid, kind, term, limit) {
+  function requestContent(roomUid, kind, term, limit, context) {
     return sendCommand("content.browse", {
-      roomUid: roomUid, kind: kind, term: term, limit: limit
+      roomUid: roomUid, kind: kind, term: term, limit: limit,
+      context: context || ({})
     }, false, false)
   }
   function requestAlarms(roomUid) {
@@ -226,10 +227,11 @@ Item {
   function clearQueue(roomUid) {
     return sendCommand("queue.clear", { roomUid: roomUid })
   }
-  function enqueueContent(roomUid, kind, context, itemId, index, mode) {
+  function enqueueContent(roomUid, kind, context, itemId, index, mode, libraryPath) {
     return sendCommand("queue.content.enqueue", {
       roomUid: roomUid, kind: kind, context: context,
-      itemId: itemId, index: index, mode: mode
+      itemId: itemId, index: index, mode: mode,
+      libraryPath: libraryPath || []
     })
   }
   function mutatePlaylist(roomUid, action, value) {

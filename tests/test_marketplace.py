@@ -13,6 +13,7 @@ def service_implementation():
         for name in (
             "Service.qml",
             "SonarchyStore.qml",
+            "SonarchyContentState.qml",
             "SonarchyProtocolRouter.qml",
             "SonarchyArtwork.qml",
         )
@@ -197,6 +198,20 @@ def test_content_reads_use_the_persistent_backend_not_a_one_shot_process():
     assert 'sendCommand("content.browse"' in live_service
 
 
+def test_library_browse_has_keyboard_routes_for_hierarchy_search_and_pages():
+    service = service_implementation()
+    browse_page = (ROOT / "SonarchyBrowsePage.qml").read_text()
+
+    assert "function openLibraryItem(item)" in service
+    assert "function libraryBack()" in service
+    assert "function libraryPage(offset)" in service
+    assert 'text: root.service && root.service.contentKind === "library"' in browse_page
+    assert '? "Browse" : "Back"' in browse_page
+    assert 'tooltipText: "Previous page"' in browse_page
+    assert 'tooltipText: "Next page"' in browse_page
+    assert "focusable: true" in browse_page
+
+
 def test_alarm_reads_use_the_persistent_backend_not_a_one_shot_process():
     service = service_implementation()
     live_service = (ROOT / "LiveService.qml").read_text()
@@ -361,6 +376,7 @@ def test_production_components_stay_within_size_guardrails():
     facade = (ROOT / "Service.qml").read_text()
     components = (
         "SonarchyStore.qml",
+        "SonarchyContentState.qml",
         "SonarchyProtocolRouter.qml",
         "SonarchyArtwork.qml",
         "LiveService.qml",
@@ -476,6 +492,7 @@ def test_page_sliders_scroll_the_page_without_wheel_mutations():
 
 def test_background_results_cannot_clear_unrelated_request_errors():
     store = (ROOT / "SonarchyStore.qml").read_text()
+    content_state = (ROOT / "SonarchyContentState.qml").read_text()
     router = (ROOT / "SonarchyProtocolRouter.qml").read_text()
     error_state = (ROOT / "SonarchyErrorState.qml").read_text()
     runtime_test = (ROOT / "tests/qml/tst_SonarchyErrorState.qml").read_text()
@@ -484,7 +501,7 @@ def test_background_results_cannot_clear_unrelated_request_errors():
     assert "ownerId !== expectedOwner" in error_state
     assert "ownerId !== nextOwner" in error_state
     assert "readonly property alias requestErrorRequestId" in store
-    assert '"favorites-snapshot"' in store
+    assert '"favorites-snapshot"' in content_state
     assert '"local", true' in store
     assert "router.store.requestError =" not in router
     for owner in (

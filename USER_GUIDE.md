@@ -79,8 +79,12 @@ Use the Browse selector to choose a source:
 - **Current queue:** play or remove an exact item, or clear the queue.
 - **Sonos playlists:** create a playlist, save the current queue, play/delete a
   playlist, and move or remove its tracks.
-- **Local music library:** search tracks already indexed by Sonos and request a
-  re-index.
+- **Local music library:** browse the categories and folders actually reported
+  by Sonos, including available artist, album-artist, album, genre, composer,
+  track, share, and imported-playlist views; search indexed tracks; or request
+  a re-index. **Back** returns to the parent folder, and arrow buttons page
+  through lists longer than 40 results. Folder and playback actions appear
+  only when the backend verifies that the selected item supports them.
 - **Apple Music catalog:** search Apple's public catalog. Playback uses the
   Apple Music account already connected to the Sonos household. **Play now**
   starts only the selected song; **Album** queues the album container and
@@ -103,6 +107,10 @@ Sonarchy never disables it automatically.
 Queue clearing, playlist deletion, playlist-track removal, and similar
 destructive actions ask for the same focused action twice within five seconds.
 The second press is the confirmation; doing nothing lets it expire.
+
+Library navigation is revalidated against the speaker on every request. If the
+Sonos index changes while a folder or page is open, Sonarchy asks you to return
+to the library root or refresh instead of opening or playing a different item.
 
 ## Rooms page
 

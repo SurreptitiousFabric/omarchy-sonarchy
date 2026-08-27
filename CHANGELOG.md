@@ -34,6 +34,14 @@
   room, sound, or alarm values; a headless real-event test now proves the page
   scrolls without a slider mutation and intentional pointer dragging remains
   available.
+- Added hierarchical, paged local-library browsing from speaker-discovered
+  root categories, with authoritative breadcrumbs, keyboard-reachable folder
+  and paging controls, and stale path/index/identity checks before nested
+  playback.
+- Extracted content request, navigation, and paging state into a focused QML
+  component so the public facade and main Store stay below their architecture
+  guardrails while late results remain correlated to room, source, search,
+  path, and page.
 
 ## 4.1.0 — 2026-08-26
 

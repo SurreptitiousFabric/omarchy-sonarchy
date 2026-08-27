@@ -1,0 +1,181 @@
+import QtQuick
+
+Item {
+  id: root
+
+  required property var store
+  required property var live
+
+  property var items: []
+  property var meta: ({})
+  property int total: 0
+  property string kind: "favorites"
+  property string term: ""
+  property var path: []
+  property int offset: 0
+  property bool loading: false
+
+  property string requestId: ""
+  property string requestRoomUid: ""
+  property string requestKind: ""
+  property string requestTerm: ""
+  property string requestContextKey: ""
+  property string pendingKind: ""
+  property string pendingTerm: ""
+  property var pendingPath: []
+  property int pendingOffset: 0
+
+  function normalizedPath(value) {
+    if (!Array.isArray(value)) return []
+    var result = []
+    for (var i = 0; i < value.length; i++) {
+      var segment = value[i] || ({})
+      result.push({ id: String(segment.id || ""), index: Number(segment.index || 0) })
+    }
+    return result
+  }
+
+  function contextKey(value, pageOffset) {
+    return JSON.stringify(normalizedPath(value)) + ":" + String(Math.max(0, pageOffset || 0))
+  }
+
+  function currentContextKey() { return contextKey(path, offset) }
+
+  function syncFavorites() {
+    if (kind !== "favorites") return
+    var source = store.liveFavorites && store.liveFavorites.items
+      ? store.liveFavorites.items : []
+    var nextItems = []
+    for (var i = 0; i < source.length; i++) {
+      nextItems.push({
+        id: String(source[i].id),
+        title: String(source[i].title || "Favorite"),
+        subtitle: String(source[i].kind || "favorite"),
+        kind: String(source[i].kind || "audio"),
+        album_art: store.safeArtworkUrl(source[i].albumArtUrl),
+        playable: true,
+        browsable: false
+      })
+    }
+    items = nextItems
+    total = Number(store.liveFavorites.total || nextItems.length)
+    loading = String(store.liveFavorites.state || "") === "not_loaded"
+    if (String(store.liveFavorites.state || "") === "error") {
+      store.setRequestError(store.liveFavorites.error, "Could not load Sonos Favorites",
+                            "favorites-snapshot")
+    } else if (String(store.liveFavorites.state || "") !== "not_loaded") {
+      store.clearRequestError("favorites-snapshot")
+    }
+  }
+
+  function load(nextKindValue, nextTermValue, nextPathValue, nextOffsetValue) {
+    var nextKind = String(nextKindValue || "favorites")
+    var nextTerm = String(nextTermValue || "").trim()
+    var nextPath = nextKind === "library" ? normalizedPath(nextPathValue) : []
+    var nextOffset = nextKind === "library" ? Math.max(0, Number(nextOffsetValue || 0)) : 0
+    var contextChanged = nextKind !== kind || nextTerm !== term
+      || contextKey(nextPath, nextOffset) !== currentContextKey()
+    if (contextChanged) {
+      items = []
+      total = 0
+    }
+    kind = nextKind
+    term = nextTerm
+    path = nextPath
+    offset = nextOffset
+    meta = ({})
+
+    if (nextKind === "favorites") {
+      syncFavorites()
+      if (String(store.liveFavorites.state || "") === "not_loaded") {
+        loading = true
+        live.refreshFavorites()
+      }
+      return
+    }
+    if (!store.selectedDevice || !live.hasCapability("content.browse")) {
+      items = []
+      total = 0
+      loading = false
+      return
+    }
+    if ((nextKind === "apple" || nextKind === "global") && nextTerm === "") {
+      items = []
+      total = 0
+      loading = false
+      return
+    }
+    if (requestId !== "") {
+      pendingKind = nextKind
+      pendingTerm = nextTerm
+      pendingPath = nextPath
+      pendingOffset = nextOffset
+      return
+    }
+
+    loading = true
+    requestRoomUid = String(store.selectedDevice.uid || "")
+    requestKind = nextKind
+    requestTerm = nextTerm
+    requestContextKey = contextKey(nextPath, nextOffset)
+    var resultLimit = nextKind === "queue" ? 100 : 40
+    requestId = live.requestContent(
+      requestRoomUid, requestKind, requestTerm, resultLimit,
+      { path: nextPath, offset: nextOffset })
+    if (requestId === "") {
+      loading = false
+      requestRoomUid = ""
+      requestContextKey = ""
+    }
+  }
+
+  function prepareSearch(nextKind) {
+    kind = String(nextKind || "")
+    term = ""
+    path = []
+    offset = 0
+    items = []
+    total = 0
+    meta = ({})
+    loading = false
+  }
+
+  function reload() {
+    if (kind === "favorites") {
+      loading = true
+      live.refreshFavorites()
+    } else {
+      load(kind, term, path, offset)
+    }
+  }
+
+  function openLibraryItem(item) {
+    if (kind !== "library" || !item || item.browsable !== true) return
+    var nextPath = normalizedPath(path)
+    nextPath.push({ id: String(item.id || ""), index: Number(item.index || 0) })
+    load("library", "", nextPath, 0)
+  }
+
+  function libraryBack() {
+    if (kind !== "library" || path.length === 0) return
+    load("library", "", path.slice(0, path.length - 1), 0)
+  }
+
+  function libraryPage(pageOffset) {
+    if (kind !== "library") return
+    load("library", term, path, Math.max(0, Number(pageOffset || 0)))
+  }
+
+  function cancelRequests() {
+    loading = false
+    requestId = ""
+    requestRoomUid = ""
+    requestKind = ""
+    requestTerm = ""
+    requestContextKey = ""
+    pendingKind = ""
+    pendingTerm = ""
+    pendingPath = []
+    pendingOffset = 0
+  }
+}

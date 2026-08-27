@@ -23,8 +23,12 @@ Item {
     if (!visible || !service) return
     service.refreshDetails()
     if (searchable && sourceKind !== "library") return
-    service.loadContent(sourceKind, "")
+    if (sourceKind === "library" && service.contentKind === "library")
+      service.reloadContent()
+    else service.loadContent(sourceKind, "")
   }
+
+  onDeviceChanged: if (sourceKind === "library") queryField.text = ""
 
   function ensureVisible(item) {
     if (!item || !browseFlick.visible) return
@@ -51,7 +55,7 @@ Item {
 
   function runSearch() {
     if (!service || !searchable) return
-    service.loadContent(sourceKind, queryField.text)
+    service.loadContent(sourceKind, queryField.text, [], 0)
   }
 
   function changeSource(value) {
@@ -63,17 +67,23 @@ Item {
     if (searchable && sourceKind !== "library") {
       service.prepareContentSearch(sourceKind)
     } else {
-      service.loadContent(sourceKind, "")
+      service.loadContent(sourceKind, "", [], 0)
     }
   }
 
   function emptyMessage() {
     if (!service) return "Sonos is starting"
     if (service.contentLoading) return "Loading…"
-    if (searchable && service.contentTerm === "") {
-      if (sourceKind === "library" && service.contentMeta.shares
-          && service.contentMeta.shares.length === 0)
+    if (sourceKind === "library" && service.contentTerm === "") {
+      if (service.contentMeta.shares && service.contentMeta.shares.length === 0
+          && (!service.contentMeta.breadcrumbs
+              || service.contentMeta.breadcrumbs.length === 0))
         return "No local music library is configured in Sonos"
+      if (service.contentMeta.breadcrumbs && service.contentMeta.breadcrumbs.length > 0)
+        return "This library folder is empty"
+      return "No local library categories found"
+    }
+    if (searchable && service.contentTerm === "") {
       return "Type something to search"
     }
     if (service.contentKind === "queue") return "The queue is empty"
@@ -87,7 +97,8 @@ Item {
     if (!service) return "RESULTS"
     if (service.contentKind === "queue") return "QUEUE"
     if (service.contentKind === "favorites") return "FAVORITES"
-    if (service.contentKind === "library") return "LOCAL LIBRARY"
+    if (service.contentKind === "library")
+      return String(service.contentMeta.currentTitle || "LOCAL LIBRARY").toUpperCase()
     if (service.contentKind === "playlists") return "SONOS PLAYLISTS"
     if (service.contentKind === "playlist")
       return String(service.contentMeta.playlistTitle || "PLAYLIST").toUpperCase()
@@ -199,6 +210,25 @@ Item {
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         wrapMode: Text.WordWrap
+      }
+
+      Text {
+        width: parent.width
+        visible: root.sourceKind === "library" && root.service
+          && root.service.contentMeta.breadcrumbs
+          && root.service.contentMeta.breadcrumbs.length > 0
+        text: {
+          var crumbs = root.service && root.service.contentMeta
+            ? (root.service.contentMeta.breadcrumbs || []) : []
+          var labels = ["Local library"]
+          for (var i = 0; i < crumbs.length; i++)
+            labels.push(String(crumbs[i].title || "Folder"))
+          return labels.join("  ›  ")
+        }
+        color: Qt.darker(root.foreground, 1.35)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideLeft
       }
 
       Text {
@@ -315,12 +345,56 @@ Item {
           }
 
           Button {
-            visible: root.service && root.service.contentKind === "playlist"
-            text: "Back"
+            visible: root.service && (root.service.contentKind === "playlist"
+              || (root.service.contentKind === "library"
+                  && (root.service.contentTerm !== ""
+                      || (root.service.contentMeta.breadcrumbs
+                          && root.service.contentMeta.breadcrumbs.length > 0))))
+            text: root.service && root.service.contentKind === "library"
+              && root.service.contentTerm !== "" ? "Browse" : "Back"
             iconText: "󰁍"
             foreground: root.foreground
             focusable: true
-            onClicked: root.service.loadContent("playlists", "")
+            onClicked: {
+              browseFlick.contentY = 0
+              if (root.service.contentKind === "library") {
+                if (root.service.contentTerm !== "") {
+                  queryField.text = ""
+                  root.service.loadContent("library", "", [], 0)
+                } else root.service.libraryBack()
+              } else root.service.loadContent("playlists", "")
+            }
+          }
+
+          Button {
+            visible: root.service && root.service.contentKind === "library"
+              && root.service.contentMeta.hasPrevious === true
+            iconText: "󰁍"
+            tooltipText: "Previous page"
+            foreground: root.foreground
+            focusable: true
+            enabled: root.service && !root.service.contentLoading
+            onClicked: {
+              browseFlick.contentY = 0
+              root.service.libraryPage(Math.max(0,
+                Number(root.service.contentMeta.offset || 0)
+                - Number(root.service.contentMeta.pageSize || 40)))
+            }
+          }
+
+          Button {
+            visible: root.service && root.service.contentKind === "library"
+              && root.service.contentMeta.hasNext === true
+            iconText: "󰁔"
+            tooltipText: "Next page"
+            foreground: root.foreground
+            focusable: true
+            enabled: root.service && !root.service.contentLoading
+            onClicked: {
+              browseFlick.contentY = 0
+              root.service.libraryPage(Number(root.service.contentMeta.offset || 0)
+                + Number(root.service.contentMeta.pageSize || 40))
+            }
           }
 
           Button {
@@ -456,8 +530,9 @@ Item {
               Text {
                 anchors.centerIn: parent
                 visible: resultArtwork.status !== Image.Ready
-                text: root.service && root.service.contentKind === "playlists" ? "󰒛"
-                  : (root.service && root.service.contentKind === "queue" ? "󰎇" : "󰐊")
+                text: modelData.browsable === true ? "󰉋"
+                  : (root.service && root.service.contentKind === "playlists" ? "󰒛"
+                     : (root.service && root.service.contentKind === "queue" ? "󰎇" : "󰐊"))
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.iconLarge
@@ -473,16 +548,39 @@ Item {
               spacing: Style.space(4)
 
               Button {
-                iconText: root.service && root.service.contentKind === "playlists" ? "󰅂" : "󰐊"
-                tooltipText: root.service && root.service.contentKind === "playlists"
-                  ? "Open playlist" : "Play now"
+                iconText: modelData.browsable === true ? "󰅂"
+                  : (root.service && root.service.contentKind === "playlists" ? "󰅂" : "󰐊")
+                tooltipText: modelData.browsable === true ? "Open folder"
+                  : (root.service && root.service.contentKind === "playlists"
+                     ? "Open playlist" : "Play now")
                 foreground: root.foreground
                 focusable: true
                 selected: modelData.current === true
                 enabled: root.service && !root.service.actionBusy
-                  && root.canPlayCurrentKind() && modelData.playable !== false
+                  && ((root.service.contentKind === "library"
+                       && modelData.browsable === true && root.can("content.browse"))
+                      || (root.canPlayCurrentKind() && modelData.playable !== false))
                 opacity: enabled ? 1.0 : 0.35
-                onClicked: root.service.playContent(modelData)
+                onClicked: {
+                  if (root.service.contentKind === "library" && modelData.browsable === true) {
+                    browseFlick.contentY = 0
+                    root.service.openLibraryItem(modelData)
+                  } else {
+                    root.service.playContent(modelData)
+                  }
+                }
+              }
+
+              Button {
+                visible: root.service && root.service.contentKind === "library"
+                  && modelData.browsable === true && modelData.playable === true
+                text: "Play"
+                foreground: root.foreground
+                bordered: true
+                focusable: true
+                enabled: root.service && !root.service.actionBusy
+                  && root.can("queue.content.enqueue")
+                onClicked: root.service.enqueueContent(modelData, "play")
               }
 
               Button {
@@ -501,6 +599,7 @@ Item {
               Button {
                 visible: root.service && (root.service.contentKind === "library"
                   || root.service.contentKind === "playlist")
+                  && modelData.playable === true
                 text: "Next"
                 foreground: root.foreground
                 bordered: true
@@ -513,6 +612,7 @@ Item {
               Button {
                 visible: root.service && (root.service.contentKind === "library"
                   || root.service.contentKind === "playlist")
+                  && modelData.playable === true
                 text: "End"
                 foreground: root.foreground
                 bordered: true

@@ -280,12 +280,65 @@ def test_every_queue_action_succeeds(action):
     assert payload["action"] == action
 
 
-@pytest.mark.parametrize("term", ("", "bad\nterm", "x" * 121))
+@pytest.mark.parametrize("term", ("bad\nterm", "x" * 121))
 def test_library_search_rejects_unsafe_terms(term):
     library = Mock()
     with pytest.raises(ValueError, match="Search text"):
         find_library_item(SimpleNamespace(music_library=library), "L:1", term)
     library.get_music_library_information.assert_not_called()
+
+
+def test_nested_library_item_is_re_resolved_by_path_index_and_identity():
+    category = item("A:ARTIST", resources=[])
+    category.browsable = True
+    track = item("T:42")
+    library = Mock()
+    library.browse.side_effect = [[category], [track]]
+    coordinator = SimpleNamespace(music_library=library)
+
+    result = find_library_item(
+        coordinator,
+        "T:42",
+        "",
+        42,
+        [{"id": "A:ARTIST", "index": 3}],
+    )
+
+    assert result is track
+    assert library.browse.call_args_list[0].kwargs["start"] == 3
+    assert library.browse.call_args_list[1].kwargs["start"] == 42
+
+
+def test_nested_library_item_rejects_stale_identity():
+    category = item("A:ARTIST", resources=[])
+    category.browsable = True
+    library = Mock()
+    library.browse.side_effect = [[category], [item("T:stale")]]
+    with pytest.raises(ValueError, match="no longer available"):
+        find_library_item(
+            SimpleNamespace(music_library=library),
+            "T:42",
+            "",
+            0,
+            [{"id": "A:ARTIST", "index": 0}],
+        )
+
+
+@pytest.mark.parametrize("path", ("", False, {}))
+def test_library_item_rejects_malformed_paths(path):
+    with pytest.raises(ValueError, match="library path"):
+        find_library_item(SimpleNamespace(music_library=Mock()), "T:1", "", 0, path)
+
+
+def test_library_item_rejects_combined_search_and_hierarchy_context():
+    with pytest.raises(ValueError, match="search must start"):
+        find_library_item(
+            SimpleNamespace(music_library=Mock()),
+            "T:1",
+            "track",
+            0,
+            [{"id": "A:ARTIST", "index": 0}],
+        )
 
 
 def test_library_and_playlist_staleness_are_rejected():
@@ -354,6 +407,26 @@ def test_queue_and_playlist_services_reject_fractional_indices():
                 "itemId": "T:1",
             },
         )
+
+
+def test_queue_service_accepts_empty_context_for_hierarchical_library_items():
+    backend = Mock()
+    path = [{"id": "A:ARTIST", "index": 0}]
+    queue_service(backend).execute(
+        "queue.content.enqueue",
+        {
+            "roomUid": "R1",
+            "kind": "library",
+            "context": "",
+            "itemId": "T:1",
+            "index": 4,
+            "mode": "play",
+            "libraryPath": path,
+        },
+    )
+    backend.enqueue_content_item.assert_called_once_with(
+        "R1", "library", "", "T:1", 4, "play", path
+    )
 
 
 def test_playlist_validation_and_empty_queue_fail_before_mutation():
