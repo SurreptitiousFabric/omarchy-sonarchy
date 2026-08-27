@@ -83,6 +83,7 @@ def test_generated_python_artifacts_are_ignored():
 def test_ci_uses_yaml_safe_mise_managed_tool_gates():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text()
 
+    assert "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0" in workflow
     assert "run: >-\n          mise exec -- python -m pip install" in workflow
     assert "--only-binary=:all: --require-hashes" in workflow
     assert "bash -n sonarchy-backend.sh tests/qml/run-component-tests.sh" in workflow

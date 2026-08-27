@@ -25,6 +25,8 @@
   lint gates for both the backend launcher and QML component-test runner.
 - Corrected an invalid YAML command scalar that caused GitHub Actions to reject
   the workflow before creating any jobs.
+- Updated the immutable Mise action pin to v4.3.0 so CI runs natively on the
+  current GitHub Actions Node.js 24 runtime.
 - Prevented vertical page scrolling over a slider from changing playback,
   room, sound, or alarm values; a headless real-event test now proves the page
   scrolls without a slider mutation and intentional pointer dragging remains
