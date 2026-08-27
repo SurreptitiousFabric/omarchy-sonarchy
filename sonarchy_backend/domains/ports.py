@@ -86,6 +86,7 @@ class AlarmsPort(Protocol):
         self,
         room_uid: str,
         alarm_id: str,
+        alarm_room_uid: str,
         start: str,
         recurrence: str,
         volume: int,

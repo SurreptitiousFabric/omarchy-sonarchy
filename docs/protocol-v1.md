@@ -42,6 +42,13 @@ of at most 100 restorable items and a verifiable playback source/position; if
 adding or starting the replacement fails, it attempts to restore the previous
 queue and queue playback position.
 
+`alarms.save` carries both the selected anchor `roomUid` and the requested
+`alarmRoomUid`. The backend accepts the target only when it is currently
+visible from the anchor room in the same Sonos household. Existing alarms may
+change rooms through Sonos's native update operation; if that update is
+rejected, every locally cached alarm field is restored before an authoritative
+alarm refresh.
+
 ## Result
 
 ```json

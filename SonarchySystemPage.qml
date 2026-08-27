@@ -15,6 +15,7 @@ Item {
   property string confirmation: ""
 
   property string alarmId: "new"
+  property string alarmRoomUid: ""
   property string alarmTime: "07:00"
   property string alarmRecurrence: "DAILY"
   property int alarmDuration: 0
@@ -28,22 +29,28 @@ Item {
   readonly property bool hasTvSource: deviceInfo.tv_autoplay !== null
     && deviceInfo.tv_autoplay !== undefined
   readonly property var lineInSources: lineInOptions()
+  readonly property var alarmRooms: alarmRoomOptions()
+  readonly property bool alarmRoomAvailable: optionContains(alarmRooms, alarmRoomUid)
   readonly property bool editing: alarmTimeField.activeFocus
     || sectionPicker.popupOpen || recurrencePicker.popupOpen
-    || durationPicker.popupOpen || programPicker.popupOpen || lineInPicker.popupOpen
+    || durationPicker.popupOpen || programPicker.popupOpen
+    || alarmRoomPicker.popupOpen || lineInPicker.popupOpen
 
   onVisibleChanged: {
     if (!visible || !service) return
     service.refreshDetails()
     service.loadAlarms()
     service.ensureFavorites()
+    root.selectAvailableAlarmRoom()
     root.selectAvailableLineIn()
   }
 
   onDeviceChanged: {
+    root.selectAvailableAlarmRoom()
     root.selectAvailableLineIn()
     if (visible && service) service.refreshDetails()
   }
+  onAlarmRoomsChanged: root.selectAvailableAlarmRoom()
   onLineInSourcesChanged: root.selectAvailableLineIn()
 
   function ensureVisible(item) {
@@ -71,6 +78,7 @@ Item {
 
   function resetAlarm() {
     alarmId = "new"
+    alarmRoomUid = device ? String(device.uid || "") : ""
     alarmTime = "07:00"
     alarmRecurrence = "DAILY"
     alarmDuration = 0
@@ -83,6 +91,7 @@ Item {
 
   function editAlarm(item) {
     alarmId = String(item.id)
+    alarmRoomUid = String(item.room_uid || "")
     alarmTime = String(item.time || "07:00")
     alarmRecurrence = String(item.recurrence || "DAILY")
     alarmDuration = Number(item.duration || 0)
@@ -91,6 +100,31 @@ Item {
     alarmGrouped = item.include_grouped === true
     alarmProgram = "keep"
     alarmTimeField.text = alarmTime
+  }
+
+  function alarmRoomOptions() {
+    var options = []
+    var rooms = service ? service.rooms : []
+    for (var i = 0; i < rooms.length; i++) {
+      if (rooms[i].online === false) continue
+      options.push({ value: String(rooms[i].uid), label: String(rooms[i].name) })
+    }
+    return options
+  }
+
+  function optionContains(options, value) {
+    for (var i = 0; i < options.length; i++) {
+      if (String(options[i].value) === String(value || "")) return true
+    }
+    return false
+  }
+
+  function selectAvailableAlarmRoom() {
+    var options = alarmRoomOptions()
+    if (optionContains(options, alarmRoomUid)) return
+    var selectedUid = device ? String(device.uid || "") : ""
+    alarmRoomUid = optionContains(options, selectedUid)
+      ? selectedUid : (options.length > 0 ? String(options[0].value) : "")
   }
 
   function alarmProgramOptions() {
@@ -217,15 +251,15 @@ Item {
           }
         }
 
-        Text {
+        SonarchyDropdown {
+          id: alarmRoomPicker
           width: parent.width
-          text: root.alarmId === "new"
-            ? "The new alarm will belong to " + String(root.device ? root.device.name : "the selected room") + "."
-            : "Editing the existing alarm for its original room."
-          color: Qt.darker(root.foreground, 1.45)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
+          label: "ROOM"
+          value: root.alarmRoomUid
+          options: root.alarmRooms
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onChanged: function(value) { root.alarmRoomUid = String(value) }
         }
 
         Row {
@@ -386,6 +420,7 @@ Item {
           focusable: true
           enabled: root.service && !root.service.actionBusy
             && root.can("alarms.save")
+            && root.alarmRoomAvailable
             && /^([01]\d|2[0-3]):[0-5]\d$/.test(root.alarmTime)
           onClicked: root.service.saveAlarm({
             id: root.alarmId,
@@ -395,7 +430,8 @@ Item {
             volume: root.alarmVolume,
             enabled: root.alarmEnabled,
             includeGrouped: root.alarmGrouped,
-            program: root.alarmProgram
+            program: root.alarmProgram,
+            roomUid: root.alarmRoomUid
           })
         }
 

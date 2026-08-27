@@ -45,6 +45,9 @@
 - Made Play now insert directly after the current track, retained explicit Next
   and End actions, and added a two-step Replace queue control with bounded
   preflight backup and best-effort restoration after speaker rejection.
+- Added active-household room selection to alarm creation and editing, with
+  backend household validation and full cached-field restoration when Sonos
+  rejects an existing-alarm update.
 
 ## 4.1.0 — 2026-08-26
 

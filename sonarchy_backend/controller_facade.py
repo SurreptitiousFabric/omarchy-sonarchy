@@ -42,6 +42,7 @@ class DomainFacadeMixin:
         self,
         room_uid: str,
         alarm_id: str,
+        alarm_room_uid: str,
         start: str,
         recurrence: str,
         volume: int,
@@ -53,6 +54,7 @@ class DomainFacadeMixin:
         return save_alarm(
             self._zone(room_uid),
             alarm_id,
+            alarm_room_uid,
             start,
             recurrence,
             volume,

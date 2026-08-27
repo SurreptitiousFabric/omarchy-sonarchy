@@ -355,6 +355,7 @@ PROTOCOL_ACTION_CASES = (
         {
             "roomUid": "R1",
             "alarmId": "new",
+            "alarmRoomUid": "R2",
             "time": "07:00",
             "recurrence": "DAILY",
             "volume": 25,
@@ -367,6 +368,7 @@ PROTOCOL_ACTION_CASES = (
             "save_alarm",
             "R1",
             "new",
+            "R2",
             "07:00",
             "DAILY",
             25,

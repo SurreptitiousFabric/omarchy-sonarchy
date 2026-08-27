@@ -18,6 +18,7 @@ Item {
         var actionRequestId = String(message.id || "")
         var actionPayload = message.ok === true ? message.value : null
         var completedAction = String(actionPayload && actionPayload.action || "")
+        var failedOperation = String(message.error && message.error.operation || "")
         router.store.protocolActionRequestId = ""
         if (!actionPayload || actionPayload.ok !== true) {
           router.store.setRequestError(
@@ -41,6 +42,8 @@ Item {
                  || completedAction === "library-update")
           Qt.callLater(router.store.reloadContent)
         if (completedAction.indexOf("alarm-") === 0)
+          Qt.callLater(router.store.loadAlarms)
+        else if (failedOperation.indexOf("alarms.") === 0)
           Qt.callLater(router.store.loadAlarms)
         return
       }

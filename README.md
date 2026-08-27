@@ -19,7 +19,7 @@ owners.
 - Hierarchical, paged local Sonos music-library browsing, track search, and index refresh
 - Public Apple Music catalog and Global Player station search
 - Confidence-checked album artwork for radio tracks, with a station-logo fallback
-- Alarm create, edit, enable/disable, and delete, including Favorite sounds
+- Alarm create, room-aware edit, enable/disable, and delete, including Favorite sounds
 - Line-in and TV source switching
 - EQ, home-theater, Sub, surround, and supported device controls
 - Speaker model, versions, battery, microphone, voice, and source information

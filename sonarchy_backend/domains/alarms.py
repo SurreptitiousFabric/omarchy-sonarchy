@@ -70,6 +70,19 @@ def alarm_by_id(
     raise ValueError("The alarm no longer exists")
 
 
+def alarm_room(speaker: Any, room_uid: str) -> Any:
+    expected = clean(room_uid)
+    if not expected:
+        raise ValueError("Alarm room is required")
+    visible = list(safe_call(lambda: speaker.visible_zones, set()) or set())
+    if speaker not in visible:
+        visible.append(speaker)
+    for room in visible:
+        if clean(safe_call(lambda room=room: room.uid, "")) == expected:
+            return room
+    raise ValueError("The alarm room is unavailable in this Sonos household")
+
+
 def alarm_program(
     coordinator: Any,
     raw: str,
@@ -99,6 +112,7 @@ def alarm_program(
 def save_alarm(
     speaker: Any,
     alarm_id: str,
+    alarm_room_uid: str,
     start: str,
     recurrence: str,
     volume: int,
@@ -111,32 +125,56 @@ def save_alarm(
     alarm_loader: Callable[[Any], Any] = get_alarms,
     metadata_fn: Callable[[Any], str] = to_didl_string,
 ) -> dict[str, Any]:
+    target_room = alarm_room(speaker, alarm_room_uid)
     recurrence_value = clean(recurrence).upper()
     if recurrence_value not in {"ONCE", "DAILY", "WEEKDAYS", "WEEKENDS"}:
         raise ValueError("Unsupported alarm recurrence")
     duration_value = int(duration_minutes)
     if duration_value not in {0, 15, 30, 45, 60, 90, 120}:
         raise ValueError("Unsupported alarm duration")
+    original: dict[str, Any] | None = None
     if clean(alarm_id) == "new":
-        alarm = alarm_factory(speaker)
-        alarm.program_uri, alarm.program_metadata = alarm_program(
-            coordinator_for(speaker), program, metadata_fn=metadata_fn
-        )
+        alarm = alarm_factory(target_room)
     else:
         alarm = alarm_by_id(speaker, alarm_id, alarm_loader=alarm_loader)
-        if clean(program) != "keep":
-            alarm.program_uri, alarm.program_metadata = alarm_program(
-                coordinator_for(speaker), program, metadata_fn=metadata_fn
+        original = {
+            field: getattr(alarm, field)
+            for field in (
+                "zone",
+                "room_uuid",
+                "program_uri",
+                "program_metadata",
+                "start_time",
+                "recurrence",
+                "volume",
+                "duration",
+                "enabled",
+                "include_linked_zones",
             )
-    alarm.start_time = parse_alarm_time(start)
-    alarm.recurrence = recurrence_value
-    alarm.volume = max(0, min(100, int(volume)))
-    alarm.duration = (
-        None if duration_value == 0 else time(hour=duration_value // 60, minute=duration_value % 60)
-    )
-    alarm.enabled = bool(enabled)
-    alarm.include_linked_zones = bool(include_grouped)
-    saved_id = alarm.save()
+        }
+    try:
+        alarm.zone = target_room
+        alarm.room_uuid = clean(safe_call(lambda: target_room.uid, alarm_room_uid))
+        if original is None or clean(program) != "keep":
+            alarm.program_uri, alarm.program_metadata = alarm_program(
+                coordinator_for(target_room), program, metadata_fn=metadata_fn
+            )
+        alarm.start_time = parse_alarm_time(start)
+        alarm.recurrence = recurrence_value
+        alarm.volume = max(0, min(100, int(volume)))
+        alarm.duration = (
+            None
+            if duration_value == 0
+            else time(hour=duration_value // 60, minute=duration_value % 60)
+        )
+        alarm.enabled = bool(enabled)
+        alarm.include_linked_zones = bool(include_grouped)
+        saved_id = alarm.save()
+    except Exception:
+        if original is not None:
+            for field, value in original.items():
+                setattr(alarm, field, value)
+        raise
     return {"ok": True, "action": "alarm-save", "id": clean(saved_id), "message": "Alarm saved"}
 
 
@@ -184,6 +222,7 @@ def alarm_mutations_service(backend: AlarmsPort) -> DomainService:
             "alarms.save": lambda args: backend.save_alarm(
                 string_arg(args, "roomUid"),
                 string_arg(args, "alarmId"),
+                string_arg(args, "alarmRoomUid"),
                 string_arg(args, "time"),
                 string_arg(args, "recurrence"),
                 integer_arg(args, "volume"),

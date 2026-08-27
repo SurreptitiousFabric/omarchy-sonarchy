@@ -263,6 +263,7 @@ Item {
     return sendCommand("alarms.save", {
       roomUid: roomUid,
       alarmId: alarm.alarmId,
+      alarmRoomUid: alarm.alarmRoomUid,
       time: alarm.time,
       recurrence: alarm.recurrence,
       volume: alarm.volume,

@@ -649,6 +649,7 @@ Item {
     if (!editor || !selectedDevice || actionBusy || !requireCapability("alarms.save")) return
     trackProtocolAction(live.saveAlarm(String(selectedDevice.uid), {
       alarmId: String(editor.id || "new"),
+      alarmRoomUid: String(editor.roomUid || ""),
       time: String(editor.time || "07:00"),
       recurrence: String(editor.recurrence || "DAILY"),
       volume: Math.round(Number(editor.volume || 0)),

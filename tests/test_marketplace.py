@@ -305,6 +305,25 @@ def test_alarm_mutations_use_the_persistent_backend_and_no_process_remains():
         assert legacy_plumbing not in service
 
 
+def test_alarm_editor_uses_authoritative_keyboard_reachable_room_options():
+    system_page = (ROOT / "SonarchySystemPage.qml").read_text()
+    store = (ROOT / "SonarchyStore.qml").read_text()
+    live = (ROOT / "LiveService.qml").read_text()
+    router = (ROOT / "SonarchyProtocolRouter.qml").read_text()
+
+    assert "function alarmRoomOptions()" in system_page
+    assert "var rooms = service ? service.rooms : []" in system_page
+    assert "if (rooms[i].online === false) continue" in system_page
+    assert "id: alarmRoomPicker" in system_page
+    assert 'label: "ROOM"' in system_page
+    assert "alarmRoomPicker.popupOpen" in system_page
+    assert 'alarmRoomUid = String(item.room_uid || "")' in system_page
+    assert "&& root.alarmRoomAvailable" in system_page
+    assert 'alarmRoomUid: String(editor.roomUid || "")' in store
+    assert "alarmRoomUid: alarm.alarmRoomUid" in live
+    assert 'failedOperation.indexOf("alarms.") === 0' in router
+
+
 def test_page_navigation_follows_the_now_playing_content():
     widget = (ROOT / "BarWidget.qml").read_text()
     navigation = (ROOT / "SonarchyNavigation.qml").read_text()

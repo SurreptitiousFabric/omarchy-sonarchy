@@ -770,10 +770,12 @@ def test_alarm_identity_and_program_validation():
 )
 def test_alarm_save_rejects_unsupported_schedule(recurrence, duration, message):
     factory = Mock()
+    room = speaker(uid="R1")
     with pytest.raises(ValueError, match=message):
         save_alarm(
-            speaker(),
+            room,
             "new",
+            "R1",
             "07:00",
             recurrence,
             25,
@@ -788,10 +790,11 @@ def test_alarm_save_rejects_unsupported_schedule(recurrence, duration, message):
 
 def test_new_alarm_save_and_existing_alarm_mutations():
     alarm = SimpleNamespace(save=Mock(return_value="9"), remove=Mock())
-    room = speaker()
+    room = speaker(uid="R1")
     payload = save_alarm(
         room,
         "new",
+        "R1",
         "06:45",
         "weekdays",
         125,
@@ -811,6 +814,143 @@ def test_new_alarm_save_and_existing_alarm_mutations():
     assert alarm.enabled is False
     delete_alarm(room, "9", alarm_loader=lambda _room: [alarm])
     alarm.remove.assert_called_once_with()
+
+
+def test_new_alarm_targets_an_authoritative_visible_room():
+    anchor = speaker(uid="R1")
+    target = speaker(uid="R2")
+    anchor.visible_zones = [anchor, target]
+    alarm = SimpleNamespace(save=Mock(return_value="10"))
+    factory = Mock(return_value=alarm)
+
+    payload = save_alarm(
+        anchor,
+        "new",
+        "R2",
+        "07:15",
+        "DAILY",
+        20,
+        30,
+        True,
+        False,
+        "chime",
+        alarm_factory=factory,
+    )
+
+    factory.assert_called_once_with(target)
+    assert payload["id"] == "10"
+
+
+def test_existing_alarm_can_change_room_without_losing_other_fields():
+    anchor = speaker(uid="R1")
+    target = speaker(uid="R2")
+    anchor.visible_zones = [anchor, target]
+    alarm = SimpleNamespace(
+        alarm_id="10",
+        zone=anchor,
+        room_uuid="R1",
+        program_uri="x-test:existing",
+        program_metadata="<existing/>",
+        start_time=__import__("datetime").time(6, 0),
+        recurrence="DAILY",
+        volume=15,
+        duration=None,
+        enabled=True,
+        include_linked_zones=False,
+        save=Mock(return_value="10"),
+    )
+
+    save_alarm(
+        anchor,
+        "10",
+        "R2",
+        "08:30",
+        "WEEKDAYS",
+        35,
+        45,
+        False,
+        True,
+        "keep",
+        alarm_loader=lambda _room: [alarm],
+    )
+
+    assert alarm.zone is target
+    assert alarm.room_uuid == "R2"
+    assert alarm.start_time == __import__("datetime").time(8, 30)
+    assert alarm.recurrence == "WEEKDAYS"
+    assert alarm.volume == 35
+    assert alarm.duration == __import__("datetime").time(0, 45)
+    assert alarm.enabled is False
+    assert alarm.include_linked_zones is True
+    assert alarm.program_uri == "x-test:existing"
+    assert alarm.program_metadata == "<existing/>"
+    alarm.save.assert_called_once_with()
+
+
+def test_alarm_save_rejects_an_unavailable_room_before_mutating():
+    anchor = speaker(uid="R1", visible_zones=[])
+    factory = Mock()
+
+    with pytest.raises(ValueError, match="unavailable"):
+        save_alarm(
+            anchor,
+            "new",
+            "R9",
+            "07:00",
+            "DAILY",
+            20,
+            30,
+            True,
+            False,
+            "chime",
+            alarm_factory=factory,
+        )
+
+    factory.assert_not_called()
+
+
+def test_rejected_alarm_edit_restores_the_cached_authoritative_fields():
+    anchor = speaker(uid="R1")
+    target = speaker(uid="R2")
+    anchor.visible_zones = [anchor, target]
+    original_values = {
+        "zone": anchor,
+        "room_uuid": "R1",
+        "program_uri": "x-test:existing",
+        "program_metadata": "<existing/>",
+        "start_time": __import__("datetime").time(6, 0),
+        "recurrence": "DAILY",
+        "volume": 15,
+        "duration": None,
+        "enabled": True,
+        "include_linked_zones": False,
+    }
+    alarm = SimpleNamespace(
+        alarm_id="10",
+        **original_values,
+        save=Mock(side_effect=RuntimeError("speaker rejected update")),
+    )
+
+    with pytest.raises(RuntimeError, match="speaker rejected update"):
+        save_alarm(
+            anchor,
+            "10",
+            "R2",
+            "08:30",
+            "WEEKDAYS",
+            35,
+            45,
+            False,
+            True,
+            "chime",
+            alarm_loader=lambda _room: [alarm],
+        )
+
+    for field, value in original_values.items():
+        if field == "zone":
+            assert getattr(alarm, field) is value
+        else:
+            assert getattr(alarm, field) == value
 
 
 def test_alarm_projection_redacts_program_details_and_handles_missing_room_name():
@@ -844,6 +984,7 @@ def test_alarm_service_rejects_fractional_numbers():
             {
                 "roomUid": "R1",
                 "alarmId": "new",
+                "alarmRoomUid": "R1",
                 "time": "07:00",
                 "recurrence": "DAILY",
                 "volume": 2.5,
