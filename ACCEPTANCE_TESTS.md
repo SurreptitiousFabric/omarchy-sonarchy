@@ -71,8 +71,10 @@ before Sonarchy claims real-device coverage for them.
 - [ ] Complete a keyboard-only tour of every page and every visible control,
   including focus-following scroll, confirmation prompts, error dismissal,
   and narrow/wide configured panel sizes.
-- [ ] Test play, pause, stop, previous, next, mute, group volume, room volume,
-  and supported seeking, restoring the starting state afterward.
+- [x] Adjust and restore Group Volume plus individual grouped-room volume/mute
+  controls. Owner-confirmed working on installed checkpoint `4626b3f`.
+- [ ] Test play, pause, stop, previous, next, standalone mute/volume, and
+  supported seeking, restoring the starting state afterward.
 - [ ] Play one Apple track and one whole Apple album. With TV Autoplay
   explicitly disabled by the owner, observe the album advance automatically
   from the first track to the second; pressing Next alone is not sufficient.
