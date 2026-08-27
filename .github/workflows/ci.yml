@@ -24,13 +24,16 @@ jobs:
           cache: true
           install: true
       - name: Install hash-locked test dependencies
-        run: mise exec -- python -m pip install --disable-pip-version-check --no-input --no-deps --only-binary=:all: --require-hashes -r requirements-dev.lock
+        run: >-
+          mise exec -- python -m pip install --disable-pip-version-check
+          --no-input --no-deps --only-binary=:all: --require-hashes
+          -r requirements-dev.lock
       - name: Check Python and shell syntax
         run: |
           mise exec -- python -m compileall -q sonarchy_service.py sonarchy_backend
           mise exec -- python -m json.tool manifest.json >/dev/null
-          bash -n sonarchy-backend.sh
-          shellcheck sonarchy-backend.sh
+          bash -n sonarchy-backend.sh tests/qml/run-component-tests.sh
+          mise exec -- shellcheck sonarchy-backend.sh tests/qml/run-component-tests.sh
       - name: Check Python quality
         run: |
           mise exec -- python -m ruff check .

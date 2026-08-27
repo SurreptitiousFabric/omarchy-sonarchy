@@ -21,6 +21,10 @@
 - Correlated Store request errors with their owning request so successful
   details, content, or alarm reads cannot erase or overwrite an unrelated
   action failure.
+- Pinned ShellCheck through Mise and aligned CI with the documented syntax and
+  lint gates for both the backend launcher and QML component-test runner.
+- Corrected an invalid YAML command scalar that caused GitHub Actions to reject
+  the workflow before creating any jobs.
 - Prevented vertical page scrolling over a slider from changing playback,
   room, sound, or alarm values; a headless real-event test now proves the page
   scrolls without a slider mutation and intentional pointer dragging remains

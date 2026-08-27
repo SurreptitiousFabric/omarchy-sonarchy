@@ -80,6 +80,17 @@ def test_generated_python_artifacts_are_ignored():
     } <= set(ignored)
 
 
+def test_ci_uses_yaml_safe_mise_managed_tool_gates():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+
+    assert "run: >-\n          mise exec -- python -m pip install" in workflow
+    assert "--only-binary=:all: --require-hashes" in workflow
+    assert "bash -n sonarchy-backend.sh tests/qml/run-component-tests.sh" in workflow
+    assert (
+        "mise exec -- shellcheck sonarchy-backend.sh tests/qml/run-component-tests.sh" in workflow
+    )
+
+
 def test_marketplace_release_is_held_until_live_acceptance_and_owner_signoff():
     acceptance = (ROOT / "ACCEPTANCE_TESTS.md").read_text()
     marketplace = (ROOT / "MARKETPLACE.md").read_text()
