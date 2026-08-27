@@ -46,7 +46,8 @@ Item {
     || live.favoriteRequestId !== "" || live.favoriteAwaitingSnapshot
     || live.moveRequestId !== ""
 
-  property string requestError: ""
+  readonly property alias requestError: requestErrorState.message
+  readonly property alias requestErrorRequestId: requestErrorState.ownerId
   readonly property string lastError: requestError !== "" ? requestError
     : (String(live.moveError || "") !== "" ? String(live.moveError)
        : (String(live.favoriteError || "") !== "" ? String(live.favoriteError)
@@ -69,6 +70,10 @@ Item {
 
   property int queuedVolume: -1
   property string queuedVolumeGroupUid: ""
+
+  SonarchyErrorState {
+    id: requestErrorState
+  }
 
   readonly property var selectedDevice: {
     var selectedUid = String(liveSnapshot ? liveSnapshot.selectedAnchorRoomUid || "" : "")
@@ -135,13 +140,8 @@ Item {
     }
   }
 
-  function compactError(text, fallback) {
-    var value = String(text || fallback || "Sonos request failed").replace(/\s+/g, " ").trim()
-    return value.length > 180 ? value.substring(0, 177) + "…" : value
-  }
-
   function clearError() {
-    requestError = ""
+    clearRequestError()
     protocolRouter.stopRequestErrorTimer()
     live.clearErrors()
   }
@@ -153,13 +153,20 @@ Item {
   function requireCapability(name) {
     if (hasCapability(name)) return true
     setRequestError("This Sonos action is not available right now",
-                    "Sonos action unavailable")
+                    "Sonos action unavailable", "local", true)
     return false
   }
 
-  function setRequestError(text, fallback) {
-    requestError = compactError(text, fallback)
+  function setRequestError(text, fallback, requestId, replaceExisting) {
+    if (!requestErrorState.setError(text, fallback, requestId, replaceExisting)) return false
     protocolRouter.restartRequestErrorTimer()
+    return true
+  }
+
+  function clearRequestError(requestId) {
+    if (!requestErrorState.clearError(requestId)) return false
+    protocolRouter.stopRequestErrorTimer()
+    return true
   }
 
   function formatTime(value) {
@@ -339,7 +346,7 @@ Item {
   }
 
   function refresh() {
-    requestError = ""
+    clearRequestError()
     live.refresh()
   }
 
@@ -375,8 +382,12 @@ Item {
     contentItems = items
     contentTotal = Number(liveFavorites.total || items.length)
     contentLoading = String(liveFavorites.state || "") === "not_loaded"
-    if (String(liveFavorites.state || "") === "error")
-      setRequestError(liveFavorites.error, "Could not load Sonos Favorites")
+    if (String(liveFavorites.state || "") === "error") {
+      setRequestError(liveFavorites.error, "Could not load Sonos Favorites",
+                      "favorites-snapshot")
+    } else if (String(liveFavorites.state || "") !== "not_loaded") {
+      clearRequestError("favorites-snapshot")
+    }
   }
 
   function loadContent(kind, term) {
@@ -459,7 +470,7 @@ Item {
 
   function trackProtocolAction(requestId, fallback) {
     if (String(requestId || "") === "") return
-    requestError = ""
+    clearRequestError()
     actionMessage = ""
     actionFallback = String(fallback || "Sonos control failed")
     protocolActionRequestId = String(requestId)
@@ -469,7 +480,7 @@ Item {
     var device = selectedDevice
     if (!device) return
 
-    requestError = ""
+    clearRequestError()
     if (action === "play-pause") {
       if (!requireCapability("playback.toggle")) return
       optimisticDevicePatch(device.ip, {
@@ -500,7 +511,7 @@ Item {
 
   function seek(positionSec) {
     if (!requireCapability("playback.seek")) return
-    requestError = ""
+    clearRequestError()
     live.seek(Math.max(0, Math.round(Number(positionSec || 0))))
   }
 
@@ -533,14 +544,14 @@ Item {
   function applyMembers(roomUids) {
     if (!roomUids || roomUids.length === 0
         || !requireCapability("topology.members.set")) return
-    requestError = ""
+    clearRequestError()
     live.applyMembers(roomUids)
     showActionMessage("Applying room group…")
   }
 
   function movePlaybackToRoom(roomUid) {
     if (!requireCapability("playback.room.move")) return
-    requestError = ""
+    clearRequestError()
     live.movePlaybackToRoom(String(roomUid))
   }
 
@@ -600,7 +611,7 @@ Item {
     var sourceRoom = String(sourceRoomUid || "") !== "" ? deviceForUid(sourceRoomUid) : null
     if (String(sourceRoomUid || "") !== "" && (!sourceRoom || sourceRoom.line_in_available !== true)) {
       setRequestError("The selected line-in room is no longer available",
-                      "Could not switch Sonos source")
+                      "Could not switch Sonos source", "local", true)
       return
     }
     trackProtocolAction(live.switchSource(

@@ -44,8 +44,8 @@ Run from the repository root:
 ```bash
 omarchy plugin validate .
 bash -n sonarchy-backend.sh
-bash tests/qml/run-slider-test.sh
-shellcheck sonarchy-backend.sh
+bash tests/qml/run-component-tests.sh
+mise exec -- shellcheck sonarchy-backend.sh tests/qml/run-component-tests.sh
 mise exec -- python -m pytest -q
 mise exec -- python -m ruff check .
 mise exec -- python -m ruff format --check .

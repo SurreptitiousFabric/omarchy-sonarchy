@@ -15,13 +15,16 @@ Item {
     function onSnapshotChanged() { router.store.applyLiveSnapshot() }
     function onCommandResult(message) {
       if (String(message.id || "") === router.store.protocolActionRequestId) {
+        var actionRequestId = String(message.id || "")
         var actionPayload = message.ok === true ? message.value : null
         var completedAction = String(actionPayload && actionPayload.action || "")
         router.store.protocolActionRequestId = ""
         if (!actionPayload || actionPayload.ok !== true) {
-          router.store.setRequestError(router.live.errorMessage(message.error), router.store.actionFallback)
+          router.store.setRequestError(
+            router.live.errorMessage(message.error), router.store.actionFallback,
+            actionRequestId, true)
         } else {
-          router.store.requestError = ""
+          router.store.clearRequestError(actionRequestId)
           router.store.showActionMessage(String(actionPayload.message || "Updated"))
           if (completedAction === "rename") {
             router.store.optimisticDevicePatch(
@@ -57,6 +60,7 @@ Item {
         return
       }
       if (String(message.id || "") === router.store.contentRequestId) {
+        var completedContentRequestId = String(message.id || "")
         router.store.contentLoading = false
         var payload = message.ok === true ? message.value : null
         var stillCurrentContent = router.store.selectedDevice
@@ -81,9 +85,11 @@ Item {
             playlistId: String(payload.playlist_id || ""),
             playlistTitle: String(payload.playlist_title || "")
           }
-          router.store.requestError = ""
+          router.store.clearRequestError(completedContentRequestId)
         } else if (stillCurrentContent) {
-          router.store.setRequestError(router.live.errorMessage(message.error), "Could not browse Sonos content")
+          router.store.setRequestError(
+            router.live.errorMessage(message.error), "Could not browse Sonos content",
+            completedContentRequestId)
         }
         if (router.store.pendingContentKind !== "") {
           var nextKind = router.store.pendingContentKind
@@ -95,6 +101,7 @@ Item {
         return
       }
       if (String(message.id || "") === router.store.alarmsRequestId) {
+        var completedAlarmsRequestId = String(message.id || "")
         router.store.alarmsLoading = false
         var alarmsPayload = message.ok === true ? message.value : null
         var stillCurrentAlarms = router.store.selectedDevice
@@ -104,13 +111,16 @@ Item {
         if (alarmsPayload && alarmsPayload.ok === true
             && Array.isArray(alarmsPayload.items) && stillCurrentAlarms) {
           router.store.alarms = alarmsPayload.items
-          router.store.requestError = ""
+          router.store.clearRequestError(completedAlarmsRequestId)
         } else if (stillCurrentAlarms) {
-          router.store.setRequestError(router.live.errorMessage(message.error), "Could not read Sonos alarms")
+          router.store.setRequestError(
+            router.live.errorMessage(message.error), "Could not read Sonos alarms",
+            completedAlarmsRequestId)
         }
         return
       }
       if (String(message.id || "") !== router.store.detailsRequestId) return
+      var completedDetailsRequestId = String(message.id || "")
       var requestedRoomUid = router.store.detailsRequestRoomUid
       router.store.detailsLoading = false
       router.store.detailsRequestId = ""
@@ -119,9 +129,11 @@ Item {
         && requestedRoomUid === String(router.store.selectedDevice.uid || "")
       if (message.ok === true && message.value && message.value.ok === true && stillCurrent) {
         router.store.details = message.value
-        router.store.requestError = ""
+        router.store.clearRequestError(completedDetailsRequestId)
       } else if (stillCurrent) {
-        router.store.setRequestError(router.live.errorMessage(message.error), "Could not read Sonos settings")
+        router.store.setRequestError(
+          router.live.errorMessage(message.error), "Could not read Sonos settings",
+          completedDetailsRequestId)
       }
       if (router.store.detailsQueued) {
         router.store.detailsQueued = false
@@ -137,7 +149,9 @@ Item {
     function onBackendReadyChanged() {
       if (!router.live.backendReady) {
         if (router.store.protocolActionRequestId !== "")
-          router.store.setRequestError("The Sonos backend stopped", router.store.actionFallback)
+          router.store.setRequestError(
+            "The Sonos backend stopped", router.store.actionFallback,
+            router.store.protocolActionRequestId, true)
         router.store.protocolActionRequestId = ""
         router.store.detailsLoading = false
         router.store.detailsRequestId = ""
@@ -200,7 +214,7 @@ Item {
     id: requestErrorTimer
     interval: 10000
     repeat: false
-    onTriggered: router.store.requestError = ""
+    onTriggered: router.store.clearRequestError()
   }
 
   Timer {

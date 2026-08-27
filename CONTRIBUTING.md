@@ -32,8 +32,8 @@ mise exec -- python -m coverage run -m pytest -q
 mise exec -- python -m coverage report
 omarchy plugin validate .
 bash -n sonarchy-backend.sh
-bash tests/qml/run-slider-test.sh
-shellcheck sonarchy-backend.sh
+bash tests/qml/run-component-tests.sh
+mise exec -- shellcheck sonarchy-backend.sh tests/qml/run-component-tests.sh
 /usr/lib/qt6/bin/qmllint BarWidget.qml LiveService.qml Service.qml SonarchyNowPage.qml SonarchyBrowsePage.qml SonarchyRoomsPage.qml SonarchySoundPage.qml SonarchySystemPage.qml
 ```
 
@@ -42,10 +42,10 @@ the running shell's module context; syntax failure or a nonzero exit is not
 acceptable. After a shell restart, inspect the user journal for this plugin's
 QML/runtime errors.
 
-The slider interaction test runs offscreen against the installed Omarchy
-`PanelSlider.qml`. Its minimal theme stubs isolate wheel routing only; it proves
-that wheel input scrolls the page without emitting a slider mutation and that
-intentional pointer dragging still reaches the native control.
+The component interaction tests run offscreen. The slider test uses the
+installed Omarchy `PanelSlider.qml` with minimal visual-only theme stubs and
+proves wheel/drag routing. The error-state test proves that only an owning
+request or explicit user dismissal can clear a correlated request error.
 
 ## Dependency updates
 

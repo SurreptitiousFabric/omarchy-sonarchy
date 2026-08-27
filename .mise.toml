@@ -1,5 +1,6 @@
 [tools]
 python = "3.14.7"
+shellcheck = "0.11.0"
 
 [env]
 _.python.venv = { path = "../.venvs/omarchy-sonarchy", create = true }

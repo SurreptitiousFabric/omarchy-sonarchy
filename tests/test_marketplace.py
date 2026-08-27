@@ -445,7 +445,7 @@ def test_page_sliders_scroll_the_page_without_wheel_mutations():
     pages = "\n".join(path.read_text() for path in sorted(ROOT.glob("Sonarchy*Page.qml")))
     slider = (ROOT / "SonarchySlider.qml").read_text()
     runtime_test = (ROOT / "tests/qml/tst_SonarchySlider.qml").read_text()
-    runtime_runner = (ROOT / "tests/qml/run-slider-test.sh").read_text()
+    runtime_runner = (ROOT / "tests/qml/run-component-tests.sh").read_text()
 
     assert "PanelSlider {" not in pages
     assert pages.count("SonarchySlider {") == 5
@@ -460,6 +460,31 @@ def test_page_sliders_scroll_the_page_without_wheel_mutations():
     assert "test_pointer_drag_still_uses_native_slider" in runtime_test
     assert "/usr/share/omarchy/shell/Ui/PanelSlider.qml" in runtime_runner
     assert "QT_QPA_PLATFORM=offscreen" in runtime_runner
+
+
+def test_background_results_cannot_clear_unrelated_request_errors():
+    store = (ROOT / "SonarchyStore.qml").read_text()
+    router = (ROOT / "SonarchyProtocolRouter.qml").read_text()
+    error_state = (ROOT / "SonarchyErrorState.qml").read_text()
+    runtime_test = (ROOT / "tests/qml/tst_SonarchyErrorState.qml").read_text()
+
+    assert "property string ownerId" in error_state
+    assert "ownerId !== expectedOwner" in error_state
+    assert "ownerId !== nextOwner" in error_state
+    assert "readonly property alias requestErrorRequestId" in store
+    assert '"favorites-snapshot"' in store
+    assert '"local", true' in store
+    assert "router.store.requestError =" not in router
+    for owner in (
+        "actionRequestId",
+        "completedContentRequestId",
+        "completedAlarmsRequestId",
+        "completedDetailsRequestId",
+    ):
+        assert owner in router
+    assert "test_unrelated_success_cannot_clear_foreground_error" in runtime_test
+    assert "test_unrelated_background_error_cannot_replace_foreground_error" in runtime_test
+    assert "test_foreground_error_can_replace_background_error" in runtime_test
 
 
 def test_every_manifest_setting_is_documented_and_read_by_qml():

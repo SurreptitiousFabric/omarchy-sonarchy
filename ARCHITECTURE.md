@@ -99,6 +99,14 @@ ID and is followed by, or references, an authoritative revision. QML may show a
 bounded optimistic value while a request is pending, but a newer snapshot
 always wins.
 
+Request errors carry the ID of the request that produced them. A successful
+background read may clear only its own error; it cannot erase a foreground
+action failure or local validation error. An unrelated background failure also
+cannot replace an error already being shown. Explicit user dismissal and
+foreground failures may replace or clear the current error regardless of owner.
+Local validation and Favorites snapshot state use stable owner keys so their
+retries can update only their own prior errors without colliding with each other.
+
 Every snapshot exposes a canonical set of positive action capabilities such as
 `playback.seek`, `queue.item.remove`, `topology.members.set`, and
 `sound.setting.set`. Device-specific settings use nullable backend projections,

@@ -18,6 +18,9 @@
   visibility.
 - Kept background request results from clearing unrelated errors or pending
   mutations, and atomically clears pending UI requests after backend loss.
+- Correlated Store request errors with their owning request so successful
+  details, content, or alarm reads cannot erase or overwrite an unrelated
+  action failure.
 - Prevented vertical page scrolling over a slider from changing playback,
   room, sound, or alarm values; a headless real-event test now proves the page
   scrolls without a slider mutation and intentional pointer dragging remains
