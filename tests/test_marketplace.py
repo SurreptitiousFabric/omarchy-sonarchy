@@ -497,6 +497,8 @@ def test_group_volume_exposes_shared_authoritative_per_room_controls():
 
     assert 'text: "ROOMS IN GROUP"' in now_page
     assert "root.service.targetGroupRooms.length > 1" in now_page
+    assert now_page.index("id: volumeHeader") < now_page.index('text: "ROOMS IN GROUP"')
+    assert now_page.index('text: "ROOMS IN GROUP"') < now_page.index('text: "PLAY MODE"')
     assert now_page.count("SonarchyRoomVolumeRow {") == 1
     assert rooms_page.count("SonarchyRoomVolumeRow {") == 1
     assert "room.room_volume !== undefined" in room_row
