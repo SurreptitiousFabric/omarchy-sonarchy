@@ -95,7 +95,9 @@ before Sonarchy claims real-device coverage for them.
   Context-inapplicable play modes are disabled with actionable text.
 - [ ] Rename one room and restore its exact original name in both Sonarchy and
   the official Sonos app.
-- [ ] Group, ungroup, group-all, staged membership, playback-session selection,
+- [x] Group rooms and restore the original topology. Owner-confirmed working on
+  the live household with installed checkpoint `7bcb873`.
+- [ ] Test ungroup, group-all, staged membership, playback-session selection,
   and safe room handoff; restore the exact original topology afterward.
 - [ ] Test line-in and TV source switching only on hardware that reports the
   source, then restore the original source.
