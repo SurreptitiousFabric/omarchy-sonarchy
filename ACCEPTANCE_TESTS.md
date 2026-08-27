@@ -10,14 +10,14 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 293 automated Python tests pass with 84% branch coverage, alongside
-  24 headless QML runtime checks.
+- [x] All 299 automated Python tests pass with 84% branch coverage, alongside
+  26 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
 - [x] Headless real-event QML tests load Omarchy's installed `PanelSlider`,
   prove wheel input scrolls without a slider mutation, preserve intentional
   dragging, enforce request-owned error clearing, and cover content root,
-  nested, paging, Back, and Favorites state transitions.
+  nested, paging, Back, Favorites, and Apple artist/album history transitions.
 - [x] The marketplace v3 deterministic baseline reports no findings and only
   the disclosed, non-blocking `package-manager` review capability.
 - [x] The exact 12-package runtime environment is internally consistent and a

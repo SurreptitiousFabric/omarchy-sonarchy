@@ -30,6 +30,7 @@ Item {
   property alias contentTerm: contentState.term
   property alias contentPath: contentState.path
   property alias contentOffset: contentState.offset
+  readonly property alias appleCanGoBack: contentState.appleCanGoBack
   property var alarms: []
   property bool alarmsLoading: false
 
@@ -390,10 +391,13 @@ Item {
   function loadContent(kind, term, path, offset) {
     contentState.load(kind, term, path, offset)
   }
+  function searchContent(kind, term) { contentState.search(kind, term) }
   function prepareContentSearch(kind) { contentState.prepareSearch(kind) }
   function reloadContent() { contentState.reload() }
   function openLibraryItem(item) { contentState.openLibraryItem(item) }
   function libraryBack() { contentState.libraryBack() }
+  function openAppleItem(item) { contentState.openAppleItem(item) }
+  function appleBack() { contentState.appleBack() }
   function libraryPage(offset) { contentState.libraryPage(offset) }
   function contentContextKey() { return contentState.currentContextKey() }
 

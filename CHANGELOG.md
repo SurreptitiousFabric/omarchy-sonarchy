@@ -59,6 +59,13 @@
 - Promoted the current Sonos queue from a buried Browse source to a dedicated
   keyboard-accessible Queue tab with refresh, play, identity-checked removal,
   confirmed clear, active-item highlighting, and no duplicated backend state.
+- Expanded public Apple Music search into bounded Artists, Albums, and Songs
+  sections. Artist results open balanced album/song views, albums open their
+  tracks, Back preserves catalogue history, and album/track playback retain
+  their existing capability-gated paths.
+- Added a Global Player compatibility retry that preserves the original query
+  first and retries provider-friendly capitalization only after an empty
+  result, so searches such as `classic fm` do not depend on title case.
 
 ## 4.1.0 — 2026-08-26
 

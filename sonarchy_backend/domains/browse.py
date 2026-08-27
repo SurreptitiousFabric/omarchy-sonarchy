@@ -1,16 +1,10 @@
 from __future__ import annotations
 
 import ipaddress
-from collections.abc import Callable
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
-from ..apple_catalog import (
-    apple_artwork_url,
-    apple_search_results,
-    public_apple_album_url,
-    public_apple_music_url,
-)
+from .apple_browse import browse_apple_album, browse_apple_artist, search_apple
 from .common import DomainService, number_arg, string_arg
 from .library import is_library_container, resolve_library_path, validate_library_context
 from .media import (
@@ -26,7 +20,9 @@ from .media import (
 )
 from .ports import BrowsePort
 
-CONTENT_KINDS = frozenset({"queue", "apple", "global", "library", "playlists", "playlist"})
+CONTENT_KINDS = frozenset(
+    {"queue", "apple", "apple-artist", "apple-album", "global", "library", "playlists", "playlist"}
+)
 PUBLIC_ARTWORK_SUFFIXES = (
     ".mzstatic.com",
     ".scdn.co",
@@ -241,45 +237,6 @@ def playlist_content(coordinator: Any, playlist_id: str, limit: int) -> dict[str
     }
 
 
-def format_duration(milliseconds: Any) -> str:
-    seconds = max(0, safe_index(milliseconds, 0) // 1000)
-    return f"{seconds // 60}:{seconds % 60:02d}" if seconds else ""
-
-
-def apple_content(
-    term: str,
-    limit: int,
-    *,
-    request_get: Callable[..., Any] | None = None,
-    country: str | None = None,
-) -> dict[str, Any]:
-    items = []
-    search_args = {"country": country}
-    if request_get is not None:
-        search_args["request_get"] = request_get
-    for item in apple_search_results(term, limit, **search_args):
-        url = public_apple_music_url(item.get("trackViewUrl"))
-        if not url:
-            continue
-        artist = clean(item.get("artistName"))
-        album = clean(item.get("collectionName"))
-        duration = format_duration(item.get("trackTimeMillis"))
-        items.append(
-            {
-                "id": clean(item.get("trackId")),
-                "title": clean(item.get("trackName")) or "Untitled track",
-                "subtitle": " · ".join(part for part in (artist, album, duration) if part),
-                "album_art": apple_artwork_url(item.get("artworkUrl100")),
-                "url": url,
-                "album_url": public_apple_album_url(
-                    item.get("collectionViewUrl"), item.get("collectionId")
-                ),
-                "playable": True,
-            }
-        )
-    return {"ok": True, "kind": "apple", "items": items, "total": len(items)}
-
-
 def global_content(coordinator: Any, term: str, limit: int) -> dict[str, Any]:
     result = global_results(coordinator, term, limit)
     items = []
@@ -315,7 +272,11 @@ def browse_content(
         raise ValueError(f"Unsupported content kind: {kind}")
     bounded_limit = max(1, min(int(limit), 100))
     if kind == "apple":
-        return apple_content(term, bounded_limit)
+        return search_apple(term, bounded_limit)
+    if kind == "apple-artist":
+        return browse_apple_artist(term, bounded_limit)
+    if kind == "apple-album":
+        return browse_apple_album(term, bounded_limit)
     if coordinator is None:
         raise ValueError("A Sonos room is required for this content source")
     if kind == "queue":

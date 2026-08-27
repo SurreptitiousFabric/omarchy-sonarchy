@@ -114,4 +114,44 @@ TestCase {
     compare(subject.items[0].album_art, "safe-art")
     compare(subject.items[0].browsable, false)
   }
+
+  function test_apple_artist_album_and_back_navigation_preserve_search() {
+    subject.search("apple", "artist")
+    subject.requestId = ""
+    subject.openAppleItem({
+      id: "10", browse_kind: "apple-artist", browsable: true
+    })
+
+    compare(subject.kind, "apple-artist")
+    compare(subject.term, "10")
+    compare(subject.appleHistory.length, 1)
+    compare(subject.appleCanGoBack, true)
+
+    subject.requestId = ""
+    subject.openAppleItem({
+      id: "20", browse_kind: "apple-album", browsable: true
+    })
+    compare(subject.kind, "apple-album")
+    compare(subject.appleHistory.length, 2)
+
+    subject.requestId = ""
+    subject.appleBack()
+    compare(subject.kind, "apple-artist")
+    compare(subject.term, "10")
+
+    subject.requestId = ""
+    subject.appleBack()
+    compare(subject.kind, "apple")
+    compare(subject.term, "artist")
+    compare(subject.appleCanGoBack, false)
+  }
+
+  function test_new_apple_search_replaces_navigation_history() {
+    subject.appleHistory = [{ kind: "apple", term: "old" }]
+    subject.search("apple", "new artist")
+
+    compare(subject.appleHistory.length, 0)
+    compare(subject.kind, "apple")
+    compare(subject.term, "new artist")
+  }
 }

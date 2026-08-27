@@ -55,7 +55,7 @@ Item {
 
   function runSearch() {
     if (!service || !searchable) return
-    service.loadContent(sourceKind, queryField.text, [], 0)
+    service.searchContent(sourceKind, queryField.text)
   }
 
   function changeSource(value) {
@@ -100,6 +100,8 @@ Item {
     if (service.contentKind === "playlists") return "SONOS PLAYLISTS"
     if (service.contentKind === "playlist")
       return String(service.contentMeta.playlistTitle || "PLAYLIST").toUpperCase()
+    if (String(service.contentKind || "").indexOf("apple-") === 0)
+      return String(service.contentMeta.currentTitle || "APPLE MUSIC").toUpperCase()
     return "RESULTS"
   }
 
@@ -111,7 +113,7 @@ Item {
     if (!service) return false
     var kind = String(service.contentKind || "")
     if (kind === "favorites") return can("content.favorite.play")
-    if (kind === "apple") return can("content.apple.play")
+    if (kind.indexOf("apple") === 0) return can("content.apple.play")
     if (kind === "global") return can("content.global.play")
     if (kind === "library" || kind === "playlist")
       return can("queue.content.enqueue")
@@ -342,6 +344,8 @@ Item {
 
           Button {
             visible: root.service && (root.service.contentKind === "playlist"
+              || (String(root.service.contentKind || "").indexOf("apple-") === 0
+                  && root.service.appleCanGoBack)
               || (root.service.contentKind === "library"
                   && (root.service.contentTerm !== ""
                       || (root.service.contentMeta.breadcrumbs
@@ -358,6 +362,8 @@ Item {
                   queryField.text = ""
                   root.service.loadContent("library", "", [], 0)
                 } else root.service.libraryBack()
+              } else if (String(root.service.contentKind || "").indexOf("apple-") === 0) {
+                root.service.appleBack()
               } else root.service.loadContent("playlists", "")
             }
           }
@@ -453,16 +459,36 @@ Item {
           delegate: BorderSurface {
             id: resultCard
             required property var modelData
+            required property int index
+            readonly property string section: String(modelData.section || "")
+            readonly property bool showSection: section !== ""
+              && (index === 0 || String(root.service.contentItems[index - 1].section || "")
+                  !== section)
+            readonly property real sectionHeight: showSection ? Style.space(18) : 0
             readonly property string rowKey: String(root.service ? root.service.contentKind : "")
               + ":" + String(modelData.index) + ":" + String(modelData.id)
             readonly property string replaceKey: "replace:" + rowKey
             width: parent.width
-            implicitHeight: root.showArtwork ? Style.space(64) : Style.space(52)
+            implicitHeight: (root.showArtwork ? Style.space(64) : Style.space(52))
+              + sectionHeight
             radius: Style.cornerRadius
             color: modelData.current === true
               ? Style.selectedFillFor(root.foreground, Color.accent)
               : "transparent"
             borderSpec: Border.none()
+
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(10)
+              anchors.top: parent.top
+              anchors.topMargin: Style.space(4)
+              visible: resultCard.showSection
+              text: resultCard.section
+              color: Qt.darker(root.foreground, 1.35)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
 
             Rectangle {
               anchors.left: parent.left
@@ -489,6 +515,7 @@ Item {
               anchors.left: parent.left
               anchors.leftMargin: Style.space(8)
               anchors.verticalCenter: parent.verticalCenter
+              anchors.verticalCenterOffset: resultCard.sectionHeight / 2
               width: Style.space(46)
               height: Style.space(46)
               radius: Style.spacing.labelGap
@@ -529,19 +556,24 @@ Item {
               anchors.right: parent.right
               anchors.rightMargin: resultCard.borderRight + Style.space(6)
               anchors.verticalCenter: parent.verticalCenter
+              anchors.verticalCenterOffset: resultCard.sectionHeight / 2
               spacing: Style.space(4)
 
               Button {
                 iconText: modelData.browsable === true ? "󰅂"
                   : (root.service && root.service.contentKind === "playlists" ? "󰅂" : "󰐊")
-                tooltipText: modelData.browsable === true ? "Open folder"
+                tooltipText: modelData.browsable === true
+                  ? (String(modelData.media_kind || "") === "artist"
+                     ? "View artist" : (String(modelData.media_kind || "") === "album"
+                        ? "View album tracks" : "Open folder"))
                   : (root.service && root.service.contentKind === "playlists"
                      ? "Open playlist" : "Play now")
                 foreground: root.foreground
                 focusable: true
                 selected: modelData.current === true
                 enabled: root.service && !root.service.actionBusy
-                  && ((root.service.contentKind === "library"
+                  && (((root.service.contentKind === "library"
+                        || String(root.service.contentKind || "").indexOf("apple") === 0)
                        && modelData.browsable === true && root.can("content.browse"))
                       || (root.canPlayCurrentKind() && modelData.playable !== false))
                 opacity: enabled ? 1.0 : 0.35
@@ -549,6 +581,10 @@ Item {
                   if (root.service.contentKind === "library" && modelData.browsable === true) {
                     browseFlick.contentY = 0
                     root.service.openLibraryItem(modelData)
+                  } else if (String(root.service.contentKind || "").indexOf("apple") === 0
+                             && modelData.browsable === true) {
+                    browseFlick.contentY = 0
+                    root.service.openAppleItem(modelData)
                   } else {
                     root.service.playContent(modelData)
                   }
@@ -568,7 +604,8 @@ Item {
               }
 
               Button {
-                visible: root.service && root.service.contentKind === "apple"
+                visible: root.service
+                  && String(root.service.contentKind || "").indexOf("apple") === 0
                   && String(modelData.album_url || "") !== ""
                 text: "Album"
                 tooltipText: "Play the whole album"
@@ -668,6 +705,7 @@ Item {
               anchors.right: resultActions.left
               anchors.rightMargin: Style.space(7)
               anchors.verticalCenter: parent.verticalCenter
+              anchors.verticalCenterOffset: resultCard.sectionHeight / 2
               spacing: Style.space(2)
 
               Text {

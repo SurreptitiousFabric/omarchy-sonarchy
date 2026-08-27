@@ -14,6 +14,8 @@ Item {
   property var path: []
   property int offset: 0
   property bool loading: false
+  property var appleHistory: []
+  readonly property bool appleCanGoBack: appleHistory.length > 0
 
   property string requestId: ""
   property string requestRoomUid: ""
@@ -138,6 +140,12 @@ Item {
     total = 0
     meta = ({})
     loading = false
+    appleHistory = []
+  }
+
+  function search(nextKind, nextTerm) {
+    appleHistory = []
+    load(nextKind, nextTerm, [], 0)
   }
 
   function reload() {
@@ -166,6 +174,24 @@ Item {
     load("library", term, path, Math.max(0, Number(pageOffset || 0)))
   }
 
+  function openAppleItem(item) {
+    if (kind.indexOf("apple") !== 0 || !item || item.browsable !== true) return
+    var nextKind = String(item.browse_kind || "")
+    if (nextKind !== "apple-artist" && nextKind !== "apple-album") return
+    var nextHistory = appleHistory.slice()
+    nextHistory.push({ kind: kind, term: term })
+    appleHistory = nextHistory
+    load(nextKind, String(item.id || ""), [], 0)
+  }
+
+  function appleBack() {
+    if (kind.indexOf("apple") !== 0 || appleHistory.length === 0) return
+    var nextHistory = appleHistory.slice()
+    var previous = nextHistory.pop()
+    appleHistory = nextHistory
+    load(String(previous.kind || "apple"), String(previous.term || ""), [], 0)
+  }
+
   function cancelRequests() {
     loading = false
     requestId = ""
@@ -177,5 +203,6 @@ Item {
     pendingTerm = ""
     pendingPath = []
     pendingOffset = 0
+    appleHistory = []
   }
 }

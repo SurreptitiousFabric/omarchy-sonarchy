@@ -84,13 +84,16 @@ Use the Browse selector to choose a source:
   a re-index. **Back** returns to the parent folder, and arrow buttons page
   through lists longer than 40 results. Folder and playback actions appear
   only when the backend verifies that the selected item supports them.
-- **Apple Music catalog:** search Apple's public catalog. Playback uses the
-  Apple Music account already connected to the Sonos household. **Play now**
-  starts only the selected song; **Album** queues the album container and
-  starts at its first track so playback continues through the remaining songs
-  while the Sonos queue remains the active source.
+- **Apple Music catalog:** search Apple's public catalog across Artists,
+  Albums, and Songs. Open an artist to see a balanced list of their albums and
+  songs; open an album to see its tracks; use **Back** to return to the prior
+  result. Playback uses the Apple Music account already connected to the Sonos
+  household. **Play now** starts only the selected song; **Album** queues the
+  album container and starts at its first track so playback continues through
+  the remaining songs while the Sonos queue remains the active source.
 - **Global Player:** search the Global Player service already connected to the
-  Sonos household.
+  Sonos household. Search is not case-sensitive; when the provider rejects an
+  all-lowercase query, Sonarchy retries a human-friendly capitalization.
 
 Apple catalog search cannot see a private Apple Music library, personal
 playlists, listening history, or recommendations. Sonarchy never receives the

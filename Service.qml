@@ -16,6 +16,7 @@ Item {
   readonly property alias contentLoading: store.contentLoading
   readonly property alias contentMeta: store.contentMeta
   readonly property alias contentTotal: store.contentTotal
+  readonly property alias appleCanGoBack: store.appleCanGoBack
   readonly property alias detailsLoading: store.detailsLoading
   readonly property alias deviceDetails: store.deviceDetails
   readonly property alias devices: store.devices
@@ -43,10 +44,13 @@ Item {
   function hasCapability(name) { return store.hasCapability(name) }
   function loadAlarms() { store.loadAlarms() }
   function libraryBack() { store.libraryBack() }
+  function appleBack() { store.appleBack() }
   function libraryPage(offset) { store.libraryPage(offset) }
   function loadContent(kind, term, path, offset) { store.loadContent(kind, term, path, offset) }
   function openLibraryItem(item) { store.openLibraryItem(item) }
+  function openAppleItem(item) { store.openAppleItem(item) }
   function prepareContentSearch(kind) { store.prepareContentSearch(kind) }
+  function searchContent(kind, term) { store.searchContent(kind, term) }
   function movePlaybackToRoom(roomUid) { store.movePlaybackToRoom(roomUid) }
   function playAppleAlbum(item) { store.playAppleAlbum(item) }
   function playContent(item) { store.playContent(item) }

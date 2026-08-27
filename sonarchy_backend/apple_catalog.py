@@ -13,6 +13,7 @@ import requests
 from .artwork import select_artwork_match
 
 APPLE_SEARCH_URL = "https://itunes.apple.com/search"
+APPLE_LOOKUP_URL = "https://itunes.apple.com/lookup"
 APPLE_RESPONSE_LIMIT = 1024 * 1024
 APPLE_ALBUM_PATH_PATTERN = re.compile(r"/[A-Za-z]{2}/album/[^/]+/(\d+)/?")
 
@@ -92,30 +93,15 @@ def apple_artwork_url(value: Any, size: int = 600) -> str:
     return parsed._replace(path=path, params="", fragment="").geturl()
 
 
-def apple_search_results(
-    term: str,
-    limit: int,
+def _apple_results(
+    url: str,
+    params: dict[str, Any],
     *,
-    request_get: Callable[..., Any] = requests.get,
-    country: str | None = None,
+    request_get: Callable[..., Any],
 ) -> list[dict[str, Any]]:
-    query = validate_search_term(term)
-    if not query:
-        return []
-    bounded_limit = max(1, min(int(limit), 100))
-    selected_country = (country or default_country()).upper()
-    if not re.fullmatch(r"[A-Z]{2}", selected_country):
-        selected_country = "CH"
-
     response = request_get(
-        APPLE_SEARCH_URL,
-        params={
-            "term": query,
-            "country": selected_country,
-            "media": "music",
-            "entity": "song",
-            "limit": bounded_limit,
-        },
+        url,
+        params=params,
         headers={"Accept": "application/json", "User-Agent": "sonarchy/4"},
         timeout=6,
         allow_redirects=False,
@@ -143,6 +129,64 @@ def apple_search_results(
         response.close()
     results = payload.get("results", []) if isinstance(payload, dict) else []
     return [item for item in results if isinstance(item, dict)]
+
+
+def apple_search_results(
+    term: str,
+    limit: int,
+    *,
+    entity: str = "song",
+    request_get: Callable[..., Any] = requests.get,
+    country: str | None = None,
+) -> list[dict[str, Any]]:
+    query = validate_search_term(term)
+    if not query:
+        return []
+    bounded_limit = max(1, min(int(limit), 100))
+    selected_country = (country or default_country()).upper()
+    if not re.fullmatch(r"[A-Z]{2}", selected_country):
+        selected_country = "CH"
+    if entity not in {"musicArtist", "album", "song"}:
+        raise ValueError("Unsupported Apple catalog entity")
+    return _apple_results(
+        APPLE_SEARCH_URL,
+        params={
+            "term": query,
+            "country": selected_country,
+            "media": "music",
+            "entity": entity,
+            "limit": bounded_limit,
+        },
+        request_get=request_get,
+    )
+
+
+def apple_lookup_results(
+    item_id: str,
+    limit: int,
+    *,
+    entity: str,
+    request_get: Callable[..., Any] = requests.get,
+    country: str | None = None,
+) -> list[dict[str, Any]]:
+    identifier = clean(item_id)
+    if not identifier.isdecimal() or len(identifier) > 20:
+        raise ValueError("Invalid Apple catalog identifier")
+    if entity not in {"album", "song"}:
+        raise ValueError("Unsupported Apple catalog entity")
+    selected_country = (country or default_country()).upper()
+    if not re.fullmatch(r"[A-Z]{2}", selected_country):
+        selected_country = "CH"
+    return _apple_results(
+        APPLE_LOOKUP_URL,
+        params={
+            "id": identifier,
+            "country": selected_country,
+            "entity": entity,
+            "limit": max(1, min(int(limit), 100)),
+        },
+        request_get=request_get,
+    )
 
 
 def resolve_apple_artwork(

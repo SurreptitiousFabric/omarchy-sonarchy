@@ -86,7 +86,7 @@ The six pages are:
 
 - **Now:** metadata, seeking, transport, volume, play mode, and sleep timer.
 - **Browse:** Favorites, Sonos Playlists, paged local-library folders and
-  search, Apple catalog, and Global Player.
+  search, Apple artist/album/song catalog navigation, and Global Player.
 - **Queue:** the current Sonos queue, with play, remove, refresh, and confirmed
   clear controls.
 - **Rooms:** rename, playback sessions, room handoff, all-room mixer, and staged

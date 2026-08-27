@@ -7,19 +7,23 @@ import pytest
 from sonarchy_backend.apple_catalog import (
     APPLE_RESPONSE_LIMIT,
     apple_artwork_url,
+    apple_lookup_results,
     apple_search_results,
     public_apple_album_url,
     public_apple_music_url,
     resolve_apple_artwork,
     validate_search_term,
 )
+from sonarchy_backend.domains.apple_browse import (
+    browse_apple_album,
+    browse_apple_artist,
+    search_apple,
+)
 from sonarchy_backend.domains.browse import (
     album_art_url,
-    apple_content,
     browse_content,
     didl_item_payload,
     favorites_content,
-    format_duration,
     global_content,
     global_results,
     library_content,
@@ -116,6 +120,15 @@ def test_apple_search_streams_bounded_json_and_closes_response():
     assert request.call_args.kwargs["params"]["country"] == "CH"
     assert response.closed is True
     assert apple_search_results("", 5, request_get=request) == []
+
+
+def test_apple_catalog_validates_entities_and_lookup_identifiers():
+    with pytest.raises(ValueError, match="entity"):
+        apple_search_results("song", 5, entity="podcast")
+    with pytest.raises(ValueError, match="identifier"):
+        apple_lookup_results("not-an-id", 5, entity="album")
+    with pytest.raises(ValueError, match="entity"):
+        apple_lookup_results("123", 5, entity="artist")
 
 
 @pytest.mark.parametrize(
@@ -314,11 +327,13 @@ def test_apple_and_global_content_normalize_provider_results():
         "collectionId": 2,
         "artworkUrl100": "https://is1-ssl.mzstatic.com/image/100x100bb.jpg",
     }
-    payload = apple_content(
-        "song", 5, request_get=lambda *_args, **_kwargs: Response({"results": [apple_result]})
-    )
-    assert payload["items"][0]["subtitle"] == "Artist · Album · 1:01"
-    assert format_duration("bad") == ""
+
+    def apple_request(*_args, **kwargs):
+        entity = kwargs["params"]["entity"]
+        return Response({"results": [apple_result] if entity == "song" else []})
+
+    payload = search_apple("song", 5, request_get=apple_request)
+    assert payload["items"][0]["subtitle"] == "Song · Artist · Album · 1:01"
 
     station = music_item("G:1", "Station")
     coordinator = SimpleNamespace(ip_address="192.168.1.2")
@@ -329,6 +344,129 @@ def test_apple_and_global_content_normalize_provider_results():
     ) == [station]
     with patch("sonarchy_backend.domains.browse.global_results", return_value=Result([station])):
         assert global_content(coordinator, "news", 5)["items"][0]["playable"] is True
+
+
+def test_apple_search_groups_artists_albums_and_songs():
+    artist = {"wrapperType": "artist", "artistId": 10, "artistName": "Artist"}
+    album = {
+        "wrapperType": "collection",
+        "collectionType": "Album",
+        "collectionId": 20,
+        "collectionName": "Album",
+        "artistName": "Artist",
+        "collectionViewUrl": "https://music.apple.com/ch/album/album/20",
+    }
+    song = {
+        "wrapperType": "track",
+        "trackId": 30,
+        "trackName": "Song",
+        "artistName": "Artist",
+        "collectionName": "Album",
+        "trackViewUrl": "https://music.apple.com/ch/song/song/30",
+    }
+
+    def request(*_args, **kwargs):
+        entity = kwargs["params"]["entity"]
+        results = {"musicArtist": [artist], "album": [album], "song": [song]}
+        return Response({"results": results[entity]})
+
+    payload = search_apple("artist", 40, request_get=request)
+    assert [(item["media_kind"], item["browsable"]) for item in payload["items"]] == [
+        ("artist", True),
+        ("album", True),
+        ("song", False),
+    ]
+    assert payload["items"][1]["album_url"].endswith("/20")
+
+
+def test_apple_artist_and_album_views_return_bounded_navigation_models():
+    artist = {"wrapperType": "artist", "artistId": 10, "artistName": "Artist"}
+    album = {
+        "wrapperType": "collection",
+        "collectionType": "Album",
+        "collectionId": 20,
+        "collectionName": "Album",
+        "artistName": "Artist",
+        "collectionViewUrl": "https://music.apple.com/ch/album/album/20",
+    }
+    song = {
+        "wrapperType": "track",
+        "trackId": 30,
+        "trackName": "Song",
+        "artistName": "Artist",
+        "collectionName": "Album",
+        "trackViewUrl": "https://music.apple.com/ch/song/song/30",
+    }
+
+    def request(*_args, **kwargs):
+        entity = kwargs["params"]["entity"]
+        return Response({"results": [artist, album] if entity == "album" else [artist, song]})
+
+    artist_payload = browse_apple_artist("10", 40, request_get=request)
+    assert artist_payload["current_title"] == "Artist"
+    assert [item["media_kind"] for item in artist_payload["items"]] == ["album", "song"]
+
+    def album_request(*_args, **_kwargs):
+        return Response({"results": [album, song]})
+
+    album_payload = browse_apple_album("20", 40, request_get=album_request)
+    assert album_payload["current_title"] == "Album"
+    assert [item["title"] for item in album_payload["items"]] == ["Song"]
+
+
+def test_apple_browse_drops_malformed_items_and_keeps_small_searches_useful():
+    malformed = {
+        "wrapperType": "track",
+        "trackId": 1,
+        "trackName": "Unsafe",
+        "trackViewUrl": "http://music.apple.com/ch/song/unsafe/1",
+    }
+
+    def request(*_args, **kwargs):
+        assert kwargs["params"]["entity"] == "song"
+        return Response({"results": [malformed]})
+
+    payload = search_apple("unsafe", 2, request_get=request)
+    assert payload["items"] == []
+    with pytest.raises(ValueError, match="identifier"):
+        browse_apple_album("bad-id", 10, request_get=request)
+
+
+def test_apple_browse_uses_safe_fallback_titles_for_sparse_lookup_metadata():
+    def request(*_args, **kwargs):
+        entity = kwargs["params"]["entity"]
+        wrapper = "collection" if entity == "song" else "artist"
+        return Response({"results": [{"wrapperType": wrapper}]})
+
+    artist_payload = browse_apple_artist("10", 10, request_get=request)
+    album_payload = browse_apple_album("20", 10, request_get=request)
+    assert artist_payload["current_title"] == "Artist"
+    assert album_payload["current_title"] == "Album"
+    assert artist_payload["items"] == []
+    assert album_payload["items"] == []
+
+
+def test_global_search_retries_provider_friendly_case_only_after_an_empty_result():
+    station = music_item("G:1", "Classic FM")
+    service = Mock()
+    service.search.side_effect = [Result([]), Result([station])]
+
+    result = global_results(
+        SimpleNamespace(), "classic fm", 5, music_service_factory=Mock(return_value=service)
+    )
+
+    assert result == [station]
+    assert [call.args[1] for call in service.search.call_args_list] == [
+        "classic fm",
+        "Classic FM",
+    ]
+
+    service.search.reset_mock(side_effect=True)
+    service.search.return_value = Result([station])
+    assert global_results(
+        SimpleNamespace(), "Classic FM", 5, music_service_factory=Mock(return_value=service)
+    ) == [station]
+    assert service.search.call_count == 1
 
 
 def test_browse_dispatch_rejects_unknown_and_missing_room():

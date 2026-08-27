@@ -52,7 +52,12 @@ def global_results(
     if not query:
         return []
     service = music_service_factory("Global Player", device=coordinator)
-    return service.search("stations", query, count=limit)
+    result = service.search("stations", query, count=limit)
+    if result:
+        return result
+    words = query.split()
+    fallback = " ".join(word.upper() if len(word) <= 3 else word.capitalize() for word in words)
+    return result if fallback == query else service.search("stations", fallback, count=limit)
 
 
 def find_playlist_track(

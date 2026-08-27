@@ -100,6 +100,12 @@ Browse and Queue. `domains/capabilities.py` owns bounded positive/nullable
 source and device probes. None registers protocol handlers; an AST gate
 prevents handler domains from importing one another.
 
+`domains/apple_browse.py` owns the public Apple catalogue's normalized artist,
+album, and song views plus bounded concurrent provider reads. The HTTP adapter
+in `apple_catalog.py` owns request limits, response bounds, identifier and URL
+validation. QML receives only provider-neutral browse items and keeps a small
+presentation-only Back history.
+
 ## State and capabilities
 
 Every authoritative snapshot carries a monotonically increasing `revision` for
