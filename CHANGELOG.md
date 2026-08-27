@@ -42,6 +42,9 @@
   component so the public facade and main Store stay below their architecture
   guardrails while late results remain correlated to room, source, search,
   path, and page.
+- Made Play now insert directly after the current track, retained explicit Next
+  and End actions, and added a two-step Replace queue control with bounded
+  preflight backup and best-effort restoration after speaker rejection.
 
 ## 4.1.0 — 2026-08-26
 

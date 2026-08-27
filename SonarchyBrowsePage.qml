@@ -471,6 +471,7 @@ Item {
             required property var modelData
             readonly property string rowKey: String(root.service ? root.service.contentKind : "")
               + ":" + String(modelData.index) + ":" + String(modelData.id)
+            readonly property string replaceKey: "replace:" + rowKey
             width: parent.width
             implicitHeight: root.showArtwork ? Style.space(64) : Style.space(52)
             radius: Style.cornerRadius
@@ -620,6 +621,22 @@ Item {
                 enabled: root.service && !root.service.actionBusy
                   && root.can("queue.content.enqueue") && modelData.playable !== false
                 onClicked: root.service.enqueueContent(modelData, "end")
+              }
+
+              Button {
+                visible: root.service && (root.service.contentKind === "library"
+                  || root.service.contentKind === "playlist")
+                  && modelData.playable === true
+                iconText: "󰒭"
+                tooltipText: root.confirmation === resultCard.replaceKey
+                  ? "Press again to replace the queue" : "Replace queue and play"
+                foreground: root.confirmation === resultCard.replaceKey
+                  ? Color.urgent : root.foreground
+                focusable: true
+                enabled: root.service && !root.service.actionBusy
+                  && root.can("queue.content.enqueue") && modelData.playable !== false
+                onClicked: if (root.arm(resultCard.replaceKey))
+                  root.service.enqueueContent(modelData, "replace")
               }
 
               Button {

@@ -14,7 +14,7 @@ owners.
 - Previous, play/pause, stop, next, seek, group volume, and group mute
 - Playback-session selection, safe handoff, per-room mixer, and staged grouping
 - Real room rename
-- Sonos Favorites and current-queue playback, removal, and clearing
+- Sonos Favorites and current-queue playback, removal, clearing, and safe replacement
 - Sonos Playlist create, save-queue, browse, play, reorder, and delete actions
 - Hierarchical, paged local Sonos music-library browsing, track search, and index refresh
 - Public Apple Music catalog and Global Player station search
@@ -28,6 +28,10 @@ owners.
 Destructive queue, playlist, and alarm actions require the same focused action
 twice within five seconds. Queue and playlist item mutations also re-check the
 item identifier so a stale screen cannot silently change a different track.
+Library and playlist rows offer **Play now**, **Next**, **End**, and a confirmed
+**Replace queue** action. Replace first verifies a bounded backup and restores
+the previous queue if the new item cannot be added; queues over 100 items are
+left untouched because Sonarchy cannot back them up completely.
 
 ## Install
 

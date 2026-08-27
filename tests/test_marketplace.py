@@ -212,6 +212,18 @@ def test_library_browse_has_keyboard_routes_for_hierarchy_search_and_pages():
     assert "focusable: true" in browse_page
 
 
+def test_queue_insertion_controls_include_confirmed_replace():
+    browse_page = (ROOT / "SonarchyBrowsePage.qml").read_text()
+    service = service_implementation()
+
+    for mode in ("play", "next", "end", "replace"):
+        assert f'root.service.enqueueContent(modelData, "{mode}")' in browse_page
+    assert 'readonly property string replaceKey: "replace:" + rowKey' in browse_page
+    assert '"Press again to replace the queue"' in browse_page
+    assert "root.arm(resultCard.replaceKey)" in browse_page
+    assert 'enqueueContent(item, "play")' in service
+
+
 def test_alarm_reads_use_the_persistent_backend_not_a_one_shot_process():
     service = service_implementation()
     live_service = (ROOT / "LiveService.qml").read_text()

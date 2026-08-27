@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .capabilities import queue_transport_active
 from .common import DomainService, coordinator_for, number_arg, string_arg
 from .library import library_item_at, validate_library_context
 from .media import (
@@ -13,6 +14,8 @@ from .media import (
     validate_identifier,
 )
 from .ports import QueuePort
+
+MAX_REPLACE_BACKUP_ITEMS = 100
 
 
 def queue_action(
@@ -77,6 +80,62 @@ def find_library_item(
     )
 
 
+def _replace_backup(coordinator: Any) -> tuple[list[Any], bool, int, bool]:
+    result = coordinator.get_queue(
+        max_items=MAX_REPLACE_BACKUP_ITEMS,
+        full_album_art_uri=False,
+    )
+    items = list(result)
+    total = safe_index(item_attr(result, "total_matches", len(items)), len(items))
+    if total != len(items) or total > MAX_REPLACE_BACKUP_ITEMS:
+        raise ValueError("The queue is too large to replace safely")
+    if any(not item_attr(item, "resources", []) for item in items):
+        raise ValueError("The current queue cannot be backed up safely")
+
+    active = queue_transport_active(coordinator)
+    if active is None:
+        raise ValueError("The current playback source could not be verified")
+    track = safe_call(coordinator.get_current_track_info, {}) or {}
+    position = safe_index(track.get("playlist_position"), 0) - 1
+    if active and items and not 0 <= position < len(items):
+        raise ValueError("The current queue position could not be verified")
+    transport = safe_call(coordinator.get_current_transport_info, {}) or {}
+    was_playing = clean(transport.get("current_transport_state")).upper() == "PLAYING"
+    return items, active, position, was_playing
+
+
+def _restore_replaced_queue(
+    coordinator: Any,
+    items: list[Any],
+    active: bool,
+    position: int,
+    was_playing: bool,
+) -> None:
+    coordinator.clear_queue()
+    if not items:
+        return
+    coordinator.add_multiple_to_queue(items)
+    if active:
+        coordinator.play_from_queue(position, start=was_playing)
+
+
+def _replace_queue(coordinator: Any, item: Any) -> int:
+    backup, active, position, was_playing = _replace_backup(coordinator)
+    try:
+        coordinator.clear_queue()
+        queue_position = int(coordinator.add_to_queue(item))
+        coordinator.play_from_queue(max(0, queue_position - 1))
+        return queue_position
+    except Exception:
+        try:
+            _restore_replaced_queue(coordinator, backup, active, position, was_playing)
+        except Exception as recovery_error:
+            raise RuntimeError(
+                "Queue replacement failed and the previous queue could not be restored"
+            ) from recovery_error
+        raise
+
+
 def enqueue_content_item(
     speaker: Any,
     kind: str,
@@ -95,20 +154,25 @@ def enqueue_content_item(
         raise ValueError("Only library and playlist items can be queued here")
     if not item_attr(item, "resources", []):
         raise ValueError("This item does not contain a playable resource")
-    if mode not in {"play", "next", "end"}:
+    if mode not in {"play", "next", "end", "replace"}:
         raise ValueError("Unsupported queue position")
-    if mode == "next":
+    if mode == "replace":
+        _replace_queue(coordinator, item)
+        message = "Replaced the queue and started playback"
+    elif mode in {"play", "next"}:
         current = safe_call(coordinator.get_current_track_info, {}) or {}
         current_position = max(0, safe_index(current.get("playlist_position"), 0))
-        coordinator.add_to_queue(item, position=current_position + 1 if current_position else 1)
-        message = "Added next"
-    else:
-        queue_position = coordinator.add_to_queue(item)
+        queue_position = coordinator.add_to_queue(
+            item, position=current_position + 1 if current_position else 1
+        )
         if mode == "play":
             coordinator.play_from_queue(max(0, int(queue_position) - 1))
-            message = "Playing from the queue"
+            message = "Playing now"
         else:
-            message = "Added to the queue"
+            message = "Added next"
+    else:
+        coordinator.add_to_queue(item)
+        message = "Added to the queue"
     return {"ok": True, "action": f"queue-{mode}", "message": message}
 
 

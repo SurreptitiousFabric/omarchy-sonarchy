@@ -34,7 +34,13 @@ result includes authoritative breadcrumbs, page flags, and `browsable` and
 `queue.content.enqueue` accepts an optional `libraryPath` with the same bounded
 segments. The backend re-resolves that path and verifies the selected absolute
 index and item ID before mutation; QML-supplied metadata is never treated as an
-authoritative Sonos object.
+authoritative Sonos object. Its `mode` is `play`, `next`, `end`, or `replace`.
+Play and Next insert after the currently reported queue position; Play also
+starts the inserted item, while End appends. Replace is destructive and must be
+confirmed by the UI. Before clearing, the backend requires a complete backup
+of at most 100 restorable items and a verifiable playback source/position; if
+adding or starting the replacement fails, it attempts to restore the previous
+queue and queue playback position.
 
 ## Result
 
