@@ -80,7 +80,10 @@ There is no REST API, browser UI, or listener on port 8000.
   fingerprint of the exact current media URI, volume/mute, capabilities,
   playlist inventory/name, mode, ordered song identities, and backend revision.
   Raw media URIs are never projected. Tickets are claimed before mutation and
-  are not a replacement for explicit client/user approval.
+  are not a replacement for explicit client/user approval. Rejections before
+  ticket claim do not emit a mutation refresh or increment the revision, so an
+  unrelated invalid request cannot stale another pending plan; every claimed
+  execution attempt still receives the normal authoritative refresh.
 - Exact-song playlist construction shares the existing 100-item queue backup
   limit. It verifies the constructed queue and reopens the new Sonos Playlist;
   save-only also verifies complete queue/source/position/transport restoration.
@@ -90,6 +93,10 @@ There is no REST API, browser UI, or listener on port 8000.
   cleanup. Failure results contain controlled phases and bounded recovery
   status, never raw exceptions, addresses, DIDL, provider URIs, credentials, or
   tokens.
+  Apple identity evidence must occupy a complete canonical or pinned Sonos item
+  ID, or the leading song token of an expected `x-sonos-http:` or
+  `x-sonos-https:` resource; unanchored metadata and query-string substrings are
+  never authoritative.
   The exact returned ID is retained before title validation; an invalid or
   unreadable returned title can authorize cleanup only when that exact new ID
   resolves authoritatively to the invocation's requested title.

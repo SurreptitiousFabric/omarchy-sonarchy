@@ -22,6 +22,9 @@
   returned titles while retaining authoritative ID-and-title cleanup checks.
 - Retain both invocation-bound titles for exact-ID cleanup and reject
   `save-and-play` before mutation when the prior source is not the active queue.
+- Keep pre-claim playlist execution rejections from advancing backend revision,
+  and require Apple identity evidence to use complete canonical or expected
+  Sonos item/resource tokens rather than arbitrary metadata substrings.
 - Replaced every one-shot QML command with one canonical versioned persistent
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,

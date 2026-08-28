@@ -114,6 +114,10 @@ presentation-only Back history.
 process-local ticket lifecycle. Its read-only validation and write execution
 are separate services sharing one in-memory store. `apple_catalog.py` owns the
 narrow pinned-SoCo song canonicalisation adapter.
+The create service declares a conditional mutation boundary: protocol errors
+before atomic ticket claim and revision validation do not cause a state refresh
+or revision increment, while every accepted execution attempt retains the
+normal authoritative post-attempt refresh.
 `domains/apple_playlist_transaction.py` owns exact-room capture and Sonos
 Playlist construction/reopen verification. `domains/queue_transaction.py`
 owns the shared 100-item backup, fingerprints, restoration, and authoritative
@@ -152,6 +156,10 @@ Successful playlist results project bounded reviewed metadata once under the
 authoritatively reopened playlist. Queue evidence contains only positions and
 canonical Apple identities; raw provider metadata and optional Sonos item IDs
 are not duplicated across the boundary.
+Apple identity extraction accepts only complete canonical or pinned Sonos item
+identifiers and the leading token of an expected `x-sonos-http:` or
+`x-sonos-https:` resource; it never searches arbitrary metadata substrings or
+query parameters.
 
 ## AI and MCP boundary
 

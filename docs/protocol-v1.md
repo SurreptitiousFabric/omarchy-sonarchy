@@ -91,6 +91,12 @@ duplicate policy, ordered canonical songs, expiry, and random nonce. It proves
 recent validation, not human approval. A backend restart, replay, expiry, newer
 backend revision, or changed authoritative target state requires a new
 preflight.
+Requests rejected before a ticket is claimed, including missing approval,
+replacement arguments, and unavailable tokens, do not emit a mutation refresh
+or advance the backend revision. A still-valid ticket therefore remains usable
+after an unrelated pre-claim rejection. Once a valid ticket is atomically
+claimed and its backend revision matches, execution requires an authoritative
+post-attempt refresh even if the backend operation later fails.
 The complete result envelope is serialized as unescaped UTF-8 JSON and measured
 against the 64 KiB protocol-line limit before the review is returned. Request
 IDs and operation names are byte-bounded. If a review does not fit, its
@@ -123,6 +129,10 @@ each exact song without starting playback, verify the constructed queue, create
 the new Sonos Playlist, reopen it by authoritative `SQ:<id>`, and verify exact
 count, order, canonical identities, title, and artist. Existing exact-name
 collisions are never overwritten or deleted.
+Queue and reopened-playlist identity evidence is accepted only as a complete
+canonical `song:<id>`, a complete pinned-Apple Sonos item ID, or the leading
+song token of an `x-sonos-http:` or `x-sonos-https:` resource. Arbitrary substrings and query
+parameters cannot satisfy identity verification.
 
 - `save-only` restores and verifies the complete previous queue, queue
   position, source, and exact `PLAYING`/`STOPPED` state.

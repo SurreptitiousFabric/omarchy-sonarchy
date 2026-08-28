@@ -51,6 +51,16 @@ applies its strict public URL policy and asks pinned SoCo 0.31.2 to canonicalise
 the same URL. Only canonical `song:<id>` results whose ID exactly matches the
 reviewed `catalogId` are accepted. Metadata supports review and verification;
 it cannot redirect identity. Plain titles are never a write input.
+Constructed queue and reopened-playlist items must expose the identity as a
+complete canonical or pinned Sonos item ID, or as the leading song token of an
+expected `x-sonos-http:` or `x-sonos-https:` resource. A matching substring
+elsewhere in item metadata or a resource query is not identity evidence.
+
+Execution rejections that occur before atomic ticket claim—such as missing
+approval, replacement fields, or an unavailable token—do not refresh state or
+advance the backend revision. They therefore cannot stale a different valid
+pending plan. Once a valid ticket is claimed and its revision matches, every
+execution attempt is followed by authoritative refresh.
 
 The complete wire contract and transaction rules are in
 [`protocol-v1.md`](protocol-v1.md).

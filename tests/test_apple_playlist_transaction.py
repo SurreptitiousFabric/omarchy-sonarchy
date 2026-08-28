@@ -358,10 +358,52 @@ def execute(speaker, plan):
     )
 
 
-def test_song_identity_is_read_only_from_exact_apple_resource():
+def test_song_identity_accepts_complete_canonical_item_and_resource_forms():
     assert apple_song_identity_from_item(apple_item(TRACK_ONE, "Q:1")) == "1452806384"
+    assert (
+        apple_song_identity_from_item(queue_item("song:1452806384", "Reviewed", uri=None))
+        == "1452806384"
+    )
+    assert (
+        apple_song_identity_from_item(queue_item("10032020song%3a1452806384", "Reviewed", uri=None))
+        == "1452806384"
+    )
+    assert (
+        apple_song_identity_from_item(
+            queue_item(
+                "Q:1",
+                "Reviewed",
+                uri="x-sonos-https:song:1452806384?service=apple",
+            )
+        )
+        == "1452806384"
+    )
     ambiguous = apple_item(TRACK_ONE, "song:999")
     assert apple_song_identity_from_item(ambiguous) == ""
+
+
+@pytest.mark.parametrize(
+    ("item_id", "uri"),
+    (
+        ("not-a-song:1452806384", None),
+        ("prefix10032020song%3a1452806384", None),
+        ("Q:1", "x-sonos-http:album%3a999?hint=song:1452806384"),
+        ("Q:1", "https://example.invalid/song:1452806384"),
+        ("Q:1", "x-sonos-http:song%3a1452806384evil.mp4"),
+    ),
+)
+def test_song_identity_rejects_substrings_and_untrusted_uri_shapes(item_id, uri):
+    item = queue_item(item_id, "Untrusted", uri=uri)
+
+    assert apple_song_identity_from_item(item) == ""
+
+
+def test_verify_items_does_not_accept_reviewed_identity_only_in_resource_query():
+    item = apple_item(TRACK_ONE, "Q:1")
+    item.resources[0].uri = "x-sonos-http:song%3a999999.mp4?hint=song:1452806384"
+
+    with pytest.raises(ValueError, match="identity"):
+        verify_apple_items([item], [TRACK_ONE], container="queue")
 
 
 def test_verify_items_requires_exact_order_identity_title_and_artist():

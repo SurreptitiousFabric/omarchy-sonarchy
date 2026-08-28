@@ -26,7 +26,18 @@ from .queue_transaction import (
 
 MAX_SONOS_PLAYLISTS = 100
 MAX_TRANSACTION_PLAYLISTS = MAX_SONOS_PLAYLISTS + 1
-APPLE_SONG_REFERENCE = re.compile(r"song(?::|%3a)([1-9]\d{0,19})(?!\d)", re.IGNORECASE)
+APPLE_CANONICAL_SONG_ID = re.compile(
+    r"song(?::|%3a)([1-9]\d{0,19})",
+    re.IGNORECASE,
+)
+APPLE_SONOS_ITEM_ID = re.compile(
+    r"10032020song(?::|%3a)([1-9]\d{0,19})",
+    re.IGNORECASE,
+)
+APPLE_SONOS_RESOURCE_URI = re.compile(
+    r"x-sonos-https?:song(?::|%3a)([1-9]\d{0,19})(?=$|[./?&#])",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -228,14 +239,17 @@ def inspect_apple_playlist_target(speaker: Any, playlist_name: str) -> dict[str,
 
 
 def apple_song_identity_from_item(item: Any) -> str:
-    candidates = [clean(item_attr(item, "item_id"))]
+    item_id = clean(item_attr(item, "item_id"))
+    identities: set[str] = set()
+    for pattern in (APPLE_CANONICAL_SONG_ID, APPLE_SONOS_ITEM_ID):
+        match = pattern.fullmatch(item_id)
+        if match is not None:
+            identities.add(match.group(1))
     for resource in item_attr(item, "resources", []) or []:
-        candidates.append(clean(item_attr(resource, "uri")))
-    identities = {
-        match.group(1)
-        for candidate in candidates
-        for match in APPLE_SONG_REFERENCE.finditer(candidate)
-    }
+        uri = clean(item_attr(resource, "uri"))
+        match = APPLE_SONOS_RESOURCE_URI.match(uri)
+        if match is not None:
+            identities.add(match.group(1))
     return next(iter(identities)) if len(identities) == 1 else ""
 
 
