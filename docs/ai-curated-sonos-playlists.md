@@ -62,8 +62,44 @@ advance the backend revision. They therefore cannot stale a different valid
 pending plan. Once a valid ticket is claimed and its revision matches, every
 execution attempt is followed by authoritative refresh.
 
+Queue restoration replays each original queueable DIDL object individually
+through pinned SoCo's `add_to_queue`. That method serializes one complete item
+into one metadata document and returns the new one-based position; Sonarchy
+checks every returned position before continuing. Restoration deliberately no
+longer uses `add_multiple_to_queue`, whose batched metadata path recreated 36
+physical queue slots without preserving their complete metadata during the
+first approved `save-only` test. Verification still rejects missing metadata:
+it separately compares stable resource/provider fields and complete DIDL
+metadata while ignoring regenerated queue-local IDs.
+
+Controlled construction failures identify only a bounded step
+(`share_link_initialization`, `enqueue`, `position_decode`, or
+`position_verify`). Track position and canonical `song:<id>` are included only
+for a track-owned step. An enqueue may include the pinned exception's explicit,
+strictly validated `error_code`; exception messages, XML, descriptions, URIs,
+addresses, and provider data are never inspected for diagnostics. Rollback can
+similarly identify its queue step, failed backup position, or exact typed
+verification reason without parsing an exception message.
+
 The complete wire contract and transaction rules are in
 [`protocol-v1.md`](protocol-v1.md).
+
+## Physical acceptance status
+
+The first owner-approved physical `save-only` attempt on 2026-08-28 failed in
+`queue_construction`; no Sonos Playlist was created. Its rollback could not
+verify queue restoration. A subsequent read-only assessment found 36 active
+queue entries at the prior position with stopped transport, but all projected
+title/artist/album/provider evidence was absent. Exact original content and
+order remain undetermined. The run did not retain enough bounded evidence to
+identify the failed Apple track, returned position, or Sonos error code, so the
+repair does not claim to explain that initial enqueue failure.
+
+The per-item restoration and typed diagnostics described above have only
+device-free automated coverage. Physical acceptance has not passed, and no
+further speaker write is authorized by this implementation work. A fresh
+review, green CI, exact owner-approved preflight, and separately approved write
+are required before another attempt.
 
 ## Current client boundary
 

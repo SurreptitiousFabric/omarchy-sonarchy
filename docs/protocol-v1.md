@@ -138,6 +138,15 @@ parameters cannot satisfy identity verification.
   position, source, and exact `PLAYING`/`STOPPED` state.
 - `save-and-play` starts queue item 1 and leaves the approved queue active.
 
+Restoration clears the temporary queue and replays each original bounded
+queueable object through the existing infrastructure `add_to_queue` method.
+Every returned one-based position must match before the next item is attempted.
+The bulk `add_multiple_to_queue` path is not used. After replay, Sonarchy
+separately verifies item count, stable resource/provider fields, and complete
+DIDL metadata, excluding queue-local IDs that Sonos may regenerate. It then
+verifies queue-active state, position, transport, bounded source, and the exact
+hashed media identity. Raw resources and DIDL never cross this boundary.
+
 After a post-mutation failure, the transaction removes a partial playlist only
 when the create invocation returned a valid new `SQ:<id>` and that exact ID
 still resolves to the invocation's expected playlist. It never infers ownership
@@ -208,7 +217,23 @@ private addresses, credentials, or service metadata.
 Transactional failures may additionally contain a bounded `details` object,
 for example `phase` plus `rollback.attempted`, `playlistRemoved`,
 `playlistCleanupRequired`, `queueRestored`, `environmentUnchanged`, and
-`succeeded`.
+`succeeded`. A `queue_construction` failure may add:
+
+- `queueConstructionStep`: `share_link_initialization`, `enqueue`,
+  `position_decode`, or `position_verify`;
+- `failedTrackPosition`: integer 1–25 for a track-owned step;
+- `failedCanonicalIdentity`: exact bounded `song:<catalogId>` for that track;
+- `sonosErrorCode`: a strictly bounded numeric or symbolic value read only
+  from pinned `SoCoUPnPException.error_code`.
+
+Rollback may add `rollbackQueueStep` (`clear`, `readd`, `position_select`, or
+`verification`), `rollbackFailedItemPosition` (1–100), and
+`rollbackVerificationReason` (`queue_read`, `item_count`, `resources`,
+`metadata`, `queue_active`, `position`, `transport`, `source`, or `media`).
+Optional fields are omitted when unavailable. They are typed at the failure
+site and never inferred by parsing exception text. Exception messages,
+descriptions, XML, arguments, URIs, DIDL, addresses, credentials, and raw
+service metadata are not included.
 
 ## Snapshot
 

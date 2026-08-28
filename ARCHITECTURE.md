@@ -131,8 +131,24 @@ The transaction deliberately creates a Sonos Playlist, not a native Apple
 Music playlist. `save-only` temporarily constructs and verifies the approved
 queue, saves and reopens the playlist, then restores the original queue and
 transport. `save-and-play` performs the same save verification, starts item 1,
-and leaves the approved queue active. Failures after the first mutation attempt
-one shared rollback path and expose only bounded rollback evidence. Playlist
+and leaves the approved queue active. Queue restoration serializes each
+original bounded DIDL object separately through SoCo's `add_to_queue`, checks
+every returned one-based position, and only then restores the original queue
+position and playing/stopped state. It does not use the bulk
+`AddMultipleURIsToQueue` adapter: the first physical `save-only` attempt showed
+that path could recreate queue slots without preserving complete metadata.
+Stable restoration verification excludes regenerated queue-local IDs but
+separately compares complete resource/provider fields and every DIDL metadata
+field represented by the pinned SoCo object model before checking source,
+position, transport, and exact hashed media identity.
+
+Failures after the first mutation attempt use one shared rollback path and
+expose only bounded typed evidence. Queue construction identifies
+`share_link_initialization`, `enqueue`, `position_decode`, or
+`position_verify`; an enqueue may include only a validated explicit
+`SoCoUPnPException.error_code`. Rollback identifies `clear`, `readd`,
+`position_select`, or `verification`, with a bounded item position or
+verification reason. No diagnostic is derived from exception text. Playlist
 rollback requires the exact new `SQ:<id>` returned by the create invocation and
 never claims ownership from title or inventory difference alone.
 That ID is retained before the create-returned title is validated. If the title

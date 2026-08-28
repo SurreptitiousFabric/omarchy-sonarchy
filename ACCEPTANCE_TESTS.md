@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 443 automated Python tests pass with 86% branch coverage, alongside
+- [x] All 480 automated Python tests pass with 86% branch coverage, alongside
   32 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
@@ -32,7 +32,9 @@ recorded; it must not be called tested.
 - [x] Fake-only automated AI-curated playlist tests cover exact Apple song URL
   and identity validation, 25-track bounds, duplicate review, plan expiry and
   replay, stale state, exact save/reopen verification, both persistence modes,
-  and rollback success/failure. No feature-specific speaker write was run.
+  and typed rollback success/failure. The first feature-specific physical
+  `save-only` write failed as recorded below; the repair has not been retested
+  on a speaker.
 - [x] Live idempotent writes pass for same-name rename, same-volume write,
   every speaker-reported sound/device setting, and current shuffle, repeat,
   and crossfade values. No effective setting or playback change was requested.
@@ -70,13 +72,29 @@ two controls are not applicable to this household. They remain covered by
 automated capability/visibility tests and must be tested on supporting hardware
 before Sonarchy claims real-device coverage for them.
 
-## AI-curated Sonos Playlist physical acceptance — not run
+## AI-curated Sonos Playlist physical acceptance — failed, repair pending review
 
 This feature's automated suite uses fakes and must not mutate real speakers
 without explicit owner approval for the exact run. Use two exact Apple songs
 whose catalogue IDs, URLs, title, artist, album, duration, and order have been
 reviewed. Use unique disposable Sonos Playlist names; never reuse or overwrite
 an existing name.
+
+The first approved `save-only` attempt on 2026-08-28 passed fresh preflight but
+failed in `queue_construction`. No Sonos Playlist was created. Rollback reported
+`queueRestored: false`; a later read-only assessment found 36 queue slots with
+the original queue source, position, and stopped transport, but every item had
+lost title, artist, album, and safely exposed provider identity. The original
+content/order is therefore `UNDETERMINED`. The failed run retained no track,
+sub-step, returned-position, or UPnP-code evidence, so it does not prove why the
+Apple enqueue failed.
+
+The repaired implementation replaces bulk restoration with ordered per-item
+DIDL-object replay and exact returned-position checks. It also reports bounded
+construction and rollback sub-steps. This is automated-test evidence only.
+Another physical write remains blocked until the repaired exact commit has
+green CI, fresh review, and a new owner-approved staged acceptance prompt. No
+automated or review workflow may repair or inspect the currently damaged queue.
 
 ### Stage 1: read-only preflight
 
@@ -122,6 +140,11 @@ an existing name.
 5. Retain the disposable playlist until cleanup receives separate approval.
    Any failure without an exact create-returned playlist ID must leave all
    candidates untouched and report `playlistCleanupRequired: true`.
+6. On failure, require bounded `queueConstructionStep` and, when applicable,
+   failed track position/identity and trusted UPnP code. Require rollback to
+   identify `clear`, `readd`, `position_select`, or `verification`, plus an
+   exact backup position or verification reason when available. Raw errors,
+   URIs, DIDL, service metadata, credentials, and addresses remain forbidden.
 
 ### Stage 3: save and play plus natural progression
 
