@@ -93,6 +93,10 @@ There is no REST API, browser UI, or listener on port 8000.
   The exact returned ID is retained before title validation; an invalid or
   unreadable returned title can authorize cleanup only when that exact new ID
   resolves authoritatively to the invocation's requested title.
+  A valid differing returned title and the requested title may both support
+  that exact-ID check, but neither permits name-based ownership. `save-and-play`
+  is denied before mutation unless CurrentURI proves an active queue, because
+  Sonarchy does not retain or execute a raw non-queue URI for rollback.
 - Playlist creation requires a free slot below the 100-item bounded inventory;
   post-create verification and exact-ID cleanup can inspect one bounded extra.
   Preflight reviews use unescaped UTF-8 and must fit the complete 64 KiB

@@ -40,6 +40,10 @@ is still required.
 Preflight also reserves one slot below the bounded 100-playlist inventory. A
 review is published only when its complete UTF-8 protocol result fits within
 64 KiB; otherwise its unpublished execution ticket is discarded.
+`save-and-play` requires CurrentURI to prove that the active source is the Sonos
+queue, so a failure can restore it exactly. A verified radio, TV, or other
+non-queue source may be used with `save-only`, which does not switch playback
+sources, but is rejected for `save-and-play` before any mutation.
 
 Every track must contain a bounded decimal Apple catalogue song ID, the exact
 public Apple Music share URL, title, artist, album, and duration. Sonarchy

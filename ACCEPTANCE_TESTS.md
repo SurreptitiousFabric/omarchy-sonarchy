@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 433 automated Python tests pass with 86% branch coverage, alongside
+- [x] All 436 automated Python tests pass with 86% branch coverage, alongside
   32 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
@@ -104,6 +104,8 @@ an existing name.
    returns full verified metadata only once.
    Confirm an invalid or unreadable create-returned title retains exact-ID
    cleanup ownership without permitting name-only deletion.
+   Confirm `save-and-play` is eligible only when CurrentURI proves an active
+   Sonos queue; a verified non-queue source remains eligible for `save-only`.
 5. Stop. Obtain explicit owner approval for the one token-only write.
 
 ### Stage 2: save only

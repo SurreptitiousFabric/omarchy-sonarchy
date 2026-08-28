@@ -20,6 +20,8 @@
   metadata once and compact position/canonical-identity queue evidence.
 - Preserve exact create-returned playlist ownership across invalid or unreadable
   returned titles while retaining authoritative ID-and-title cleanup checks.
+- Retain both invocation-bound titles for exact-ID cleanup and reject
+  `save-and-play` before mutation when the prior source is not the active queue.
 - Replaced every one-shot QML command with one canonical versioned persistent
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,

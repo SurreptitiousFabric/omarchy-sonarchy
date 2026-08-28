@@ -139,6 +139,14 @@ exception, address, token, DIDL, URI, or raw service metadata.
 The exact returned ID is retained before validating the returned title. If that
 title is invalid or unreadable, removal remains possible only when the exact new
 ID resolves authoritatively to the title requested by the same invocation.
+If a valid returned title differs, both bounded titles may support that same
+exact-ID lookup; a title never establishes ownership by itself.
+
+`save-and-play` requires CurrentURI to prove an active Sonos queue during both
+validation and immediate execution revalidation. Sonarchy rejects a non-queue
+source before mutation because it does not retain or execute the raw source URI
+needed to reverse a later queue switch. `save-only` does not switch playback
+sources and may preserve a verified non-queue source.
 
 `alarms.save` carries both the selected anchor `roomUid` and the requested
 `alarmRoomUid`. The backend accepts the target only when it is currently

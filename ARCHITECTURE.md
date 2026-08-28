@@ -134,6 +134,12 @@ never claims ownership from title or inventory difference alone.
 That ID is retained before the create-returned title is validated. If the title
 cannot be trusted, cleanup still requires the exact new ID to resolve
 authoritatively to the title requested by that same invocation.
+If a valid returned title differs, both it and the requested title remain
+bounded invocation evidence, but neither can authorize deletion without that
+exact new ID. `save-and-play` additionally requires an active queue source at
+preflight and immediate revalidation because switching to queue playback cannot
+safely restore a prior radio, TV, or other non-queue source. `save-only` does not
+switch sources and may preserve a verified non-queue source.
 Preflight reserves one slot below the 100-item bounded playlist inventory;
 post-create verification and cleanup allow one transaction-scoped extra. The
 shared protocol serializer emits UTF-8 JSON and the plan service measures the
