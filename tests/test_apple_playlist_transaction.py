@@ -6,6 +6,7 @@ import re
 from types import SimpleNamespace
 
 import pytest
+from soco.exceptions import SoCoUPnPException
 
 from sonarchy_backend.contracts import (
     MAX_PROTOCOL_LINE_BYTES,
@@ -23,8 +24,10 @@ from sonarchy_backend.domains.apple_playlist_transaction import (
 from sonarchy_backend.domains.common import RequestContext
 from sonarchy_backend.domains.errors import PlanConflictError, PlaylistTransactionError
 from sonarchy_backend.domains.queue_transaction import (
-    QueueStateError,
+    QueueRestoreError,
+    QueueVerificationError,
     capture_queue_backup,
+    restore_queue,
     verify_restored_queue,
 )
 
@@ -85,6 +88,11 @@ class FakeTransport:
         self.owner = owner
 
     def GetMediaInfo(self, _args):
+        if self.owner.clear_calls >= 2:
+            if self.owner.rollback_verification_failure == "queue_active":
+                return {"CurrentURI": "x-sonosapi-stream:radio"}
+            if self.owner.rollback_verification_failure == "media":
+                return {"CurrentURI": "x-rincon-queue:OTHER_ROOM#0"}
         return {"CurrentURI": self.owner.current_uri}
 
 
@@ -114,6 +122,9 @@ class FakeShareLinks:
 
     def add_share_link_to_queue(self, url, *, dc_title):
         track = self.owner.catalog[url]
+        expected_position = len(self.owner.queue) + 1
+        if self.owner.share_failure_position == expected_position:
+            raise self.owner.share_failure
         item_id = self.owner.apple_item_id or f"Q:{len(self.owner.queue) + 1}"
         self.owner.queue.append(apple_item(track, item_id))
         self.owner.queue_update += 1
@@ -132,6 +143,8 @@ class FakeShareLinks:
             self.owner.queue_update += 1
         if self.owner.wrong_insert_position:
             return first_position + 1
+        if self.owner.share_returned_position is not None:
+            return self.owner.share_returned_position
         return first_position
 
 
@@ -169,6 +182,7 @@ class FakeSpeaker:
         self.queue_update = 1
         self.next_playlist = 1
         self.clear_calls = 0
+        self.fail_clear_call = None
         self.play_calls = []
         self.expand_share = False
         self.wrong_insert_position = False
@@ -177,6 +191,11 @@ class FakeSpeaker:
         self.fail_reopen = False
         self.fail_play_once = False
         self.fail_restore = False
+        self.fail_restore_position = None
+        self.wrong_restore_position = None
+        self.invalid_restore_position = None
+        self.restore_add_calls = []
+        self.bulk_restore_calls = 0
         self.fail_playlist_remove = False
         self.saved_verification = ""
         self.saved_browse_total = None
@@ -193,28 +212,71 @@ class FakeSpeaker:
         self.play_stays_stopped = False
         self.current_metadata_override = None
         self.apple_item_id = ""
+        self.share_failure_position = None
+        self.share_failure = RuntimeError("private share failure")
+        self.share_returned_position = None
+        self.fail_share_factory = False
+        self.initial_queue_length = len(self.queue)
+        self.rollback_verification_failure = ""
 
     def get_queue(self, *, max_items, full_album_art_uri):
         assert full_album_art_uri is False
-        return Result(
-            [copy.deepcopy(item) for item in self.queue[:max_items]],
-            total_matches=len(self.queue),
-            update_id=self.queue_update,
+        if self.clear_calls >= 2 and self.rollback_verification_failure == "queue_read":
+            raise RuntimeError("private queue read at 192.168.1.20 token=secret")
+        items = [copy.deepcopy(item) for item in self.queue[:max_items]]
+        if self.clear_calls >= 2 and items:
+            if self.rollback_verification_failure == "item_count":
+                items.pop()
+            elif self.rollback_verification_failure == "resources":
+                items[0].resources[0].uri = "x-private:changed?token=secret"
+            elif self.rollback_verification_failure == "missing_resources":
+                items[0].resources = []
+            elif self.rollback_verification_failure == "metadata":
+                items[0].title = ""
+                items[0].creator = ""
+                items[0].album = ""
+        total = (
+            len(items)
+            if self.clear_calls >= 2 and self.rollback_verification_failure == "item_count"
+            else len(self.queue)
         )
+        return Result(items, total_matches=total, update_id=self.queue_update)
 
     def clear_queue(self):
         self.clear_calls += 1
+        if self.fail_clear_call == self.clear_calls:
+            raise RuntimeError("private clear failure at 192.168.1.20")
         self.queue = []
         self.current_position = -1
         self.queue_update += 1
+        if self.clear_calls >= 2 and self.rollback_verification_failure == "source":
+            self.music_source = "WEB_FILE"
+
+    def add_to_queue(self, item):
+        expected_position = len(self.queue) + 1
+        self.restore_add_calls.append(expected_position)
+        if self.fail_restore or self.fail_restore_position == expected_position:
+            raise RuntimeError("private restore failure at 192.168.1.20")
+        restored = copy.deepcopy(item)
+        restored.item_id = f"Q:restored:{expected_position}"
+        self.queue.append(restored)
+        self.queue_update += 1
+        if self.wrong_restore_position == expected_position:
+            return expected_position + 1
+        if self.invalid_restore_position == expected_position:
+            return 1.5
+        return expected_position
 
     def add_multiple_to_queue(self, items):
-        if self.fail_restore:
-            raise RuntimeError("private restore failure at 192.168.1.20")
-        self.queue = []
+        """Model the real failed path: resources survive but DIDL metadata does not."""
+
+        self.bulk_restore_calls += 1
         for index, item in enumerate(items, 1):
             restored = copy.deepcopy(item)
             restored.item_id = f"Q:restored:{index}"
+            restored.title = ""
+            restored.creator = ""
+            restored.album = ""
             self.queue.append(restored)
         self.queue_update += 1
 
@@ -231,10 +293,11 @@ class FakeSpeaker:
             raise RuntimeError("private playback failure token=secret")
 
     def get_current_track_info(self):
+        current_position = self.current_position
+        if self.clear_calls >= 2 and self.rollback_verification_failure == "position":
+            current_position = 0 if self.current_position != 0 else 1
         result = {
-            "playlist_position": (
-                str(self.current_position + 1) if self.current_position >= 0 else "0"
-            )
+            "playlist_position": (str(current_position + 1) if current_position >= 0 else "0")
         }
         if 0 <= self.current_position < len(self.queue):
             current = self.queue[self.current_position]
@@ -244,6 +307,12 @@ class FakeSpeaker:
         return result
 
     def get_current_transport_info(self):
+        if self.clear_calls >= 2 and self.rollback_verification_failure == "transport":
+            return {
+                "current_transport_state": (
+                    "PLAYING" if self.transport_state != "PLAYING" else "STOPPED"
+                )
+            }
         return {"current_transport_state": self.transport_state}
 
     def get_sonos_playlists(self, *, max_items=100):
@@ -315,6 +384,8 @@ class FakeSpeaker:
 
 
 def share_link_factory(coordinator):
+    if coordinator.fail_share_factory:
+        raise RuntimeError("private factory failure at 192.168.1.20 token=secret")
     return FakeShareLinks(coordinator)
 
 
@@ -323,6 +394,54 @@ def original_queue(size=2):
         queue_item(f"Q:old:{index}", f"Original {index}", uri=f"x-test:existing:{index}")
         for index in range(1, size + 1)
     ]
+
+
+def mixed_provider_queue(size=36):
+    items = []
+    for position in range(1, size + 1):
+        provider = ("apple", "library", "radio")[position % 3]
+        resource = SimpleNamespace(
+            uri=f"x-{provider}:stable:{position}",
+            protocol_info=f"x-{provider}:*:*:*",
+            import_uri=None,
+            size=position * 100,
+            duration=f"00:0{position % 10}:00",
+            bitrate=320000,
+            sample_frequency=44100,
+            bits_per_sample=16,
+            nr_audio_channels=2,
+            resolution=None,
+            color_depth=None,
+            protection=f"protection-{provider}",
+        )
+        item = SimpleNamespace(
+            item_id=f"Q:old:{position}",
+            parent_id="Q:0",
+            title=f"Original {position}",
+            creator=f"Artist {position}",
+            artist=f"Artist {position}",
+            album=f"Album {position}",
+            stream_content=f"Stream {position}",
+            radio_show=f"Show {position}",
+            album_art_uri=f"/art/{position}.jpg",
+            genre=f"Genre {position}",
+            restricted=True,
+            desc=f"SA_RINCON_PROVIDER_{provider}",
+            item_class="object.item.audioItem.musicTrack",
+            tag="item",
+            resources=[resource],
+            _translation={
+                "creator": ("dc", "creator"),
+                "artist": ("upnp", "artist"),
+                "album": ("upnp", "album"),
+                "stream_content": ("r", "streamContent"),
+                "radio_show": ("r", "radioShowMd"),
+                "album_art_uri": ("upnp", "albumArtURI"),
+                "genre": ("upnp", "genre"),
+            },
+        )
+        items.append(item)
+    return items
 
 
 def add_existing_playlists(speaker, count):
@@ -1098,6 +1217,140 @@ def test_unexpected_share_expansion_aborts_and_restores_without_playlist():
     assert speaker.playlists == {}
 
 
+@pytest.mark.parametrize(
+    ("failure", "step", "position", "identity"),
+    (
+        ("factory", "share_link_initialization", None, None),
+        ("first", "enqueue", 1, "song:1452806384"),
+        ("second", "enqueue", 2, "song:1443065566"),
+        ("decode", "position_decode", 1, "song:1452806384"),
+        ("verify", "position_verify", 1, "song:1452806384"),
+    ),
+)
+def test_queue_construction_diagnostics_are_bounded_and_claimed_ticket_is_consumed(
+    failure,
+    step,
+    position,
+    identity,
+):
+    speaker = FakeSpeaker(queue=original_queue())
+
+    class Backend:
+        def inspect_apple_playlist_target(self, room_uid, playlist_name):
+            assert room_uid == speaker.uid
+            return inspect_apple_playlist_target(speaker, playlist_name)
+
+        def create_preflighted_apple_playlist(self, plan):
+            return execute(speaker, plan)
+
+    tickets = PlanTicketStore(token_factory=lambda: "construction_failure_ticket_1234567890")
+    validation, creation = ApplePlaylistPlanService(Backend(), tickets=tickets).services()
+    preflight = validation.execute(
+        "playlist_plan.apple.validate",
+        {
+            "roomUid": "R1",
+            "playlistName": "AI Friday",
+            "mode": "save-only",
+            "tracks": [copy.deepcopy(TRACK_ONE), copy.deepcopy(TRACK_TWO)],
+        },
+        RequestContext(backend_revision=7),
+    )
+    if failure == "factory":
+        speaker.fail_share_factory = True
+    elif failure == "first":
+        speaker.share_failure_position = 1
+    elif failure == "second":
+        speaker.share_failure_position = 2
+    elif failure == "decode":
+        speaker.share_returned_position = "not-a-position"
+    else:
+        speaker.wrong_insert_position = True
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        creation.execute(
+            "playlists.apple.create",
+            {"planToken": preflight["planToken"], "approved": True},
+            RequestContext(backend_revision=7),
+        )
+
+    details = error.value.details
+    assert details["phase"] == "queue_construction"
+    assert details["queueConstructionStep"] == step
+    assert details.get("failedTrackPosition") == position
+    assert details.get("failedCanonicalIdentity") == identity
+    assert "sonosErrorCode" not in details
+    assert details["rollback"]["succeeded"] is True
+    assert "192.168" not in json.dumps(details)
+    assert "token=" not in json.dumps(details)
+    with pytest.raises(PlanConflictError, match="already used"):
+        creation.execute(
+            "playlists.apple.create",
+            {"planToken": preflight["planToken"], "approved": True},
+            RequestContext(backend_revision=7),
+        )
+
+
+@pytest.mark.parametrize("error_code", ("701", "TRANSITION_UNAVAILABLE"))
+def test_enqueue_diagnostic_reads_only_bounded_upnp_error_code(error_code):
+    speaker = FakeSpeaker(queue=original_queue())
+    plan = plan_for(speaker)
+    speaker.share_failure_position = 1
+    speaker.share_failure = SoCoUPnPException(
+        "private speaker at 192.168.1.20 token=secret",
+        error_code,
+        b"<private>DIDL CurrentURI service metadata</private>",
+        "private description",
+    )
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    details = error.value.details
+    assert details["queueConstructionStep"] == "enqueue"
+    assert details["failedTrackPosition"] == 1
+    assert details["failedCanonicalIdentity"] == "song:1452806384"
+    assert details["sonosErrorCode"] == error_code
+    serialized = json.dumps(details)
+    for forbidden in (
+        "192.168",
+        "token=",
+        "DIDL",
+        "CurrentURI",
+        "service metadata",
+        "private description",
+    ):
+        assert forbidden not in serialized
+
+
+def test_untrusted_upnp_error_code_and_non_upnp_exception_are_not_fabricated():
+    for failure in (
+        SoCoUPnPException("private", "701<xml>", b"<private/>", "private"),
+        RuntimeError("UPnP 701 at 192.168.1.20"),
+    ):
+        speaker = FakeSpeaker(queue=original_queue())
+        plan = plan_for(speaker)
+        speaker.share_failure_position = 1
+        speaker.share_failure = failure
+
+        with pytest.raises(PlaylistTransactionError) as error:
+            execute(speaker, plan)
+
+        assert "sonosErrorCode" not in error.value.details
+
+
+@pytest.mark.parametrize("returned_position", (1.5, True, "1"))
+def test_non_integer_share_link_positions_are_decode_failures(returned_position):
+    speaker = FakeSpeaker(queue=original_queue())
+    plan = plan_for(speaker)
+    speaker.share_returned_position = returned_position
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    assert error.value.details["queueConstructionStep"] == "position_decode"
+    assert error.value.details["failedTrackPosition"] == 1
+
+
 def test_rollback_failure_is_reported_without_claiming_restoration():
     speaker = FakeSpeaker(queue=original_queue())
     plan = plan_for(speaker)
@@ -1107,6 +1360,8 @@ def test_rollback_failure_is_reported_without_claiming_restoration():
         execute(speaker, plan)
     rollback = error.value.details["rollback"]
     assert rollback["queueRestored"] is False
+    assert rollback["rollbackQueueStep"] == "readd"
+    assert rollback["rollbackFailedItemPosition"] == 1
     assert rollback["succeeded"] is False
     assert "192.168" not in str(error.value)
 
@@ -1147,16 +1402,133 @@ def test_internal_room_or_mode_mismatch_still_cannot_start_mutation():
     assert speaker.clear_calls == 0
 
 
+def test_per_item_restore_preserves_complete_mixed_provider_didl_and_avoids_bulk_path():
+    original = mixed_provider_queue()
+    speaker = FakeSpeaker(
+        queue=copy.deepcopy(original),
+        position=17,
+        transport_state="STOPPED",
+    )
+    backup = capture_queue_backup(speaker)
+
+    restore_queue(speaker, backup)
+    restored = verify_restored_queue(speaker, backup)
+
+    assert restored.total == 36
+    assert speaker.restore_add_calls == list(range(1, 37))
+    assert speaker.bulk_restore_calls == 0
+    assert [item.item_id for item in speaker.queue] == [
+        f"Q:restored:{position}" for position in range(1, 37)
+    ]
+    assert [item.title for item in speaker.queue] == [item.title for item in original]
+    assert [item.creator for item in speaker.queue] == [item.creator for item in original]
+    assert [item.album for item in speaker.queue] == [item.album for item in original]
+    assert [item.desc for item in speaker.queue] == [item.desc for item in original]
+    assert [item.stream_content for item in speaker.queue] == [
+        item.stream_content for item in original
+    ]
+    assert [item.resources[0].__dict__ for item in speaker.queue] == [
+        item.resources[0].__dict__ for item in original
+    ]
+    assert speaker.play_calls == [(17, False)]
+    assert speaker.transport_state == "STOPPED"
+
+
+def test_legacy_bulk_fake_would_strip_metadata_but_corrected_restore_never_calls_it():
+    original = original_queue(36)
+    speaker = FakeSpeaker(queue=copy.deepcopy(original), position=0)
+    backup = capture_queue_backup(speaker)
+
+    speaker.clear_queue()
+    speaker.add_multiple_to_queue(list(backup.items))
+    assert all(item.title == item.creator == item.album == "" for item in speaker.queue)
+
+    speaker.queue = copy.deepcopy(original)
+    speaker.current_position = 0
+    speaker.current_uri = "x-rincon-queue:R1#0"
+    backup = capture_queue_backup(speaker)
+    bulk_calls = speaker.bulk_restore_calls
+    restore_queue(speaker, backup)
+    verify_restored_queue(speaker, backup)
+
+    assert speaker.bulk_restore_calls == bulk_calls
+    assert [item.title for item in speaker.queue] == [item.title for item in original]
+
+
+@pytest.mark.parametrize("failed_position", (1, 18, 36))
+def test_per_item_restore_reports_exact_failed_backup_position(failed_position):
+    speaker = FakeSpeaker(queue=mixed_provider_queue(), position=0)
+    backup = capture_queue_backup(speaker)
+    speaker.fail_restore_position = failed_position
+
+    with pytest.raises(QueueRestoreError) as error:
+        restore_queue(speaker, backup)
+
+    assert error.value.step == "readd"
+    assert error.value.item_position == failed_position
+    assert len(speaker.queue) == failed_position - 1
+
+
+def test_per_item_restore_rejects_wrong_returned_position_and_stops_immediately():
+    speaker = FakeSpeaker(queue=original_queue(3), position=0)
+    backup = capture_queue_backup(speaker)
+    speaker.wrong_restore_position = 2
+
+    with pytest.raises(QueueRestoreError) as error:
+        restore_queue(speaker, backup)
+
+    assert error.value.step == "readd"
+    assert error.value.item_position == 2
+    assert speaker.restore_add_calls == [1, 2]
+    assert len(speaker.queue) == 2
+    assert speaker.play_calls == []
+
+
+def test_per_item_restore_rejects_non_integer_returned_position():
+    speaker = FakeSpeaker(queue=original_queue(3), position=0)
+    backup = capture_queue_backup(speaker)
+    speaker.invalid_restore_position = 2
+
+    with pytest.raises(QueueRestoreError) as error:
+        restore_queue(speaker, backup)
+
+    assert error.value.step == "readd"
+    assert error.value.item_position == 2
+    assert speaker.restore_add_calls == [1, 2]
+
+
+def test_per_item_restore_reports_clear_and_position_selection_steps():
+    clear_failure = FakeSpeaker(queue=original_queue(), position=0)
+    clear_backup = capture_queue_backup(clear_failure)
+    clear_failure.fail_clear_call = 1
+    with pytest.raises(QueueRestoreError) as clear_error:
+        restore_queue(clear_failure, clear_backup)
+    assert clear_error.value.step == "clear"
+    assert clear_error.value.item_position is None
+
+    selection_failure = FakeSpeaker(queue=original_queue(), position=1)
+    selection_backup = capture_queue_backup(selection_failure)
+    selection_failure.fail_play_once = True
+    with pytest.raises(QueueRestoreError) as selection_error:
+        restore_queue(selection_failure, selection_backup)
+    assert selection_error.value.step == "position_select"
+    assert selection_error.value.item_position is None
+
+
 @pytest.mark.parametrize(
-    ("change", "message"),
+    ("change", "reason", "message"),
     (
-        ("contents", "contents"),
-        ("source-kind", "playback source"),
-        ("position", "queue position"),
-        ("transport", "playing state"),
+        ("contents", "resources", "contents"),
+        ("source-kind", "queue_active", "playback source"),
+        ("position", "position", "queue position"),
+        ("transport", "transport", "playing state"),
     ),
 )
-def test_restoration_verification_rejects_each_changed_authoritative_fact(change, message):
+def test_restoration_verification_rejects_each_changed_authoritative_fact(
+    change,
+    reason,
+    message,
+):
     speaker = FakeSpeaker(queue=original_queue(), position=1, transport_state="STOPPED")
     expected = capture_queue_backup(speaker)
     if change == "contents":
@@ -1168,16 +1540,18 @@ def test_restoration_verification_rejects_each_changed_authoritative_fact(change
         speaker.current_position = 0
     elif change == "transport":
         speaker.transport_state = "PLAYING"
-    with pytest.raises(QueueStateError, match=message):
+    with pytest.raises(QueueVerificationError, match=message) as error:
         verify_restored_queue(speaker, expected)
+    assert error.value.reason == reason
 
 
 def test_non_queue_restoration_verifies_exact_media_identity():
     speaker = FakeSpeaker(queue=[], transport_state="STOPPED", queue_active=False)
     expected = capture_queue_backup(speaker)
     speaker.current_uri = "x-sonosapi-stream:another-radio"
-    with pytest.raises(QueueStateError, match="exact playback source"):
+    with pytest.raises(QueueVerificationError, match="exact playback source") as error:
         verify_restored_queue(speaker, expected)
+    assert error.value.reason == "media"
 
 
 def test_queue_restoration_verifies_exact_queue_uri_not_coarse_source():
@@ -1186,13 +1560,105 @@ def test_queue_restoration_verifies_exact_queue_uri_not_coarse_source():
     expected = capture_queue_backup(speaker)
     assert expected.source == "QUEUE"
     speaker.current_uri = "x-rincon-queue:ANOTHER_ROOM#0"
-    with pytest.raises(QueueStateError, match="exact playback source"):
+    with pytest.raises(QueueVerificationError, match="exact playback source") as error:
         verify_restored_queue(speaker, expected)
+    assert error.value.reason == "media"
 
 
 def test_non_queue_restoration_verifies_bounded_coarse_source_fact():
     speaker = FakeSpeaker(queue=[], transport_state="STOPPED", queue_active=False)
     expected = capture_queue_backup(speaker)
     speaker.music_source = "WEB_FILE"
-    with pytest.raises(QueueStateError, match="playback source"):
+    with pytest.raises(QueueVerificationError, match="playback source") as error:
         verify_restored_queue(speaker, expected)
+    assert error.value.reason == "source"
+
+
+@pytest.mark.parametrize(
+    ("change", "reason"),
+    (
+        ("queue_read", "queue_read"),
+        ("item_count", "item_count"),
+        ("missing_resources", "resources"),
+        ("metadata", "metadata"),
+    ),
+)
+def test_restoration_verification_has_typed_read_count_resource_and_metadata_reasons(
+    change,
+    reason,
+):
+    speaker = FakeSpeaker(queue=original_queue(3), position=1, transport_state="STOPPED")
+    expected = capture_queue_backup(speaker)
+    if change == "queue_read":
+        speaker.get_queue = lambda **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("private queue read at 192.168.1.20 token=secret")
+        )
+    elif change == "item_count":
+        speaker.queue.pop()
+    elif change == "missing_resources":
+        speaker.queue[0].resources = []
+    else:
+        speaker.queue[0].title = "Changed metadata"
+
+    with pytest.raises(QueueVerificationError) as error:
+        verify_restored_queue(speaker, expected)
+
+    assert error.value.reason == reason
+    assert "192.168" not in str(error.value)
+    assert "token=" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("failure", "step", "item_position", "reason"),
+    (
+        ("clear", "clear", None, None),
+        ("readd", "readd", 2, None),
+        ("wrong-position", "readd", 2, None),
+        ("position-select", "position_select", None, None),
+        ("queue_read", "verification", None, "queue_read"),
+        ("item_count", "verification", None, "item_count"),
+        ("resources", "verification", None, "resources"),
+        ("missing_resources", "verification", None, "resources"),
+        ("metadata", "verification", None, "metadata"),
+        ("queue_active", "verification", None, "queue_active"),
+        ("position", "verification", None, "position"),
+        ("transport", "verification", None, "transport"),
+        ("source", "verification", None, "source"),
+        ("media", "verification", None, "media"),
+    ),
+)
+def test_rollback_returns_only_typed_bounded_queue_failure_evidence(
+    failure,
+    step,
+    item_position,
+    reason,
+):
+    if failure == "source":
+        speaker = FakeSpeaker(queue=[], transport_state="STOPPED", queue_active=False)
+    else:
+        speaker = FakeSpeaker(queue=original_queue(3), position=1, transport_state="STOPPED")
+    plan = plan_for(speaker)
+    speaker.share_failure_position = 1
+    if failure == "clear":
+        speaker.fail_clear_call = 2
+    elif failure == "readd":
+        speaker.fail_restore_position = 2
+    elif failure == "wrong-position":
+        speaker.wrong_restore_position = 2
+    elif failure == "position-select":
+        speaker.fail_play_once = True
+    else:
+        speaker.rollback_verification_failure = failure
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    rollback = error.value.details["rollback"]
+    assert rollback["queueRestored"] is False
+    assert rollback["succeeded"] is False
+    assert rollback["rollbackQueueStep"] == step
+    assert rollback.get("rollbackFailedItemPosition") == item_position
+    assert rollback.get("rollbackVerificationReason") == reason
+    serialized = json.dumps(error.value.details)
+    for forbidden in ("192.168", "token=", "DIDL", "CurrentURI", "x-private:"):
+        assert forbidden not in serialized

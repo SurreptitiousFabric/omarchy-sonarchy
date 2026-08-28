@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from soco.exceptions import SoCoUPnPException
 from soco.plugins.sharelink import ShareLinkPlugin
 
 from .common import clean, coordinator_for, safe_call, safe_index
@@ -16,7 +17,9 @@ from .playlist_rules import suggested_playlist_title, validate_playlist_title
 from .queue_transaction import (
     MAX_RESTORABLE_QUEUE_ITEMS,
     QueueBackup,
+    QueueRestoreError,
     QueueStateError,
+    QueueVerificationError,
     capture_queue_backup,
     queue_backup_public_state,
     read_complete_queue,
@@ -38,6 +41,7 @@ APPLE_SONOS_RESOURCE_URI = re.compile(
     r"x-sonos-https?:song(?::|%3a)([1-9]\d{0,19})(?=$|[./?&#])",
     re.IGNORECASE,
 )
+SONOS_ERROR_CODE = re.compile(r"(?:\d{1,6}|[A-Z][A-Z0-9_]{0,31})")
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,27 @@ class TargetCapture:
     state: dict[str, Any]
     backup: QueueBackup
     playlists: PlaylistInventory
+
+
+class QueueConstructionError(ValueError):
+    """An internal construction failure carrying only bounded public evidence."""
+
+    def __init__(
+        self,
+        step: str,
+        *,
+        track_position: int | None = None,
+        canonical_identity: str | None = None,
+        sonos_error_code: str | None = None,
+    ) -> None:
+        super().__init__("The approved Apple queue could not be constructed")
+        self.diagnostics: dict[str, Any] = {"queueConstructionStep": step}
+        if track_position is not None:
+            self.diagnostics["failedTrackPosition"] = track_position
+        if canonical_identity is not None:
+            self.diagnostics["failedCanonicalIdentity"] = canonical_identity
+        if sonos_error_code is not None:
+            self.diagnostics["sonosErrorCode"] = sonos_error_code
 
 
 def _fingerprint(value: Any) -> str:
@@ -160,7 +185,7 @@ def _required_capability(coordinator: Any) -> bool:
     methods = (
         "get_queue",
         "clear_queue",
-        "add_multiple_to_queue",
+        "add_to_queue",
         "play_from_queue",
         "get_sonos_playlists",
         "create_sonos_playlist_from_queue",
@@ -307,6 +332,61 @@ def _queue_identity_evidence(items: list[dict[str, Any]]) -> list[dict[str, Any]
     ]
 
 
+def _safe_sonos_error_code(error: Exception) -> str | None:
+    if not isinstance(error, SoCoUPnPException):
+        return None
+    raw = error.error_code
+    if isinstance(raw, bool) or not isinstance(raw, (str, int)):
+        return None
+    value = str(raw).strip()
+    return value if SONOS_ERROR_CODE.fullmatch(value) else None
+
+
+def _track_failure(
+    step: str,
+    track: dict[str, Any],
+    position: int,
+    *,
+    error: Exception | None = None,
+) -> QueueConstructionError:
+    catalog_id = str(track["catalogId"])
+    return QueueConstructionError(
+        step,
+        track_position=position,
+        canonical_identity=f"song:{catalog_id}",
+        sonos_error_code=_safe_sonos_error_code(error) if error is not None else None,
+    )
+
+
+def _construct_approved_queue(
+    coordinator: Any,
+    tracks: list[dict[str, Any]],
+    share_link_factory: Callable[..., Any],
+) -> None:
+    try:
+        share_links = share_link_factory(coordinator)
+    except Exception as exc:
+        raise QueueConstructionError("share_link_initialization") from exc
+    for expected_position, track in enumerate(tracks, 1):
+        try:
+            returned_position = share_links.add_share_link_to_queue(
+                track["url"],
+                dc_title=track["title"],
+            )
+        except Exception as exc:
+            raise _track_failure(
+                "enqueue",
+                track,
+                expected_position,
+                error=exc,
+            ) from exc
+        if not isinstance(returned_position, int) or isinstance(returned_position, bool):
+            raise _track_failure("position_decode", track, expected_position)
+        actual_position = returned_position
+        if actual_position != expected_position:
+            raise _track_failure("position_verify", track, expected_position)
+
+
 def _playlist_tracks(coordinator: Any, playlist: Any) -> list[Any]:
     result = coordinator.music_library.browse(
         ml_item=playlist,
@@ -382,6 +462,7 @@ def _rollback(
     playlist_cleanup_required = playlist_creation_attempted
     queue_restored = False
     environment_unchanged = False
+    queue_failure: dict[str, Any] = {}
     if created_playlist_id is not None and created_playlist_titles:
         try:
             playlist_removed = _remove_partial_playlist(
@@ -396,10 +477,23 @@ def _rollback(
             playlist_cleanup_required = True
     try:
         restore_queue(coordinator, capture.backup)
-        verify_restored_queue(coordinator, capture.backup)
-        queue_restored = True
-    except Exception:  # noqa: BLE001 - rollback reports only bounded booleans
-        queue_restored = False
+    except QueueRestoreError as exc:
+        queue_failure["rollbackQueueStep"] = exc.step
+        if exc.item_position is not None:
+            queue_failure["rollbackFailedItemPosition"] = exc.item_position
+    except Exception:  # noqa: BLE001 - unexpected rollback errors expose no details
+        queue_failure = {}
+    else:
+        try:
+            verify_restored_queue(coordinator, capture.backup)
+            queue_restored = True
+        except QueueVerificationError as exc:
+            queue_failure = {
+                "rollbackQueueStep": "verification",
+                "rollbackVerificationReason": exc.reason,
+            }
+        except Exception:  # noqa: BLE001 - unexpected verification errors expose no details
+            queue_failure = {"rollbackQueueStep": "verification"}
     try:
         _verify_environment(speaker, capture.state)
         environment_unchanged = True
@@ -413,6 +507,7 @@ def _rollback(
         "queueRestored": queue_restored,
         "environmentUnchanged": environment_unchanged,
         "succeeded": succeeded,
+        **queue_failure,
     }
 
 
@@ -470,16 +565,7 @@ def create_preflighted_apple_playlist(
     try:
         coordinator.clear_queue()
         phase = "queue_construction"
-        share_links = share_link_factory(coordinator)
-        for expected_position, track in enumerate(tracks, 1):
-            actual_position = int(
-                share_links.add_share_link_to_queue(
-                    track["url"],
-                    dc_title=track["title"],
-                )
-            )
-            if actual_position != expected_position:
-                raise ValueError("An Apple song expanded to an unexpected queue position")
+        _construct_approved_queue(coordinator, tracks, share_link_factory)
 
         phase = "queue_verification"
         queue_items, queue_total, _queue_update = read_complete_queue(coordinator)
@@ -584,4 +670,9 @@ def create_preflighted_apple_playlist(
             created_playlist_id=created_playlist_id,
             created_playlist_titles=created_playlist_titles,
         )
-        raise PlaylistTransactionError(phase=phase, rollback=rollback) from exc
+        diagnostics = exc.diagnostics if isinstance(exc, QueueConstructionError) else None
+        raise PlaylistTransactionError(
+            phase=phase,
+            rollback=rollback,
+            diagnostics=diagnostics,
+        ) from exc

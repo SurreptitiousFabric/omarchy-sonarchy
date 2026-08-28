@@ -9,6 +9,7 @@ from sonarchy_backend.contracts import (
     CAPABILITY_NAMES,
     MAX_PROTOCOL_OPERATION_BYTES,
     MAX_PROTOCOL_REQUEST_ID_BYTES,
+    protocol_line,
 )
 from sonarchy_backend.domains.errors import PlaylistTransactionError
 from sonarchy_backend.protocol import (
@@ -1087,7 +1088,7 @@ def test_apple_playlist_failure_returns_bounded_rollback_evidence_without_raw_de
     output = io.StringIO()
     token = _protocol_preflight(server, output)["value"]["planToken"]
     controller.failure = PlaylistTransactionError(
-        phase="playlist_verification",
+        phase="queue_construction",
         rollback={
             "attempted": True,
             "playlistRemoved": True,
@@ -1095,6 +1096,16 @@ def test_apple_playlist_failure_returns_bounded_rollback_evidence_without_raw_de
             "queueRestored": False,
             "environmentUnchanged": True,
             "succeeded": False,
+            "rollbackQueueStep": "verification",
+            "rollbackVerificationReason": "metadata",
+            "rawException": "private DIDL at 192.168.1.20 token=secret",
+        },
+        diagnostics={
+            "queueConstructionStep": "enqueue",
+            "failedTrackPosition": 2,
+            "failedCanonicalIdentity": "song:1452806384",
+            "sonosErrorCode": "701",
+            "rawException": "private CurrentURI service metadata",
         },
     )
 
@@ -1110,8 +1121,16 @@ def test_apple_playlist_failure_returns_bounded_rollback_evidence_without_raw_de
     result = next(message for message in decoded(output) if message.get("id") == "failed-create")
     assert result["ok"] is False
     assert result["error"]["code"] == "speaker_rejected"
-    assert result["error"]["details"]["phase"] == "playlist_verification"
-    assert result["error"]["details"]["rollback"]["succeeded"] is False
+    details = result["error"]["details"]
+    assert details["phase"] == "queue_construction"
+    assert details["queueConstructionStep"] == "enqueue"
+    assert details["failedTrackPosition"] == 2
+    assert details["failedCanonicalIdentity"] == "song:1452806384"
+    assert details["sonosErrorCode"] == "701"
+    assert details["rollback"]["succeeded"] is False
+    assert details["rollback"]["rollbackQueueStep"] == "verification"
+    assert details["rollback"]["rollbackVerificationReason"] == "metadata"
+    assert len(protocol_line(result).encode("utf-8")) <= MAX_PROTOCOL_LINE_BYTES
     serialized = json.dumps(result)
     for forbidden in ("192.168", "token=", "DIDL", "CurrentURI", "service metadata"):
         assert forbidden not in serialized
