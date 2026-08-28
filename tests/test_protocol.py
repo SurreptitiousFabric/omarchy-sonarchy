@@ -64,6 +64,27 @@ class FakeController:
         return {"ok": True, "kind": "alarms", "items": [], "total": 0}
 
 
+class OversizedSnapshotController(FakeController):
+    def refresh(self, *, rediscover=True):
+        snapshot = super().refresh(rediscover=rediscover)
+        snapshot["favorites"] = {
+            "state": "ready",
+            "items": [
+                {
+                    "id": f"favorite-{index}",
+                    "title": f"oversized-favorite-{index}-" + ("界" * 300),
+                    "kind": "radio",
+                    "albumArtUrl": "",
+                }
+                for index in range(100)
+            ],
+            "total": 100,
+            "unsupported": 0,
+            "error": "",
+        }
+        return snapshot
+
+
 def decoded(output):
     return [json.loads(line) for line in output.getvalue().splitlines()]
 
@@ -219,6 +240,73 @@ def test_protocol_refuses_to_emit_an_oversized_response_line():
         server._emit({"value": "x" * MAX_PROTOCOL_LINE_BYTES}, output)
 
     assert output.getvalue() == ""
+
+
+def test_oversized_authoritative_poll_snapshot_is_replaced_by_bounded_degraded_state():
+    server = ProtocolServer(OversizedSnapshotController())  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.emit_snapshot(output)
+    server.emit_snapshot(output, rediscover=False)
+
+    messages = decoded(output)
+    assert [message["revision"] for message in messages] == [1, 2]
+    assert all(
+        len((line + "\n").encode("utf-8")) <= MAX_PROTOCOL_LINE_BYTES
+        for line in output.getvalue().splitlines()
+    )
+    assert all(message["status"]["state"] == "error" for message in messages)
+    assert all(message["status"]["degraded"] is True for message in messages)
+    assert all(message["status"]["error"]["code"] == "internal_error" for message in messages)
+    assert all(message["favorites"]["items"] == [] for message in messages)
+    assert all("playlists.apple.create" not in message["capabilities"] for message in messages)
+    assert "oversized-favorite" not in output.getvalue()
+    assert server.last_snapshot is None
+
+
+def test_oversized_mutation_snapshot_does_not_hide_result_or_terminate_handling():
+    controller = OversizedSnapshotController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle({"version": 1, "id": "mutate", "op": "playback.toggle", "args": {}}, output)
+    server.handle(
+        {
+            "version": 1,
+            "id": "still-alive",
+            "op": "session.panel_open.set",
+            "args": {"open": True},
+        },
+        output,
+    )
+
+    messages = decoded(output)
+    assert messages[0]["id"] == "mutate"
+    assert messages[0]["ok"] is True
+    assert messages[1]["type"] == "snapshot"
+    assert messages[1]["status"]["degraded"] is True
+    assert messages[2]["id"] == "still-alive"
+    assert messages[2]["ok"] is True
+    assert server.panel_open is True
+
+
+def test_oversized_startup_snapshot_does_not_stop_the_protocol_loop():
+    server = ProtocolServer(OversizedSnapshotController())  # type: ignore[arg-type]
+    output = io.StringIO()
+    with tempfile.TemporaryFile(mode="w+") as input_stream:
+        input_stream.write(
+            '{"version":1,"id":"after-startup","op":"session.panel_open.set",'
+            '"args":{"open":true}}\n'
+        )
+        input_stream.seek(0)
+
+        server.serve(input_stream, output)
+
+    messages = decoded(output)
+    assert messages[0]["type"] == "snapshot"
+    assert messages[0]["status"]["degraded"] is True
+    assert messages[1]["id"] == "after-startup"
+    assert messages[1]["ok"] is True
 
 
 def test_play_favorite_dispatches_opaque_id():
