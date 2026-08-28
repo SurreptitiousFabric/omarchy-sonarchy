@@ -11,10 +11,12 @@ from typing import Any, TextIO
 from sonarchy_errors import user_facing_error
 
 from .contracts import (
+    MAX_PROTOCOL_LINE_BYTES,
     PROTOCOL_VERSION,
     ProtocolRequestError,
     error_payload,
     parse_request,
+    protocol_line,
     result_payload,
     snapshot_capabilities,
 )
@@ -29,7 +31,6 @@ EVENT_PANEL_POLL_SEC = 5.0
 EVENT_BACKGROUND_POLL_SEC = 15.0
 FALLBACK_PANEL_POLL_SEC = 2.0
 FALLBACK_BACKGROUND_POLL_SEC = 5.0
-MAX_PROTOCOL_LINE_BYTES = 64 * 1024
 PROTOCOL_OPERATIONS = frozenset(
     {
         "alarms.list",
@@ -91,7 +92,10 @@ class ProtocolServer:
         self.event_subscriptions = EventSubscriptionManager(self.event_queue)
 
     def _emit(self, payload: dict[str, Any], output: TextIO) -> None:
-        output.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        line = protocol_line(payload)
+        if len(line.encode("utf-8")) > MAX_PROTOCOL_LINE_BYTES:
+            raise RuntimeError("Protocol response exceeds the bounded line size")
+        output.write(line)
         output.flush()
 
     def emit_snapshot(self, output: TextIO, *, rediscover: bool = True) -> None:

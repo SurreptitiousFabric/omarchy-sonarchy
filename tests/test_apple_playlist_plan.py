@@ -8,6 +8,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from sonarchy_backend.apple_catalog import canonical_apple_song
+from sonarchy_backend.contracts import (
+    MAX_PROTOCOL_LINE_BYTES,
+    MAX_PROTOCOL_REQUEST_ID_BYTES,
+    protocol_line,
+    result_payload,
+)
 from sonarchy_backend.domains.apple_playlist_plan import (
     ApplePlaylistPlan,
     ApplePlaylistPlanService,
@@ -233,6 +239,58 @@ def test_exact_25_track_plan_fits_the_bounded_protocol_request():
     }
     assert len(accepted) == 25
     assert len(json.dumps(request, ensure_ascii=False).encode("utf-8")) < 64 * 1024
+
+
+def test_maximal_unicode_plan_review_fits_the_exact_protocol_line_encoding():
+    tracks = []
+    metadata = "界" * 80
+    for offset in range(25):
+        identifier = str(2_000_000_000 + offset)
+        prefix = "https://music.apple.com/ch/album/"
+        suffix = f"/9999999999?i={identifier}"
+        slug = "x" * (1024 - len(prefix.encode()) - len(suffix.encode()))
+        tracks.append(
+            {
+                "catalogId": identifier,
+                "url": f"{prefix}{slug}{suffix}",
+                "title": metadata,
+                "artist": metadata,
+                "album": metadata,
+                "durationMs": 212000,
+            }
+        )
+
+    _backend, validation, _creation = services()
+    review = validate_plan(
+        validation,
+        plan_args(playlistName="\\" * 80, tracks=tracks),
+    )
+    envelope = result_payload(
+        "\\" * MAX_PROTOCOL_REQUEST_ID_BYTES,
+        revision=7,
+        value=review,
+    )
+    encoded = protocol_line(envelope).encode("utf-8")
+    ascii_escaped = (json.dumps(envelope, separators=(",", ":")) + "\n").encode("utf-8")
+
+    assert len(encoded) <= MAX_PROTOCOL_LINE_BYTES
+    assert len(ascii_escaped) > MAX_PROTOCOL_LINE_BYTES
+    assert b"\\u754c" not in encoded
+
+
+def test_oversized_plan_review_is_rejected_and_its_ticket_is_discarded():
+    backend = FakePlanBackend()
+    backend.states["R1"]["observedState"]["padding"] = "x" * MAX_PROTOCOL_LINE_BYTES
+    opaque_value = "discarded_ticket_12345678901234567890"
+    tickets = PlanTicketStore(token_factory=lambda: opaque_value)
+    validation, _creation = ApplePlaylistPlanService(backend, tickets=tickets).services()
+
+    with pytest.raises(ValueError, match="review is too large"):
+        validate_plan(validation)
+
+    backend.states["R1"]["observedState"].pop("padding")
+    review = validate_plan(validation)
+    assert review["planToken"] == opaque_value
 
 
 def test_song_validation_rejects_an_oversized_public_url():

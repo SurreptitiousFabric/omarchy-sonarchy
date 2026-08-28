@@ -25,6 +25,7 @@ from .queue_transaction import (
 )
 
 MAX_SONOS_PLAYLISTS = 100
+MAX_TRANSACTION_PLAYLISTS = MAX_SONOS_PLAYLISTS + 1
 APPLE_SONG_REFERENCE = re.compile(r"song(?::|%3a)([1-9]\d{0,19})(?!\d)", re.IGNORECASE)
 
 
@@ -112,14 +113,18 @@ def _mixer_state(speaker: Any, coordinator: Any) -> dict[str, Any]:
     }
 
 
-def _playlist_inventory(coordinator: Any) -> PlaylistInventory:
+def _playlist_inventory(
+    coordinator: Any,
+    *,
+    maximum: int = MAX_SONOS_PLAYLISTS,
+) -> PlaylistInventory:
     try:
-        result = coordinator.get_sonos_playlists(max_items=MAX_SONOS_PLAYLISTS)
+        result = coordinator.get_sonos_playlists(max_items=maximum)
         items = list(result)
     except Exception as exc:
         raise PlanConflictError("Current Sonos Playlists could not be listed safely") from exc
     total = safe_index(item_attr(result, "total_matches", len(items)), len(items))
-    if total != len(items) or total > MAX_SONOS_PLAYLISTS:
+    if total != len(items) or total > maximum:
         raise PlanConflictError("There are too many Sonos Playlists to check safely")
     projection: list[dict[str, str]] = []
     ids: set[str] = set()
@@ -175,6 +180,10 @@ def _capture_target(speaker: Any, playlist_name: str) -> TargetCapture:
             "The current source must be known and transport must be playing or stopped"
         )
     playlists = _playlist_inventory(coordinator)
+    if len(playlists.items) >= MAX_SONOS_PLAYLISTS:
+        raise PlanConflictError(
+            "The bounded Sonos Playlist inventory is full; remove one before creating another"
+        )
     if playlist_name in playlists.titles:
         suggestion = suggested_playlist_title(playlist_name, set(playlists.titles))
         raise PlanConflictError(
@@ -325,7 +334,7 @@ def _remove_partial_playlist(
     playlist_id = validate_playlist_id(created_playlist_id)
     if playlist_id in original_ids:
         return False
-    inventory = _playlist_inventory(coordinator)
+    inventory = _playlist_inventory(coordinator, maximum=MAX_TRANSACTION_PLAYLISTS)
     candidates = [
         item
         for item in inventory.items
@@ -335,7 +344,7 @@ def _remove_partial_playlist(
     if len(candidates) != 1:
         return False
     coordinator.remove_sonos_playlist(candidates[0])
-    after = _playlist_inventory(coordinator)
+    after = _playlist_inventory(coordinator, maximum=MAX_TRANSACTION_PLAYLISTS)
     return playlist_id not in after.ids
 
 
@@ -393,7 +402,7 @@ def _verify_new_playlist_inventory(
     playlist_id: str,
     playlist_name: str,
 ) -> None:
-    inventory = _playlist_inventory(coordinator)
+    inventory = _playlist_inventory(coordinator, maximum=MAX_TRANSACTION_PLAYLISTS)
     matching_title = [
         item for item in inventory.items if clean(item_attr(item, "title")) == playlist_name
     ]

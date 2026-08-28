@@ -12,6 +12,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..apple_catalog import canonical_apple_song
+from ..contracts import (
+    MAX_PROTOCOL_LINE_BYTES,
+    MAX_PROTOCOL_REQUEST_ID_BYTES,
+    protocol_line,
+    result_payload,
+)
 from .common import DomainService, RequestContext, bool_arg, string_arg
 from .errors import PlanConflictError
 from .playlist_rules import validate_playlist_title
@@ -174,6 +180,12 @@ class PlanTicketStore:
                 raise PlanConflictError("The playlist plan token expired; validate a new plan")
             return copy.deepcopy(ticket.plan)
 
+    def cancel_unpublished(self, token: str) -> None:
+        """Discard a ticket whose bounded review could not be returned to its caller."""
+
+        with self._lock:
+            self._pending.pop(token, None)
+
 
 def _bounded_track_text(value: Any, label: str) -> str:
     if not isinstance(value, str):
@@ -314,7 +326,7 @@ class ApplePlaylistPlanService:
             side_effects.append("Restore and verify the previous queue and playing state")
         else:
             side_effects.append("Leave the approved queue active and start track 1")
-        return {
+        review = {
             "ok": True,
             "operation": plan.operation,
             "planToken": ticket.token,
@@ -332,6 +344,16 @@ class ApplePlaylistPlanService:
             "tracks": [track.public_value(index) for index, track in enumerate(tracks, 1)],
             "expectedSideEffects": side_effects,
         }
+        worst_case_request_id = "\\" * MAX_PROTOCOL_REQUEST_ID_BYTES
+        envelope = result_payload(
+            worst_case_request_id,
+            revision=context.backend_revision,
+            value=review,
+        )
+        if len(protocol_line(envelope).encode("utf-8")) > MAX_PROTOCOL_LINE_BYTES:
+            self.tickets.cancel_unpublished(ticket.token)
+            raise ValueError("The playlist plan review is too large for the protocol")
+        return review
 
     def create(self, args: dict[str, Any], context: RequestContext) -> dict[str, Any]:
         if set(args) != {"planToken", "approved"}:

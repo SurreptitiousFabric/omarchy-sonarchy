@@ -5,7 +5,11 @@ from unittest.mock import patch
 
 import pytest
 
-from sonarchy_backend.contracts import CAPABILITY_NAMES
+from sonarchy_backend.contracts import (
+    CAPABILITY_NAMES,
+    MAX_PROTOCOL_OPERATION_BYTES,
+    MAX_PROTOCOL_REQUEST_ID_BYTES,
+)
 from sonarchy_backend.domains.errors import PlaylistTransactionError
 from sonarchy_backend.protocol import (
     MAX_PROTOCOL_LINE_BYTES,
@@ -162,6 +166,24 @@ def test_versioned_nested_arguments_are_used():
         ({"version": 2, "id": "3", "op": "state.refresh", "args": {}}, "unsupported_version"),
         ({"version": 1, "id": "", "op": "state.refresh", "args": {}}, "invalid_request"),
         ({"version": 1, "id": "3", "op": "", "args": {}}, "invalid_request"),
+        (
+            {
+                "version": 1,
+                "id": "x" * (MAX_PROTOCOL_REQUEST_ID_BYTES + 1),
+                "op": "state.refresh",
+                "args": {},
+            },
+            "invalid_request",
+        ),
+        (
+            {
+                "version": 1,
+                "id": "3",
+                "op": "x" * (MAX_PROTOCOL_OPERATION_BYTES + 1),
+                "args": {},
+            },
+            "invalid_request",
+        ),
         ({"version": 1, "id": "3", "op": "state.refresh", "args": []}, "invalid_request"),
     ),
 )
@@ -177,6 +199,26 @@ def test_invalid_request_contract_is_rejected_without_execution(request_payload,
     assert message["ok"] is False
     assert message["error"]["code"] == code
     assert controller.calls == []
+
+
+def test_protocol_emits_utf8_without_ascii_escape_expansion():
+    server = ProtocolServer(FakeController())  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server._emit({"type": "result", "value": "界"}, output)
+
+    assert "界" in output.getvalue()
+    assert "\\u754c" not in output.getvalue()
+
+
+def test_protocol_refuses_to_emit_an_oversized_response_line():
+    server = ProtocolServer(FakeController())  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    with pytest.raises(RuntimeError, match="bounded line size"):
+        server._emit({"value": "x" * MAX_PROTOCOL_LINE_BYTES}, output)
+
+    assert output.getvalue() == ""
 
 
 def test_play_favorite_dispatches_opaque_id():

@@ -300,6 +300,16 @@ def original_queue(size=2):
     ]
 
 
+def add_existing_playlists(speaker, count):
+    for index in range(count):
+        playlist_id = f"SQ:{1000 + index}"
+        speaker.playlists[playlist_id] = SimpleNamespace(
+            item_id=playlist_id,
+            title=f"Existing playlist {index + 1}",
+        )
+        speaker.playlist_tracks[playlist_id] = []
+
+
 def plan_for(speaker, *, mode="save-only", name="AI Friday", tracks=None):
     state = inspect_apple_playlist_target(speaker, name)
     return {
@@ -509,6 +519,34 @@ def test_queue_at_supported_backup_limit_is_accepted():
     assert len(speaker.queue) == 100
 
 
+def test_last_bounded_playlist_inventory_slot_can_be_created_and_verified():
+    speaker = FakeSpeaker(queue=original_queue())
+    add_existing_playlists(speaker, 99)
+
+    result = execute(speaker, plan_for(speaker))
+
+    assert result["playlist"]["id"] == "SQ:1"
+    assert len(speaker.playlists) == 100
+
+
+def test_bounded_extra_inventory_item_allows_owned_race_cleanup():
+    speaker = FakeSpeaker(queue=original_queue())
+    add_existing_playlists(speaker, 99)
+    plan = plan_for(speaker)
+    speaker.create_name_race = True
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    rollback = error.value.details["rollback"]
+    assert rollback["playlistRemoved"] is True
+    assert rollback["playlistCleanupRequired"] is False
+    assert rollback["succeeded"] is True
+    assert "SQ:1" not in speaker.playlists
+    assert "SQ:99" in speaker.playlists
+    assert len(speaker.playlists) == 100
+
+
 def test_oversized_and_unrestorable_queues_are_rejected_before_mutation():
     oversized = FakeSpeaker(queue=original_queue(101), position=0)
     with pytest.raises(PlanConflictError, match="too large"):
@@ -546,13 +584,14 @@ def test_preflight_rejects_malformed_topology_mixer_and_playlist_inventory():
     with pytest.raises(PlanConflictError, match="room mute"):
         inspect_apple_playlist_target(invalid_mute, "AI Friday")
 
+    full_playlists = FakeSpeaker(queue=original_queue())
+    add_existing_playlists(full_playlists, 100)
+    with pytest.raises(PlanConflictError, match="inventory is full"):
+        inspect_apple_playlist_target(full_playlists, "AI Friday")
+    assert full_playlists.clear_calls == 0
+
     too_many_playlists = FakeSpeaker(queue=original_queue())
-    for index in range(101):
-        playlist_id = f"SQ:{index + 1}"
-        too_many_playlists.playlists[playlist_id] = SimpleNamespace(
-            item_id=playlist_id,
-            title=f"Playlist {index + 1}",
-        )
+    add_existing_playlists(too_many_playlists, 101)
     with pytest.raises(PlanConflictError, match="too many Sonos Playlists"):
         inspect_apple_playlist_target(too_many_playlists, "AI Friday")
 
