@@ -37,6 +37,9 @@ inventory. A matching new title is never treated as ownership. If the create
 call might have succeeded without returning an attributable ID, Sonarchy
 restores what it can, leaves every playlist untouched, and reports that cleanup
 is still required.
+Preflight also reserves one slot below the bounded 100-playlist inventory. A
+review is published only when its complete UTF-8 protocol result fits within
+64 KiB; otherwise its unpublished execution ticket is discarded.
 
 Every track must contain a bounded decimal Apple catalogue song ID, the exact
 public Apple Music share URL, title, artist, album, and duration. Sonarchy

@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 417 automated Python tests pass with 86% branch coverage, alongside
+- [x] All 425 automated Python tests pass with 86% branch coverage, alongside
   32 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
@@ -89,12 +89,15 @@ an existing name.
 3. Confirm the queue contains no more than 100 items and every item is
    restorable. A stopped transport is not required to retain a current-item
    marker.
+   Confirm the bounded Sonos Playlist inventory contains at most 99 entries so
+   one authoritative create/verification slot remains.
 4. Submit `playlist_plan.apple.validate` in `save-only` mode. Confirm the
    returned room/topology, queue, transport/source and media fingerprint,
    volume/mute, positive capabilities, exact ordered canonical `song:<id>`
    values, total duration, unique name, side effects, expiry, and approval
    requirement. A queue-active URI may safely project `QUEUE` even if the coarse
    source probe reports `UNKNOWN`; an unverified non-queue `UNKNOWN` must fail.
+   Confirm the complete UTF-8 result line remains within 64 KiB.
 5. Stop. Obtain explicit owner approval for the one token-only write.
 
 ### Stage 2: save only

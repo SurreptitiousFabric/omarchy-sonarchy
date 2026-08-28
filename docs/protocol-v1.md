@@ -78,6 +78,10 @@ effects, and a random opaque plan token that expires after at most 120 seconds.
 The initial restoration contract accepts an authoritatively `PLAYING` or
 `STOPPED` transport; paused, transitioning, unknown, oversized, or otherwise
 unrestorable state requires a safe state before preflight can succeed.
+The bounded inventory admits at most 100 Sonos Playlists and preflight requires
+one free verification slot. Post-create verification and owned rollback may
+read exactly one bounded transaction extra so a concurrent create cannot make
+the transaction's attributable ID unreachable.
 
 The token is memory-only, process-local, single-use, and atomically consumed
 before mutation. It binds the operation, backend revision, exact room,
@@ -87,6 +91,10 @@ duplicate policy, ordered canonical songs, expiry, and random nonce. It proves
 recent validation, not human approval. A backend restart, replay, expiry, newer
 backend revision, or changed authoritative target state requires a new
 preflight.
+The complete result envelope is serialized as unescaped UTF-8 JSON and measured
+against the 64 KiB protocol-line limit before the review is returned. Request
+IDs and operation names are byte-bounded. If a review does not fit, its
+unpublished ticket is discarded and validation fails safely.
 
 `playlists.apple.create` is the corresponding write. Its arguments are exactly:
 

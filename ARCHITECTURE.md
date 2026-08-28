@@ -131,6 +131,10 @@ and leaves the approved queue active. Failures after the first mutation attempt
 one shared rollback path and expose only bounded rollback evidence. Playlist
 rollback requires the exact new `SQ:<id>` returned by the create invocation and
 never claims ownership from title or inventory difference alone.
+Preflight reserves one slot below the 100-item bounded playlist inventory;
+post-create verification and cleanup allow one transaction-scoped extra. The
+shared protocol serializer emits UTF-8 JSON and the plan service measures the
+complete worst-request-ID result envelope before publishing its ticket.
 
 ## AI and MCP boundary
 

@@ -90,6 +90,10 @@ There is no REST API, browser UI, or listener on port 8000.
   cleanup. Failure results contain controlled phases and bounded recovery
   status, never raw exceptions, addresses, DIDL, provider URIs, credentials, or
   tokens.
+- Playlist creation requires a free slot below the 100-item bounded inventory;
+  post-create verification and exact-ID cleanup can inspect one bounded extra.
+  Preflight reviews use unescaped UTF-8 and must fit the complete 64 KiB
+  protocol result envelope. An oversized review discards its unpublished ticket.
 - Alarms returned to QML contain a human label, not their potentially
   credential-bearing program URI or service metadata.
 - No service or account credentials are requested, logged, or stored.
