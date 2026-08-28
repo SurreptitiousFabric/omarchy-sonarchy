@@ -95,6 +95,11 @@ The complete result envelope is serialized as unescaped UTF-8 JSON and measured
 against the 64 KiB protocol-line limit before the review is returned. Request
 IDs and operation names are byte-bounded. If a review does not fit, its
 unpublished ticket is discarded and validation fails safely.
+Every authoritative snapshot is measured against the same complete UTF-8 line
+limit. A snapshot that does not fit is neither cached nor partially emitted;
+the server emits a fixed bounded degraded snapshot without target-derived write
+capabilities, preserves the monotonic revision, and continues serving startup,
+polling, and mutation-refresh traffic.
 
 `playlists.apple.create` is the corresponding write. Its arguments are exactly:
 

@@ -14,6 +14,8 @@
   require a create-returned `SQ:<id>` before rollback can delete a playlist.
 - Reserve bounded Sonos Playlist inventory capacity for create verification and
   enforce the 64 KiB UTF-8 protocol limit before publishing a plan ticket.
+- Keep the persistent backend alive when authoritative state exceeds that
+  protocol limit by emitting a fixed bounded, write-disabled degraded snapshot.
 - Replaced every one-shot QML command with one canonical versioned persistent
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,

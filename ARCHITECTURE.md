@@ -135,6 +135,10 @@ Preflight reserves one slot below the 100-item bounded playlist inventory;
 post-create verification and cleanup allow one transaction-scoped extra. The
 shared protocol serializer emits UTF-8 JSON and the plan service measures the
 complete worst-request-ID result envelope before publishing its ticket.
+Authoritative snapshots are measured as complete protocol lines too. An
+oversized snapshot is never cached or emitted; the persistent process emits a
+fixed bounded degraded snapshot with no target-derived write capabilities and
+continues serving startup, polling, and post-mutation traffic.
 
 ## AI and MCP boundary
 

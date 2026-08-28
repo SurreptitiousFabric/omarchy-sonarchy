@@ -94,6 +94,10 @@ There is no REST API, browser UI, or listener on port 8000.
   post-create verification and exact-ID cleanup can inspect one bounded extra.
   Preflight reviews use unescaped UTF-8 and must fit the complete 64 KiB
   protocol result envelope. An oversized review discards its unpublished ticket.
+- Authoritative snapshots are subject to the same complete-line limit. An
+  oversized snapshot is not cached or partially emitted; it is replaced by a
+  fixed degraded snapshot with no target-derived write capabilities, and the
+  backend remains available for later bounded refreshes.
 - Alarms returned to QML contain a human label, not their potentially
   credential-bearing program URI or service metadata.
 - No service or account credentials are requested, logged, or stored.

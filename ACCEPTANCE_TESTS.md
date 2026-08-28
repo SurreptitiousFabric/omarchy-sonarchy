@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 425 automated Python tests pass with 86% branch coverage, alongside
+- [x] All 428 automated Python tests pass with 86% branch coverage, alongside
   32 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
@@ -98,6 +98,8 @@ an existing name.
    requirement. A queue-active URI may safely project `QUEUE` even if the coarse
    source probe reports `UNKNOWN`; an unverified non-queue `UNKNOWN` must fail.
    Confirm the complete UTF-8 result line remains within 64 KiB.
+   Confirm an oversized authoritative snapshot is replaced by a bounded,
+   write-disabled degraded snapshot without stopping the backend process.
 5. Stop. Obtain explicit owner approval for the one token-only write.
 
 ### Stage 2: save only
