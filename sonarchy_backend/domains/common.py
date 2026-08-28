@@ -11,12 +11,22 @@ class RequestContext:
     """Process-owned request facts that clients cannot provide or replace."""
 
     backend_revision: int = 0
+    mutation_started_callback: Callable[[], None] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    def mark_mutation_started(self) -> None:
+        if self.mutation_started_callback is not None:
+            self.mutation_started_callback()
 
 
 @dataclass(frozen=True)
 class DomainService:
     handlers: dict[str, Callable[[dict[str, Any]], Any]]
     mutates: bool = True
+    conditional_mutation: bool = False
     contextual_handlers: dict[str, Callable[[dict[str, Any], RequestContext], Any]] = field(
         default_factory=dict
     )

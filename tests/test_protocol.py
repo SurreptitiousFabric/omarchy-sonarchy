@@ -1026,6 +1026,61 @@ def test_apple_playlist_execution_rejects_replacement_fields_without_consuming_t
     assert not any(call[0] == "createPreflightedApplePlaylist" for call in controller.calls)
 
 
+def test_apple_playlist_preclaim_rejections_do_not_refresh_or_stale_valid_ticket():
+    controller = ApplePlanController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    token = _protocol_preflight(server, output)["value"]["planToken"]
+    preflight_calls = list(controller.calls)
+
+    rejected_args = (
+        {"planToken": token, "approved": False},
+        {"planToken": token, "approved": True, "roomUid": "R2"},
+        {"planToken": "invalid-plan-token", "approved": True},
+    )
+    for index, args in enumerate(rejected_args, 1):
+        server.handle(
+            {
+                "version": 1,
+                "id": f"rejected-{index}",
+                "op": "playlists.apple.create",
+                "args": args,
+            },
+            output,
+        )
+
+    assert server.revision == 0
+    assert controller.calls == preflight_calls
+    rejected = [
+        message for message in decoded(output) if str(message.get("id", "")).startswith("rejected-")
+    ]
+    assert [message["revision"] for message in rejected] == [0, 0, 0]
+    assert [message["error"]["code"] for message in rejected] == [
+        "invalid_argument",
+        "invalid_argument",
+        "conflict",
+    ]
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "valid-create",
+            "op": "playlists.apple.create",
+            "args": {"planToken": token, "approved": True},
+        },
+        output,
+    )
+
+    result = next(message for message in decoded(output) if message.get("id") == "valid-create")
+    assert result["ok"] is True
+    assert result["revision"] == 0
+    assert server.revision == 1
+    assert controller.calls[-1] == ("refresh", False)
+    assert (
+        len([call for call in controller.calls if call[0] == "createPreflightedApplePlaylist"]) == 1
+    )
+
+
 def test_apple_playlist_failure_returns_bounded_rollback_evidence_without_raw_details():
     controller = ApplePlanController()
     server = ProtocolServer(controller)  # type: ignore[arg-type]

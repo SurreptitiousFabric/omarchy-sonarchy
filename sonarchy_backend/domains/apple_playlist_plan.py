@@ -281,6 +281,7 @@ class ApplePlaylistPlanService:
         )
         create = DomainService(
             {},
+            conditional_mutation=True,
             contextual_handlers={"playlists.apple.create": self.create},
         )
         return validate, create
@@ -375,4 +376,6 @@ class ApplePlaylistPlanService:
                 "Backend state changed after validation; validate a new playlist plan",
                 details={"reason": "backend_revision_changed"},
             )
+        # The ticket is now spent and backend execution may mutate or partially fail.
+        context.mark_mutation_started()
         return self.backend.create_preflighted_apple_playlist(plan.backend_value())

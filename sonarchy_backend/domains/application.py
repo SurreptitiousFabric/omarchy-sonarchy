@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from .alarms import alarm_mutations_service, alarms_service
@@ -50,6 +50,12 @@ class SonarchyApplication:
             if service.mutates
             for operation in service.operations
         )
+        self.conditional_mutating_operations = frozenset(
+            operation
+            for service in self.services
+            if service.mutates and service.conditional_mutation
+            for operation in service.operations
+        )
 
     def execute(
         self,
@@ -57,8 +63,12 @@ class SonarchyApplication:
         args: dict[str, Any],
         *,
         backend_revision: int = 0,
+        mutation_started_callback: Callable[[], None] | None = None,
     ) -> Any:
-        context = RequestContext(backend_revision=backend_revision)
+        context = RequestContext(
+            backend_revision=backend_revision,
+            mutation_started_callback=mutation_started_callback,
+        )
         for service in self.services:
             if operation in service.operations:
                 return service.execute(operation, args, context)
@@ -66,6 +76,9 @@ class SonarchyApplication:
 
     def mutates(self, operation: str) -> bool:
         return operation in self.mutating_operations
+
+    def mutation_is_conditional(self, operation: str) -> bool:
+        return operation in self.conditional_mutating_operations
 
     def refresh(self, *, rediscover: bool = True) -> dict[str, Any]:
         return self.backend.refresh(rediscover=rediscover)

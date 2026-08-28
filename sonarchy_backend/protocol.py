@@ -231,8 +231,19 @@ class ProtocolServer:
             return
 
         refresh_after = self.application.mutates(op)
+        mutation_started = not self.application.mutation_is_conditional(op)
+
+        def mark_mutation_started() -> None:
+            nonlocal mutation_started
+            mutation_started = True
+
         try:
-            value = self.application.execute(op, args, backend_revision=self.revision)
+            value = self.application.execute(
+                op,
+                args,
+                backend_revision=self.revision,
+                mutation_started_callback=mark_mutation_started,
+            )
             self._emit(result_payload(request_id, revision=self.revision, value=value), output)
         except SafeDomainError as exc:
             LOG.warning("Sonarchy operation %s was safely rejected: %s", op, exc.code)
@@ -275,9 +286,9 @@ class ProtocolServer:
                 operation=op,
             )
         finally:
-            # Mutations are followed by authoritative state, including partial
-            # failures, so the QML never has to pretend its optimistic view won.
-            if refresh_after:
+            # Accepted mutations are followed by authoritative state, including
+            # partial failures. Conditional writes signal after pre-claim checks.
+            if refresh_after and mutation_started:
                 self.emit_snapshot(output, rediscover=False)
 
     def _emit_error(
