@@ -471,8 +471,10 @@ def create_preflighted_apple_playlist(
         created_playlist = coordinator.create_sonos_playlist_from_queue(playlist_name)
         playlist_id = validate_playlist_id(item_attr(created_playlist, "item_id"))
         created_playlist_id = playlist_id
-        created_playlist_title = validate_playlist_title(item_attr(created_playlist, "title"))
-        if created_playlist_title != playlist_name:
+        created_playlist_title = playlist_name
+        returned_playlist_title = validate_playlist_title(item_attr(created_playlist, "title"))
+        created_playlist_title = returned_playlist_title
+        if returned_playlist_title != playlist_name:
             raise ValueError("Sonos returned an unexpected playlist name")
 
         phase = "playlist_verification"

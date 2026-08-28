@@ -186,6 +186,8 @@ class FakeSpeaker:
         self.volume_change_on_create = False
         self.unexpected_queue_extra = False
         self.created_title_override = ""
+        self.created_return_title_override = None
+        self.created_return_title_error = False
         self.reopened_title_override = ""
         self.drop_queue_after_save = False
         self.play_stays_stopped = False
@@ -274,6 +276,21 @@ class FakeSpeaker:
         if self.drop_queue_after_save:
             self.queue.pop()
             self.queue_update += 1
+        if self.created_return_title_error:
+
+            class UnreadableCreateResult:
+                item_id = playlist_id
+
+                @property
+                def title(self):
+                    raise RuntimeError("private returned title at 192.168.1.20")
+
+            return UnreadableCreateResult()
+        if self.created_return_title_override is not None:
+            return SimpleNamespace(
+                item_id=playlist_id,
+                title=self.created_return_title_override,
+            )
         return playlist
 
     def get_sonos_playlist_by_attr(self, attr_name, value):
@@ -817,6 +834,26 @@ def test_authoritative_name_and_queue_verification_failures_rollback(attribute, 
     assert error.value.details["phase"] == phase
     assert error.value.details["rollback"]["succeeded"] is True
     assert "SQ:1" not in speaker.playlists
+
+
+@pytest.mark.parametrize("returned_title", ("", "x" * 81, "Unsafe\nTitle", None))
+def test_invalid_returned_title_preserves_exact_id_cleanup_ownership(returned_title):
+    speaker = FakeSpeaker(queue=original_queue())
+    plan = plan_for(speaker)
+    if returned_title is None:
+        speaker.created_return_title_error = True
+    else:
+        speaker.created_return_title_override = returned_title
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    assert error.value.details["phase"] == "playlist_creation"
+    assert error.value.details["rollback"]["playlistRemoved"] is True
+    assert error.value.details["rollback"]["playlistCleanupRequired"] is False
+    assert error.value.details["rollback"]["succeeded"] is True
+    assert speaker.playlists == {}
+    assert "192.168" not in str(error.value)
 
 
 def test_reopen_failure_removes_exact_new_playlist_and_restores():
