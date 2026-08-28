@@ -7,6 +7,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from sonarchy_backend.contracts import (
+    MAX_PROTOCOL_LINE_BYTES,
+    MAX_PROTOCOL_REQUEST_ID_BYTES,
+    protocol_line,
+    result_payload,
+)
 from sonarchy_backend.domains.apple_playlist_plan import ApplePlaylistPlanService, PlanTicketStore
 from sonarchy_backend.domains.apple_playlist_transaction import (
     apple_song_identity_from_item,
@@ -108,7 +114,8 @@ class FakeShareLinks:
 
     def add_share_link_to_queue(self, url, *, dc_title):
         track = self.owner.catalog[url]
-        self.owner.queue.append(apple_item(track, f"Q:{len(self.owner.queue) + 1}"))
+        item_id = self.owner.apple_item_id or f"Q:{len(self.owner.queue) + 1}"
+        self.owner.queue.append(apple_item(track, item_id))
         self.owner.queue_update += 1
         if self.owner.concurrent_playlist_during_queue:
             self.owner.concurrent_playlist_during_queue = False
@@ -183,6 +190,7 @@ class FakeSpeaker:
         self.drop_queue_after_save = False
         self.play_stays_stopped = False
         self.current_metadata_override = None
+        self.apple_item_id = ""
 
     def get_queue(self, *, max_items, full_album_art_uri):
         assert full_album_art_uri is False
@@ -368,9 +376,13 @@ def test_verify_items_rejects_count_missing_metadata_and_wrong_album():
         verify_apple_items([item], [TRACK_ONE], container="queue")
 
 
-def test_verify_items_omits_unsafe_sonos_item_identifier_from_evidence():
-    item = apple_item(TRACK_ONE, "Q:unsafe\nidentifier")
+def test_verify_items_projects_bounded_reviewed_metadata_without_sonos_item_identifiers():
+    item = apple_item(TRACK_ONE, "Q:" + ("\\" * 510))
+    item.title = "Just" + (" " * MAX_PROTOCOL_LINE_BYTES) + "Like Heaven"
     evidence = verify_apple_items([item], [TRACK_ONE], container="queue")
+
+    assert evidence[0]["title"] == TRACK_ONE["title"]
+    assert len(evidence[0]["title"]) < len(item.title)
     assert "sonosItemId" not in evidence[0]
 
 
@@ -398,6 +410,54 @@ def test_save_only_constructs_saves_reopens_and_restores_stopped_queue():
     assert speaker.current_position == 1
     assert speaker.transport_state == "STOPPED"
     assert result["rollback"] == {"attempted": False, "succeeded": None}
+
+
+def test_maximal_success_result_fits_protocol_without_duplicate_metadata_or_sonos_ids():
+    metadata = "\\" * 240
+    tracks = []
+    for offset in range(25):
+        catalog_id = str(3_000_000_000 + offset)
+        tracks.append(
+            {
+                "catalogId": catalog_id,
+                "url": f"https://music.apple.com/ch/album/reviewed/999?i={catalog_id}",
+                "title": metadata,
+                "artist": metadata,
+                "album": metadata,
+                "durationMs": 212000,
+            }
+        )
+    speaker = FakeSpeaker(queue=original_queue())
+    speaker.catalog = {track["url"]: track for track in tracks}
+    speaker.apple_item_id = "Q:" + ("\\" * 510)
+
+    result = execute(
+        speaker,
+        plan_for(
+            speaker,
+            mode="save-and-play",
+            name="\\" * 80,
+            tracks=tracks,
+        ),
+    )
+    request_id = "\\" * MAX_PROTOCOL_REQUEST_ID_BYTES
+    encoded = protocol_line(result_payload(request_id, revision=7, value=result)).encode("utf-8")
+
+    assert len(encoded) <= MAX_PROTOCOL_LINE_BYTES
+    assert all(
+        set(item) == {"position", "catalogId", "canonicalIdentity"}
+        for item in result["queue"]["approvedItems"]
+    )
+    assert "sonosItemId" not in json.dumps(result)
+
+    legacy = copy.deepcopy(result)
+    duplicated = [
+        item | {"sonosItemId": speaker.apple_item_id} for item in result["playlist"]["items"]
+    ]
+    legacy["playlist"]["items"] = duplicated
+    legacy["queue"]["approvedItems"] = copy.deepcopy(duplicated)
+    legacy_line = protocol_line(result_payload(request_id, revision=7, value=legacy))
+    assert len(legacy_line.encode("utf-8")) > MAX_PROTOCOL_LINE_BYTES
 
 
 def test_save_only_restores_playing_queue_and_position():

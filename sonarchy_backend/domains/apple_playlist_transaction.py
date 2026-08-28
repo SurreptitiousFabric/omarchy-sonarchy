@@ -270,23 +270,27 @@ def verify_apple_items(
             raise ValueError(f"The {container} metadata does not match the reviewed song")
         if album and not _metadata_matches(album, track["album"]):
             raise ValueError(f"The {container} album metadata does not match the reviewed song")
-        sonos_item_id = clean(item_attr(item, "item_id"))
         evidence = {
             "position": position,
             "catalogId": catalog_id,
             "canonicalIdentity": f"song:{catalog_id}",
-            "title": title,
-            "artist": artist,
-            "album": album,
+            "title": track["title"],
+            "artist": track["artist"],
+            "album": track["album"] if album else "",
         }
-        if (
-            sonos_item_id
-            and len(sonos_item_id) <= 512
-            and not any(ord(character) < 32 for character in sonos_item_id)
-        ):
-            evidence["sonosItemId"] = sonos_item_id
         verified.append(evidence)
     return verified
+
+
+def _queue_identity_evidence(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "position": item["position"],
+            "catalogId": item["catalogId"],
+            "canonicalIdentity": item["canonicalIdentity"],
+        }
+        for item in items
+    ]
 
 
 def _playlist_tracks(coordinator: Any, playlist: Any) -> list[Any]:
@@ -544,7 +548,7 @@ def create_preflighted_apple_playlist(
             "queue": {
                 **final_queue,
                 "disposition": queue_disposition,
-                "approvedItems": queue_evidence,
+                "approvedItems": _queue_identity_evidence(queue_evidence),
             },
             "playback": playback,
             "rollback": {"attempted": False, "succeeded": None},
