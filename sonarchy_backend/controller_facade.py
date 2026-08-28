@@ -4,9 +4,14 @@ from typing import Any
 
 from .controller_common import ControllerError
 from .domains.alarms import delete_alarm, project_alarms, save_alarm, toggle_alarm
+from .domains.apple_playlist_transaction import (
+    create_preflighted_apple_playlist,
+    inspect_apple_playlist_target,
+)
 from .domains.browse import browse_content
 from .domains.content import play_apple, play_apple_album, play_global, start_library_update
 from .domains.devices import project_device_details
+from .domains.errors import PlanConflictError
 from .domains.playlists import playlist_action, playlist_track_action
 from .domains.queue import enqueue_content_item, move_queue_item, queue_action
 from .domains.settings import rename_room as rename_sonos_room
@@ -106,6 +111,23 @@ class DomainFacadeMixin:
         self, room_uid: str, action: str, playlist_id: str, index: int, item_id: str
     ) -> dict[str, Any]:
         return playlist_track_action(self._zone(room_uid), action, playlist_id, index, item_id)
+
+    def inspect_apple_playlist_target(self, room_uid: str, playlist_name: str) -> dict[str, Any]:
+        try:
+            self.refresh(rediscover=False)
+            speaker = self._zone(room_uid)
+        except ControllerError as exc:
+            raise PlanConflictError("The exact Sonos room is unavailable") from exc
+        return inspect_apple_playlist_target(speaker, playlist_name)
+
+    def create_preflighted_apple_playlist(self, plan: dict[str, Any]) -> dict[str, Any]:
+        room_uid = str(plan.get("roomUid", ""))
+        try:
+            self.refresh(rediscover=False)
+            speaker = self._zone(room_uid)
+        except ControllerError as exc:
+            raise PlanConflictError("The exact Sonos room is unavailable") from exc
+        return create_preflighted_apple_playlist(speaker, plan)
 
     def play_apple(self, room_uid: str, url: str) -> dict[str, Any]:
         return play_apple(self._zone(room_uid), url)

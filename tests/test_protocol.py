@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from sonarchy_backend.contracts import CAPABILITY_NAMES
+from sonarchy_backend.domains.errors import PlaylistTransactionError
 from sonarchy_backend.protocol import (
     MAX_PROTOCOL_LINE_BYTES,
     PROTOCOL_OPERATIONS,
@@ -433,6 +434,8 @@ def test_protocol_action_cases_cover_every_operation():
         "artwork.radio.resolve",
         "content.browse",
         "devices.details.get",
+        "playlist_plan.apple.validate",
+        "playlists.apple.create",
     }
 
 
@@ -753,6 +756,176 @@ def test_snapshot_capabilities_come_from_topology_and_advertised_actions():
     assert "playback.seek" in capabilities
     assert "playback.previous" not in capabilities
     assert "topology.members.set" in capabilities
+    assert "playlist_plan.apple.validate" in capabilities
+    assert "playlists.apple.create" in capabilities
+
+
+def _apple_plan_track():
+    return {
+        "catalogId": "1452806384",
+        "url": ("https://music.apple.com/ch/album/kiss-me-kiss-me-kiss-me/1452806377?i=1452806384"),
+        "title": "Just Like Heaven",
+        "artist": "The Cure",
+        "album": "Kiss Me, Kiss Me, Kiss Me",
+        "durationMs": 212000,
+    }
+
+
+def _apple_target_state():
+    return {
+        "room": {
+            "uid": "R1",
+            "standalone": True,
+            "memberUids": ["R1"],
+            "coordinatorUid": "R1",
+        },
+        "observedState": {
+            "topologyFingerprint": "sha256:topology",
+            "queue": {
+                "length": 0,
+                "position": 0,
+                "revisionMarker": "update:1:sha256:queue",
+                "fingerprint": "sha256:queue",
+                "active": False,
+            },
+            "transportState": "STOPPED",
+            "playbackSource": "RADIO",
+            "volume": {"room": 20, "group": 20},
+            "mute": {"room": False, "group": False},
+            "capabilities": ["playlist_plan.apple.validate", "playlists.apple.create"],
+            "playlistCount": 0,
+            "playlistInventoryFingerprint": "sha256:playlists",
+        },
+    }
+
+
+class ApplePlanController(FakeController):
+    def __init__(self):
+        super().__init__()
+        self.failure = None
+
+    def inspect_apple_playlist_target(self, room_uid, playlist_name):
+        self.calls.append(("inspectApplePlaylistTarget", room_uid, playlist_name))
+        return _apple_target_state()
+
+    def create_preflighted_apple_playlist(self, plan):
+        self.calls.append(("createPreflightedApplePlaylist", plan))
+        if self.failure:
+            raise self.failure
+        return {"ok": True, "playlist": {"id": "SQ:17", "name": plan["playlistName"]}}
+
+
+def _protocol_preflight(server, output):
+    server.handle(
+        {
+            "version": 1,
+            "id": "plan",
+            "op": "playlist_plan.apple.validate",
+            "args": {
+                "roomUid": "R1",
+                "playlistName": "AI Friday",
+                "mode": "save-only",
+                "tracks": [_apple_plan_track()],
+            },
+        },
+        output,
+    )
+    return decoded(output)[-1]
+
+
+def test_apple_playlist_preflight_is_read_only_and_execution_is_token_only():
+    controller = ApplePlanController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    preflight = _protocol_preflight(server, output)
+    assert preflight["ok"] is True
+    assert preflight["revision"] == 0
+    assert preflight["value"]["approvalRequired"] is True
+    assert controller.calls == [("inspectApplePlaylistTarget", "R1", "AI Friday")]
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "create",
+            "op": "playlists.apple.create",
+            "args": {"planToken": preflight["value"]["planToken"], "approved": True},
+        },
+        output,
+    )
+    messages = decoded(output)
+    result = next(message for message in messages if message.get("id") == "create")
+    assert result["ok"] is True
+    assert result["value"]["playlist"] == {"id": "SQ:17", "name": "AI Friday"}
+    execution = next(
+        call for call in controller.calls if call[0] == "createPreflightedApplePlaylist"
+    )
+    assert execution[1]["roomUid"] == "R1"
+    assert execution[1]["playlistName"] == "AI Friday"
+    assert execution[1]["tracks"][0]["catalogId"] == "1452806384"
+    assert controller.calls[-1] == ("refresh", False)
+
+
+def test_apple_playlist_execution_rejects_replacement_fields_without_consuming_ticket():
+    controller = ApplePlanController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    token = _protocol_preflight(server, output)["value"]["planToken"]
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "bad-create",
+            "op": "playlists.apple.create",
+            "args": {
+                "planToken": token,
+                "approved": True,
+                "roomUid": "R2",
+                "url": "https://attacker.invalid/replace",
+            },
+        },
+        output,
+    )
+    error = next(message for message in decoded(output) if message.get("id") == "bad-create")
+    assert error["ok"] is False
+    assert error["error"]["code"] == "invalid_argument"
+    assert "attacker.invalid" not in json.dumps(error)
+    assert not any(call[0] == "createPreflightedApplePlaylist" for call in controller.calls)
+
+
+def test_apple_playlist_failure_returns_bounded_rollback_evidence_without_raw_details():
+    controller = ApplePlanController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    token = _protocol_preflight(server, output)["value"]["planToken"]
+    controller.failure = PlaylistTransactionError(
+        phase="playlist_verification",
+        rollback={
+            "attempted": True,
+            "playlistRemoved": True,
+            "queueRestored": False,
+            "environmentUnchanged": True,
+            "succeeded": False,
+        },
+    )
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "failed-create",
+            "op": "playlists.apple.create",
+            "args": {"planToken": token, "approved": True},
+        },
+        output,
+    )
+    result = next(message for message in decoded(output) if message.get("id") == "failed-create")
+    assert result["ok"] is False
+    assert result["error"]["code"] == "speaker_rejected"
+    assert result["error"]["details"]["phase"] == "playlist_verification"
+    assert result["error"]["details"]["rollback"]["succeeded"] is False
+    serialized = json.dumps(result)
+    for forbidden in ("192.168", "token=", "DIDL", "CurrentURI", "service metadata"):
+        assert forbidden not in serialized
 
 
 @pytest.mark.parametrize(

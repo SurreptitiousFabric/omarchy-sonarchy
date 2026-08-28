@@ -20,6 +20,7 @@ from .contracts import (
 )
 from .controller import ControllerError, SonosController
 from .domains import SonarchyApplication
+from .domains.errors import SafeDomainError
 from .live_updates import EventSubscriptionManager, WakeQueue
 
 LOG = logging.getLogger(__name__)
@@ -65,6 +66,8 @@ PROTOCOL_OPERATIONS = frozenset(
         "queue.clear",
         "queue.content.enqueue",
         "playlists.mutate",
+        "playlist_plan.apple.validate",
+        "playlists.apple.create",
         "playlists.track.mutate",
         "content.apple.play",
         "content.apple.album.play",
@@ -199,8 +202,19 @@ class ProtocolServer:
 
         refresh_after = self.application.mutates(op)
         try:
-            value = self.application.execute(op, args)
+            value = self.application.execute(op, args, backend_revision=self.revision)
             self._emit(result_payload(request_id, revision=self.revision, value=value), output)
+        except SafeDomainError as exc:
+            LOG.warning("Sonarchy operation %s was safely rejected: %s", op, exc.code)
+            self._emit_error(
+                output,
+                request_id=request_id,
+                code=exc.code,
+                message=str(exc),
+                operation=op,
+                retryable=exc.retryable,
+                details=exc.details,
+            )
         except (ControllerError, ValueError, TypeError, OSError) as exc:
             LOG.warning("Sonos command %s failed: %s", op, exc)
             if isinstance(exc, (ValueError, TypeError)):
@@ -245,8 +259,15 @@ class ProtocolServer:
         message: str,
         operation: str = "",
         retryable: bool = False,
+        details: dict[str, Any] | None = None,
     ) -> None:
-        error = error_payload(code, message, operation=operation, retryable=retryable)
+        error = error_payload(
+            code,
+            message,
+            operation=operation,
+            retryable=retryable,
+            details=details,
+        )
         self._emit(result_payload(request_id, revision=self.revision, error=error), output)
 
     def serve(self, input_stream: TextIO = sys.stdin, output: TextIO = sys.stdout) -> None:

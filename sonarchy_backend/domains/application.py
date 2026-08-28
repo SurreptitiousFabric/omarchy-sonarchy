@@ -4,8 +4,10 @@ from collections.abc import Iterable
 from typing import Any
 
 from .alarms import alarm_mutations_service, alarms_service
+from .apple_playlist_plan import ApplePlaylistPlanService
 from .artwork import artwork_service
 from .browse import browse_service
+from .common import RequestContext
 from .content import content_service
 from .devices import devices_service
 from .mixer import mixer_service
@@ -22,6 +24,7 @@ class SonarchyApplication:
 
     def __init__(self, backend: SonarchyBackendPort) -> None:
         self.backend = backend
+        apple_playlist_services = ApplePlaylistPlanService(backend).services()
         self.services = (
             playback_service(backend),
             content_service(backend),
@@ -35,6 +38,7 @@ class SonarchyApplication:
             settings_service(backend),
             queue_service(backend),
             playlists_service(backend),
+            *apple_playlist_services,
         )
         operations = [operation for service in self.services for operation in service.operations]
         if len(operations) != len(set(operations)):
@@ -47,10 +51,17 @@ class SonarchyApplication:
             for operation in service.operations
         )
 
-    def execute(self, operation: str, args: dict[str, Any]) -> Any:
+    def execute(
+        self,
+        operation: str,
+        args: dict[str, Any],
+        *,
+        backend_revision: int = 0,
+    ) -> Any:
+        context = RequestContext(backend_revision=backend_revision)
         for service in self.services:
             if operation in service.operations:
-                return service.execute(operation, args)
+                return service.execute(operation, args, context)
         raise KeyError(operation)
 
     def mutates(self, operation: str) -> bool:

@@ -34,6 +34,8 @@ CAPABILITY_NAMES = frozenset(
         "playback.stop",
         "playback.toggle",
         "playlists.mutate",
+        "playlist_plan.apple.validate",
+        "playlists.apple.create",
         "playlists.track.mutate",
         "queue.clear",
         "queue.content.enqueue",
@@ -112,6 +114,7 @@ def error_payload(
     *,
     operation: str = "",
     retryable: bool = False,
+    details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     error: dict[str, Any] = {
         "code": code,
@@ -120,6 +123,8 @@ def error_payload(
     }
     if operation:
         error["operation"] = operation
+    if details:
+        error["details"] = details
     return error
 
 
@@ -179,6 +184,8 @@ def snapshot_capabilities(snapshot: dict[str, Any]) -> list[str]:
                 "queue.clear",
                 "queue.content.enqueue",
                 "playlists.mutate",
+                "playlist_plan.apple.validate",
+                "playlists.apple.create",
                 "playlists.track.mutate",
                 "content.apple.play",
                 "content.apple.album.play",
