@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from .capabilities import queue_transport_active
 from .common import DomainService, coordinator_for, number_arg, string_arg
 from .library import library_item_at, validate_library_context
 from .media import (
@@ -14,8 +13,14 @@ from .media import (
     validate_identifier,
 )
 from .ports import QueuePort
+from .queue_transaction import (
+    MAX_RESTORABLE_QUEUE_ITEMS,
+    QueueBackup,
+    capture_queue_backup,
+    restore_queue,
+)
 
-MAX_REPLACE_BACKUP_ITEMS = 100
+MAX_REPLACE_BACKUP_ITEMS = MAX_RESTORABLE_QUEUE_ITEMS
 
 
 def queue_action(
@@ -117,27 +122,8 @@ def find_library_item(
 
 
 def _replace_backup(coordinator: Any) -> tuple[list[Any], bool, int, bool]:
-    result = coordinator.get_queue(
-        max_items=MAX_REPLACE_BACKUP_ITEMS,
-        full_album_art_uri=False,
-    )
-    items = list(result)
-    total = safe_index(item_attr(result, "total_matches", len(items)), len(items))
-    if total != len(items) or total > MAX_REPLACE_BACKUP_ITEMS:
-        raise ValueError("The queue is too large to replace safely")
-    if any(not item_attr(item, "resources", []) for item in items):
-        raise ValueError("The current queue cannot be backed up safely")
-
-    active = queue_transport_active(coordinator)
-    if active is None:
-        raise ValueError("The current playback source could not be verified")
-    track = safe_call(coordinator.get_current_track_info, {}) or {}
-    position = safe_index(track.get("playlist_position"), 0) - 1
-    if active and items and not 0 <= position < len(items):
-        raise ValueError("The current queue position could not be verified")
-    transport = safe_call(coordinator.get_current_transport_info, {}) or {}
-    was_playing = clean(transport.get("current_transport_state")).upper() == "PLAYING"
-    return items, active, position, was_playing
+    backup = capture_queue_backup(coordinator, allow_empty_active=True)
+    return list(backup.items), backup.queue_active, backup.position, backup.was_playing
 
 
 def _restore_replaced_queue(
@@ -147,12 +133,21 @@ def _restore_replaced_queue(
     position: int,
     was_playing: bool,
 ) -> None:
-    coordinator.clear_queue()
-    if not items:
-        return
-    coordinator.add_multiple_to_queue(items)
-    if active:
-        coordinator.play_from_queue(position, start=was_playing)
+    restore_queue(
+        coordinator,
+        QueueBackup(
+            items=tuple(items),
+            total=len(items),
+            update_id=-1,
+            queue_active=active,
+            position=position,
+            transport_state="PLAYING" if was_playing else "STOPPED",
+            source="UNKNOWN",
+            media_fingerprint="",
+            freshness_fingerprint="",
+            content_fingerprint="",
+        ),
+    )
 
 
 def _replace_queue(coordinator: Any, item: Any) -> int:

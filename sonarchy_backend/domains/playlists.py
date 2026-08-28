@@ -10,6 +10,7 @@ from .media import (
     safe_index,
     validate_playlist_id,
 )
+from .playlist_rules import validate_playlist_title
 from .ports import PlaylistsPort
 
 
@@ -18,15 +19,6 @@ def _optional(target: Any, name: str) -> Any:
         return getattr(target, name)
     except Exception:  # noqa: BLE001 - optional SoCo properties are inconsistent
         return None
-
-
-def validate_playlist_title(raw: Any) -> str:
-    title = clean(raw)
-    if not title:
-        raise ValueError("Playlist name cannot be empty")
-    if len(title) > 80 or any(ord(character) < 32 for character in title):
-        raise ValueError("Playlist name is too long or contains control characters")
-    return title
 
 
 def playlist_action(speaker: Any, action: str, value: str) -> dict[str, Any]:

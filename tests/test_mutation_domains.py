@@ -610,6 +610,22 @@ def test_replace_queue_can_restore_an_empty_backup_without_queueing_items():
     room.play_from_queue.assert_not_called()
 
 
+def test_replace_queue_preserves_legacy_support_for_an_empty_active_queue():
+    room = speaker(
+        get_queue=Mock(return_value=QueueResult()),
+        avTransport=Transport(),
+        get_current_track_info=Mock(return_value={"playlist_position": "0"}),
+        get_current_transport_info=Mock(return_value={"current_transport_state": "STOPPED"}),
+        clear_queue=Mock(),
+        add_to_queue=Mock(return_value=1),
+        add_multiple_to_queue=Mock(),
+        play_from_queue=Mock(),
+    )
+
+    assert _replace_queue(room, item("Q:new")) == 1
+    room.play_from_queue.assert_called_once_with(0)
+
+
 def test_replace_enqueue_mode_uses_safe_replacement_path():
     selected = item("Q:new")
     room = speaker()
