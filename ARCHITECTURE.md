@@ -64,6 +64,7 @@ debug overlays.
 | Content | normalized browse/search results and provider routing | QML formatting or device settings |
 | Queue | queue reads and identity-checked mutations | playlists |
 | Playlists | Sonos Playlist reads and identity-checked mutations | current queue |
+| Apple playlist plans | exact reviewed song validation, short-lived tickets, and create-only Sonos Playlist orchestration | AI song selection, private Apple libraries, or generic URI execution |
 | Alarms | safe alarm projection and mutations | raw credential-bearing program metadata in QML |
 | Devices | details, capabilities, sound and supported device settings | topology mutation |
 | Sources | validated TV and household line-in switching | arbitrary URI playback |
@@ -108,6 +109,34 @@ album, and song views plus bounded concurrent provider reads. The HTTP adapter
 in `apple_catalog.py` owns request limits, response bounds, identifier and URL
 validation. QML receives only provider-neutral browse items and keeps a small
 presentation-only Back history.
+
+`domains/apple_playlist_plan.py` owns bounded reviewed values and the
+process-local ticket lifecycle. Its read-only validation and write execution
+are separate services sharing one in-memory store. `apple_catalog.py` owns the
+narrow pinned-SoCo song canonicalisation adapter.
+`domains/apple_playlist_transaction.py` owns exact-room capture and Sonos
+Playlist construction/reopen verification. `domains/queue_transaction.py`
+owns the shared 100-item backup, fingerprints, restoration, and authoritative
+restoration checks used by both ordinary queue replacement and Apple plans.
+Neither Apple/SoCo objects nor queue backup objects cross the protocol.
+
+The transaction deliberately creates a Sonos Playlist, not a native Apple
+Music playlist. `save-only` temporarily constructs and verifies the approved
+queue, saves and reopens the playlist, then restores the original queue and
+transport. `save-and-play` performs the same save verification, starts item 1,
+and leaves the approved queue active. Failures after the first mutation attempt
+one shared rollback path and expose only bounded rollback evidence.
+
+## AI and MCP boundary
+
+The deterministic protocol operations are implemented inside the existing
+persistent application path. Issue #11 has not yet accepted a process-owner,
+transport, or concurrency design for MCP, so this repository does not start a
+second controller and does not currently expose an external MCP server. A
+future adapter must remain thin, consume these operations through the accepted
+single owner, require exact room UIDs and explicit write approval, and remove
+write tools entirely in read-only configuration. It must not add generic
+protocol, SoCo, UPnP, command, URL, or URI passthrough.
 
 ## State and capabilities
 

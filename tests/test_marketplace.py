@@ -518,6 +518,7 @@ def test_group_volume_exposes_shared_authoritative_per_room_controls():
 def test_handler_domains_do_not_import_each_others_private_implementations():
     handler_domains = {
         "alarms",
+        "apple_playlist_plan",
         "artwork",
         "browse",
         "content",
@@ -545,6 +546,42 @@ def test_handler_domains_do_not_import_each_others_private_implementations():
             assert imported_domain not in handler_domains - {domain}, (
                 f"{domain} imports private handler domain {imported_domain}"
             )
+
+
+def test_ai_curated_playlist_docs_keep_mcp_and_apple_export_boundaries_explicit():
+    guide = (ROOT / "docs/ai-curated-sonos-playlists.md").read_text()
+    normalized_guide = " ".join(guide.split())
+    protocol = (ROOT / "docs/protocol-v1.md").read_text()
+    architecture = (ROOT / "ARCHITECTURE.md").read_text()
+
+    for operation in ("playlist_plan.apple.validate", "playlists.apple.create"):
+        assert operation in guide
+        assert operation in protocol
+    for limitation in (
+        "cannot inspect existing personal playlists",
+        "cannot read private-library membership or listening history",
+        "do not synchronize",
+        "Sonarchy cannot adjust the Apple playlist after export",
+        "copy its Apple Music share URL",
+        "cannot modify its contents",
+    ):
+        assert limitation in normalized_guide
+    assert "Export/Copy to Apple Music" in guide
+    assert "does **not** add an MCP server" in guide
+    assert "Issue #11 has not yet accepted" in architecture
+
+
+def test_ai_playlist_protocol_has_no_generic_execution_operation():
+    from sonarchy_backend.protocol import PROTOCOL_OPERATIONS
+
+    forbidden = {
+        "play_uri",
+        "execute_upnp",
+        "call_protocol",
+        "run_soco",
+        "execute_command",
+    }
+    assert PROTOCOL_OPERATIONS.isdisjoint(forbidden)
 
 
 def test_pages_use_omarchy_tokens_without_debug_chrome():

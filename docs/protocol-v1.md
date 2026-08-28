@@ -42,6 +42,74 @@ of at most 100 restorable items and a verifiable playback source/position; if
 adding or starting the replacement fails, it attempts to restore the previous
 queue and queue playback position.
 
+### Exact Apple-song Sonos Playlist plans
+
+`playlist_plan.apple.validate` is read-only. It accepts an exact `roomUid`, a
+new `playlistName`, `mode` (`save-only` or `save-and-play`), optional Boolean
+`allowDuplicates`, and one to 25 reviewed tracks. Each track has exactly these
+fields:
+
+```json
+{
+  "catalogId": "1452806384",
+  "url": "https://music.apple.com/ch/album/kiss-me-kiss-me-kiss-me/1452806377?i=1452806384",
+  "title": "Just Like Heaven",
+  "artist": "The Cure",
+  "album": "Kiss Me, Kiss Me, Kiss Me",
+  "durationMs": 212000
+}
+```
+
+The URL must pass Sonarchy's exact public-Apple HTTPS policy and pinned SoCo
+0.31.2 must canonicalise it specifically as `song:<catalogId>`. Album,
+playlist, artist, radio, arbitrary-host, credential-bearing, non-standard-port,
+and unknown links are rejected. Sonarchy never constructs a URL from the ID or
+substitutes a catalog result based on display metadata.
+
+Preflight authoritatively checks the exact room and topology, the complete
+restorable queue (maximum 100 items), queue position and revision/fingerprint,
+transport and source, room/group volume and mute, required capabilities, the
+Sonos Playlist inventory, name collision, ordered identities, duplicate policy,
+and total duration. Its response includes the exact review, expected side
+effects, and a random opaque plan token that expires after at most 120 seconds.
+The initial restoration contract accepts an authoritatively `PLAYING` or
+`STOPPED` transport; paused, transitioning, unknown, oversized, or otherwise
+unrestorable state requires a safe state before preflight can succeed.
+
+The token is memory-only, process-local, single-use, and atomically consumed
+before mutation. It binds the operation, backend revision, exact room,
+topology, queue identity/order and length, transport/source, volume/mute,
+capabilities, playlist inventory and name, mode, duplicate policy, ordered
+canonical songs, expiry, and random nonce. It proves recent validation, not
+human approval. A backend restart, replay, expiry, newer backend revision, or
+changed authoritative target state requires a new preflight.
+
+`playlists.apple.create` is the corresponding write. Its arguments are exactly:
+
+```json
+{ "planToken": "opaque-process-local-token", "approved": true }
+```
+
+It rejects replacement tracks, URLs, room IDs, names, or modes. `approved`
+must be explicitly `true` immediately before the call. The backend claims the
+token even when the subsequent mutation fails, so a failed attempt cannot be
+retried without a fresh preflight and approval.
+
+Both modes revalidate state, back up the queue, clear it temporarily, enqueue
+each exact song without starting playback, verify the constructed queue, create
+the new Sonos Playlist, reopen it by authoritative `SQ:<id>`, and verify exact
+count, order, canonical identities, title, and artist. Existing exact-name
+collisions are never overwritten or deleted.
+
+- `save-only` restores and verifies the complete previous queue, queue
+  position, source, and exact `PLAYING`/`STOPPED` state.
+- `save-and-play` starts queue item 1 and leaves the approved queue active.
+
+After a post-mutation failure, the transaction tries to remove only the exact
+new partial playlist and restore the prior queue/state. A safe structured error
+reports the controlled failure phase and Boolean rollback evidence; it never
+contains an exception, address, token, DIDL, URI, or raw service metadata.
+
 `alarms.save` carries both the selected anchor `roomUid` and the requested
 `alarmRoomUid`. The backend accepts the target only when it is currently
 visible from the anchor room in the same Sonos household. Existing alarms may
@@ -89,6 +157,9 @@ A failed result contains an error object:
 
 Messages are safe for direct display. They never contain raw exceptions,
 private addresses, credentials, or service metadata.
+Transactional failures may additionally contain a bounded `details` object,
+for example `phase` plus `rollback.attempted`, `playlistRemoved`,
+`queueRestored`, `environmentUnchanged`, and `succeeded`.
 
 ## Snapshot
 

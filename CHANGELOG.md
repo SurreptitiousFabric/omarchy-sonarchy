@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added read-only exact Apple-song playlist preflight and an explicitly
+  approved, single-use-token Sonos Playlist create operation with `save-only`
+  and `save-and-play` modes. The transaction canonicalises every song through
+  pinned SoCo, rejects substitutions and collisions, verifies queue and saved
+  order/identities, shares the bounded queue backup policy, and reports
+  authoritative rollback evidence. Native Apple export and external MCP
+  exposure remain deliberately separate/deferred boundaries.
 - Replaced every one-shot QML command with one canonical versioned persistent
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,

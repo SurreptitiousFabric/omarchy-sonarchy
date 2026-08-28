@@ -69,9 +69,29 @@ There is no REST API, browser UI, or listener on port 8000.
 - Queue and playlist item mutations re-read the authoritative item and compare
   its opaque ID before changing it. The UI requires a timed second activation
   for item removal, queue clearing, and playlist/alarm deletion.
+- AI-curated playlist writes accept only one to 25 exact Apple song records.
+  Each HTTPS URL must use the exact `music.apple.com` host without credentials
+  or a non-standard port, and pinned SoCo must independently canonicalise it as
+  the same bounded decimal `song` identity. No generic URL, URI, UPnP, SoCo,
+  shell, or protocol-execution operation is exposed.
+- Playlist plan tokens are random, opaque, memory-only, process-local,
+  single-use, and valid for no more than two minutes. They bind authoritative
+  room/topology, queue identity/order and length, transport/source,
+  volume/mute, capabilities, playlist inventory/name, mode, ordered song
+  identities, and backend revision. They are claimed before mutation and are
+  not a replacement for explicit client/user approval.
+- Exact-song playlist construction shares the existing 100-item queue backup
+  limit. It verifies the constructed queue and reopens the new Sonos Playlist;
+  save-only also verifies complete queue/source/position/transport restoration.
+  Failure results contain controlled phases and Boolean recovery status, never
+  raw exceptions, addresses, DIDL, provider URIs, credentials, or tokens.
 - Alarms returned to QML contain a human label, not their potentially
   credential-bearing program URI or service metadata.
 - No service or account credentials are requested, logged, or stored.
+
+There is still no MCP listener or second AI-owned Sonos controller. The
+deterministic playlist operations use the private persistent protocol; external
+MCP exposure remains blocked on issue #11's process-ownership decision.
 
 ## Dependency and release policy
 

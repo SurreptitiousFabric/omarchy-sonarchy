@@ -21,6 +21,21 @@ reviewers and users do not need to infer them from the code.
 | Credentials or secret storage | No | No Sonos, Apple, Global Player, SMB, or other account password/token is requested or persisted. |
 | Telemetry | No | No analytics, crash upload, advertising, or maintainer-operated service. |
 
+## Application action capabilities
+
+When at least one room is authoritatively available, snapshots now advertise:
+
+- `playlist_plan.apple.validate`: read-only exact-room, queue, topology,
+  playlist-name, capability, and Apple-song preflight; and
+- `playlists.apple.create`: the explicitly approved, token-only create/save
+  transaction.
+
+These names describe positive operations in the private application protocol;
+they do not create a public API or MCP server. The create operation has no
+plain-title, arbitrary URL/URI, generic protocol, raw SoCo, or overwrite form.
+No Apple credential, private-library permission, or native Apple Music
+playlist-write capability is added.
+
 A local run of the marketplace's current v3 deterministic scanner marks this
 release **review-required** for `package-manager`, with no findings. The project
 also declares the first-run venv bootstrap above as installer-like behavior for

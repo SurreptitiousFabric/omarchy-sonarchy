@@ -10,8 +10,8 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 301 automated Python tests pass with 84% branch coverage, alongside
-  27 headless QML runtime checks.
+- [x] All 406 automated Python tests pass with 86% branch coverage, alongside
+  32 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
 - [x] Headless real-event QML tests load Omarchy's installed `PanelSlider`,
@@ -29,6 +29,10 @@ recorded; it must not be called tested.
 - [x] Live read-only checks pass for discovery, every visible room's details,
   Favorites, queue, Sonos Playlists and playlist contents, local-library
   access, alarms, Global Player, and Apple catalog search.
+- [x] Fake-only automated AI-curated playlist tests cover exact Apple song URL
+  and identity validation, 25-track bounds, duplicate review, plan expiry and
+  replay, stale state, exact save/reopen verification, both persistence modes,
+  and rollback success/failure. No feature-specific speaker write was run.
 - [x] Live idempotent writes pass for same-name rename, same-volume write,
   every speaker-reported sound/device setting, and current shuffle, repeat,
   and crossfade values. No effective setting or playback change was requested.
@@ -65,6 +69,69 @@ These products do not expose Trueplay or Sub crossover through SoCo, so those
 two controls are not applicable to this household. They remain covered by
 automated capability/visibility tests and must be tested on supporting hardware
 before Sonarchy claims real-device coverage for them.
+
+## AI-curated Sonos Playlist physical acceptance — not run
+
+This feature's automated suite uses fakes and must not mutate real speakers
+without explicit owner approval for the exact run. Use two exact Apple songs
+whose catalogue IDs, URLs, title, artist, album, duration, and order have been
+reviewed. Use unique disposable Sonos Playlist names; never reuse or overwrite
+an existing name.
+
+### Stage 1: read-only preflight
+
+1. Resolve one exact standalone room UID; record its name only as supporting
+   evidence. Confirm its sole member and coordinator are that UID.
+2. Record authoritative room/group volume and mute, transport and source,
+   current item when present, complete queue identities/order/length/update
+   marker, active position, and every existing Sonos Playlist ID/name.
+3. Confirm the queue contains no more than 100 items and every item is
+   restorable. A stopped transport is not required to retain a current-item
+   marker.
+4. Submit `playlist_plan.apple.validate` in `save-only` mode. Confirm the
+   returned room/topology, queue, transport/source, volume/mute, positive
+   capabilities, exact ordered canonical `song:<id>` values, total duration,
+   unique name, side effects, expiry, and approval requirement.
+5. Stop. Obtain explicit owner approval for the one token-only write.
+
+### Stage 2: save only
+
+1. Invoke `playlists.apple.create` exactly once with only the preflight token
+   and `approved: true`. Do not use an ad-hoc SoCo process.
+2. Verify the new authoritative `SQ:<id>`, exact name, exact item count, exact
+   order and Apple song identities, and supporting title/artist evidence after
+   reopening the saved playlist.
+3. Verify the original queue contents/order, active position, source, and exact
+   playing/stopped state were restored. Verify topology, volume, and mute never
+   changed and no playback started prematurely.
+4. Verify every unrelated Sonos Playlist ID/name/content remains unchanged.
+5. Retain the disposable playlist until cleanup receives separate approval.
+
+### Stage 3: save and play plus natural progression
+
+1. Repeat Stage 1 with a second unique disposable name and
+   `save-and-play`; obtain fresh explicit approval.
+2. Execute once. Verify the reopened playlist and active queue contain the
+   exact reviewed order and track 1 is authoritatively `PLAYING` in the exact
+   standalone room.
+3. Let track 1 finish naturally. If time-bounded acceptance requires seeking,
+   obtain approval and use the narrow seek operation near the end; never invoke
+   Next to prove sequencing.
+4. Capture authoritative evidence while track 2 is positively playing: exact
+   title, artist, queue position, room UID, and unchanged topology/volume/mute.
+5. Invoke and verify Stop as a separate approved action. Do not infer Stop from
+   a missing current-item marker.
+
+### Stage 4: separately approved cleanup
+
+1. Re-read playlist inventory and match each disposable playlist by both exact
+   `SQ:<id>` and name before deletion. Abort on ambiguity.
+2. Delete only those approved disposable identities. Restore any queue/playback
+   state retained after successful `save-and-play` using a separately reviewed
+   operation.
+3. Verify original topology, volume/mute, unrelated playlists, and other rooms
+   are unchanged. Record any rollback or cleanup uncertainty as a failure, not
+   a pass.
 
 ## Required real-device acceptance
 
