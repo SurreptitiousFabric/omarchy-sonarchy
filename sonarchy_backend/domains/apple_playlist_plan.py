@@ -297,6 +297,13 @@ class ApplePlaylistPlanService:
         allow_duplicates = bool_arg(args, "allowDuplicates") if "allowDuplicates" in args else False
         tracks = validate_apple_song_items(args.get("tracks"), allow_duplicates=allow_duplicates)
         target_state = self.backend.inspect_apple_playlist_target(room_uid, playlist_name)
+        observed_state = target_state.get("observedState") or {}
+        playback_source = observed_state.get("playbackSource")
+        queue_active = (observed_state.get("queue") or {}).get("active")
+        if mode == "save-and-play" and (playback_source != "QUEUE" or queue_active is not True):
+            raise PlanConflictError(
+                "Save and play requires an active Sonos queue so failure recovery is exact"
+            )
         fingerprint = _plan_fingerprint(
             room_uid=room_uid,
             playlist_name=playlist_name,

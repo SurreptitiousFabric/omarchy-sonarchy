@@ -378,6 +378,18 @@ def test_preflight_rejects_exact_existing_name_with_deterministic_suggestion():
     assert error.value.details == {"suggestedPlaylistName": "AI Friday (2)"}
 
 
+def test_save_and_play_preflight_requires_an_exact_active_queue_source():
+    backend = FakePlanBackend()
+    backend.states["R1"]["observedState"]["playbackSource"] = "RADIO"
+    backend.states["R1"]["observedState"]["queue"]["active"] = False
+    _backend, validation, _creation = services(backend)
+
+    with pytest.raises(PlanConflictError, match="active Sonos queue"):
+        validate_plan(validation, plan_args(mode="save-and-play"))
+
+    assert backend.executions == []
+
+
 def test_approved_ticket_executes_once_and_carries_only_bound_plan():
     backend, validation, creation = services()
     preflight = validate_plan(validation)

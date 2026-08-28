@@ -333,17 +333,20 @@ def _remove_partial_playlist(
     *,
     original_ids: frozenset[str],
     created_playlist_id: str,
-    created_playlist_title: str,
+    created_playlist_titles: frozenset[str],
 ) -> bool:
     playlist_id = validate_playlist_id(created_playlist_id)
     if playlist_id in original_ids:
+        return False
+    playlist_titles = frozenset(validate_playlist_title(title) for title in created_playlist_titles)
+    if not playlist_titles:
         return False
     inventory = _playlist_inventory(coordinator, maximum=MAX_TRANSACTION_PLAYLISTS)
     candidates = [
         item
         for item in inventory.items
         if clean(item_attr(item, "item_id")) == playlist_id
-        and clean(item_attr(item, "title")) == created_playlist_title
+        and clean(item_attr(item, "title")) in playlist_titles
     ]
     if len(candidates) != 1:
         return False
@@ -358,20 +361,20 @@ def _rollback(
     *,
     playlist_creation_attempted: bool,
     created_playlist_id: str | None,
-    created_playlist_title: str | None,
+    created_playlist_titles: frozenset[str],
 ) -> dict[str, Any]:
     coordinator = coordinator_for(speaker)
     playlist_removed = False
     playlist_cleanup_required = playlist_creation_attempted
     queue_restored = False
     environment_unchanged = False
-    if created_playlist_id is not None and created_playlist_title is not None:
+    if created_playlist_id is not None and created_playlist_titles:
         try:
             playlist_removed = _remove_partial_playlist(
                 coordinator,
                 original_ids=capture.playlists.ids,
                 created_playlist_id=created_playlist_id,
-                created_playlist_title=created_playlist_title,
+                created_playlist_titles=created_playlist_titles,
             )
             playlist_cleanup_required = not playlist_removed
         except Exception:  # noqa: BLE001 - rollback reports only bounded booleans
@@ -440,12 +443,16 @@ def create_preflighted_apple_playlist(
             "or capability state changed",
             details={"reason": "preflight_state_changed"},
         )
+    if mode == "save-and-play" and not capture.backup.queue_active:
+        raise PlanConflictError(
+            "Save and play requires an active Sonos queue so failure recovery is exact"
+        )
 
     coordinator = coordinator_for(speaker)
     phase = "queue_clear"
     playlist_creation_attempted = False
     created_playlist_id: str | None = None
-    created_playlist_title: str | None = None
+    created_playlist_titles: frozenset[str] = frozenset()
     try:
         coordinator.clear_queue()
         phase = "queue_construction"
@@ -471,9 +478,9 @@ def create_preflighted_apple_playlist(
         created_playlist = coordinator.create_sonos_playlist_from_queue(playlist_name)
         playlist_id = validate_playlist_id(item_attr(created_playlist, "item_id"))
         created_playlist_id = playlist_id
-        created_playlist_title = playlist_name
+        created_playlist_titles = frozenset({playlist_name})
         returned_playlist_title = validate_playlist_title(item_attr(created_playlist, "title"))
-        created_playlist_title = returned_playlist_title
+        created_playlist_titles = created_playlist_titles | {returned_playlist_title}
         if returned_playlist_title != playlist_name:
             raise ValueError("Sonos returned an unexpected playlist name")
 
@@ -561,6 +568,6 @@ def create_preflighted_apple_playlist(
             capture,
             playlist_creation_attempted=playlist_creation_attempted,
             created_playlist_id=created_playlist_id,
-            created_playlist_title=created_playlist_title,
+            created_playlist_titles=created_playlist_titles,
         )
         raise PlaylistTransactionError(phase=phase, rollback=rollback) from exc

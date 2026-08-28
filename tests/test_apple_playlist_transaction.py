@@ -503,6 +503,22 @@ def test_save_only_handles_empty_stopped_non_queue_source():
     assert result["playback"]["state"] == "STOPPED"
 
 
+def test_save_and_play_rejects_non_queue_source_before_mutation():
+    speaker = FakeSpeaker(
+        queue=original_queue(),
+        transport_state="STOPPED",
+        queue_active=False,
+    )
+    plan = plan_for(speaker, mode="save-and-play")
+
+    with pytest.raises(PlanConflictError, match="active Sonos queue"):
+        execute(speaker, plan)
+
+    assert speaker.clear_calls == 0
+    assert speaker.current_uri == "x-sonosapi-stream:radio"
+    assert speaker.music_source == "RADIO"
+
+
 def test_changed_non_queue_media_identity_conflicts_before_mutation_without_uri_leak():
     speaker = FakeSpeaker(queue=[], transport_state="STOPPED", queue_active=False)
     plan = plan_for(speaker)
@@ -854,6 +870,21 @@ def test_invalid_returned_title_preserves_exact_id_cleanup_ownership(returned_ti
     assert error.value.details["rollback"]["succeeded"] is True
     assert speaker.playlists == {}
     assert "192.168" not in str(error.value)
+
+
+def test_valid_unexpected_returned_title_retains_requested_title_for_exact_id_cleanup():
+    speaker = FakeSpeaker(queue=original_queue())
+    plan = plan_for(speaker)
+    speaker.created_return_title_override = "Unexpected but bounded"
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    assert error.value.details["phase"] == "playlist_creation"
+    assert error.value.details["rollback"]["playlistRemoved"] is True
+    assert error.value.details["rollback"]["playlistCleanupRequired"] is False
+    assert error.value.details["rollback"]["succeeded"] is True
+    assert speaker.playlists == {}
 
 
 def test_reopen_failure_removes_exact_new_playlist_and_restores():
