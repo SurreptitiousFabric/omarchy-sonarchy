@@ -139,6 +139,10 @@ Authoritative snapshots are measured as complete protocol lines too. An
 oversized snapshot is never cached or emitted; the persistent process emits a
 fixed bounded degraded snapshot with no target-derived write capabilities and
 continues serving startup, polling, and post-mutation traffic.
+Successful playlist results project bounded reviewed metadata once under the
+authoritatively reopened playlist. Queue evidence contains only positions and
+canonical Apple identities; raw provider metadata and optional Sonos item IDs
+are not duplicated across the boundary.
 
 ## AI and MCP boundary
 

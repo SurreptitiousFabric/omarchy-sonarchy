@@ -100,6 +100,12 @@ limit. A snapshot that does not fit is neither cached nor partially emitted;
 the server emits a fixed bounded degraded snapshot without target-derived write
 capabilities, preserves the monotonic revision, and continues serving startup,
 polling, and mutation-refresh traffic.
+The successful create result is bounded too. `playlist.items` contains the one
+full sequence of reviewed metadata after authoritative reopen comparison;
+`queue.approvedItems` contains only position, catalogue ID, and canonical Apple
+identity. Provider-returned text and optional Sonos item IDs are not echoed or
+duplicated. A maximal 25-track result, including the worst bounded request ID,
+must fit the same 64 KiB line.
 
 `playlists.apple.create` is the corresponding write. Its arguments are exactly:
 

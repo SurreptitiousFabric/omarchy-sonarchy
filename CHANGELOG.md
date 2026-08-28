@@ -16,6 +16,8 @@
   enforce the 64 KiB UTF-8 protocol limit before publishing a plan ticket.
 - Keep the persistent backend alive when authoritative state exceeds that
   protocol limit by emitting a fixed bounded, write-disabled degraded snapshot.
+- Bound maximal successful playlist responses by returning full verified
+  metadata once and compact position/canonical-identity queue evidence.
 - Replaced every one-shot QML command with one canonical versioned persistent
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,

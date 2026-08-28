@@ -98,6 +98,10 @@ There is no REST API, browser UI, or listener on port 8000.
   oversized snapshot is not cached or partially emitted; it is replaced by a
   fixed degraded snapshot with no target-derived write capabilities, and the
   backend remains available for later bounded refreshes.
+- Successful playlist results return the bounded reviewed title, artist, and
+  album only after authoritative metadata comparison. Raw provider metadata and
+  optional Sonos item IDs are not echoed; duplicate queue evidence is limited to
+  approved positions and canonical Apple identities.
 - Alarms returned to QML contain a human label, not their potentially
   credential-bearing program URI or service metadata.
 - No service or account credentials are requested, logged, or stored.
