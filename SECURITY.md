@@ -90,6 +90,9 @@ There is no REST API, browser UI, or listener on port 8000.
   cleanup. Failure results contain controlled phases and bounded recovery
   status, never raw exceptions, addresses, DIDL, provider URIs, credentials, or
   tokens.
+  The exact returned ID is retained before title validation; an invalid or
+  unreadable returned title can authorize cleanup only when that exact new ID
+  resolves authoritatively to the invocation's requested title.
 - Playlist creation requires a free slot below the 100-item bounded inventory;
   post-create verification and exact-ID cleanup can inspect one bounded extra.
   Preflight reviews use unescaped UTF-8 and must fit the complete 64 KiB

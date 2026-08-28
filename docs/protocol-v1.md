@@ -136,6 +136,9 @@ attributable ID, every candidate is left untouched and
 `playlistCleanupRequired` is `true`. A safe structured error reports the
 controlled failure phase and bounded rollback evidence; it never contains an
 exception, address, token, DIDL, URI, or raw service metadata.
+The exact returned ID is retained before validating the returned title. If that
+title is invalid or unreadable, removal remains possible only when the exact new
+ID resolves authoritatively to the title requested by the same invocation.
 
 `alarms.save` carries both the selected anchor `roomUid` and the requested
 `alarmRoomUid`. The backend accepts the target only when it is currently

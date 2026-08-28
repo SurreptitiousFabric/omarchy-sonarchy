@@ -18,6 +18,8 @@
   protocol limit by emitting a fixed bounded, write-disabled degraded snapshot.
 - Bound maximal successful playlist responses by returning full verified
   metadata once and compact position/canonical-identity queue evidence.
+- Preserve exact create-returned playlist ownership across invalid or unreadable
+  returned titles while retaining authoritative ID-and-title cleanup checks.
 - Replaced every one-shot QML command with one canonical versioned persistent
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,
