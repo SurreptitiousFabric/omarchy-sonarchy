@@ -790,6 +790,7 @@ def _apple_target_state():
             },
             "transportState": "STOPPED",
             "playbackSource": "RADIO",
+            "mediaFingerprint": f"sha256:{'0' * 64}",
             "volume": {"room": 20, "group": 20},
             "mute": {"room": False, "group": False},
             "capabilities": ["playlist_plan.apple.validate", "playlists.apple.create"],
@@ -842,6 +843,8 @@ def test_apple_playlist_preflight_is_read_only_and_execution_is_token_only():
     assert preflight["ok"] is True
     assert preflight["revision"] == 0
     assert preflight["value"]["approvalRequired"] is True
+    assert preflight["value"]["observedState"]["mediaFingerprint"].startswith("sha256:")
+    assert "CurrentURI" not in json.dumps(preflight)
     assert controller.calls == [("inspectApplePlaylistTarget", "R1", "AI Friday")]
 
     server.handle(
@@ -903,6 +906,7 @@ def test_apple_playlist_failure_returns_bounded_rollback_evidence_without_raw_de
         rollback={
             "attempted": True,
             "playlistRemoved": True,
+            "playlistCleanupRequired": False,
             "queueRestored": False,
             "environmentUnchanged": True,
             "succeeded": False,

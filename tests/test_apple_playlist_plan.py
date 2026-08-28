@@ -57,6 +57,7 @@ def target_state(room_uid: str = "R1", *, queue_fingerprint: str = "sha256:queue
             },
             "transportState": "STOPPED",
             "playbackSource": "QUEUE",
+            "mediaFingerprint": f"sha256:{'a' * 64}",
             "volume": {"room": 20, "group": 20},
             "mute": {"room": False, "group": False},
             "capabilities": ["playlist_plan.apple.validate", "playlists.apple.create"],
@@ -285,6 +286,7 @@ def test_preflight_returns_review_and_short_lived_opaque_ticket():
     ]
     assert result["room"]["uid"] == "R1"
     assert result["observedState"]["queue"]["length"] == 2
+    assert result["observedState"]["mediaFingerprint"] == f"sha256:{'a' * 64}"
     assert result["expectedSideEffects"][-1].startswith("Restore and verify")
 
 
@@ -472,6 +474,15 @@ def test_distinct_room_order_mode_and_name_have_distinct_plan_bindings():
         validate_plan(validation, plan_args(playlistName="Another name")),
     ]
     assert len({value["planFingerprint"] for value in values}) == len(values)
+
+
+def test_safe_media_fingerprint_is_bound_into_the_plan_fingerprint():
+    backend, validation, _creation = services()
+    first = validate_plan(validation)
+    backend.states["R1"]["observedState"]["mediaFingerprint"] = f"sha256:{'b' * 64}"
+    second = validate_plan(validation)
+
+    assert first["planFingerprint"] != second["planFingerprint"]
 
 
 def test_explicit_approval_is_checked_before_ticket_is_claimed():

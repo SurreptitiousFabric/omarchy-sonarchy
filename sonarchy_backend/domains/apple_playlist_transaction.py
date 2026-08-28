@@ -12,7 +12,7 @@ from soco.plugins.sharelink import ShareLinkPlugin
 from .common import clean, coordinator_for, safe_call, safe_index
 from .errors import PlanConflictError, PlaylistTransactionError
 from .media import item_attr, validate_playlist_id
-from .playlist_rules import suggested_playlist_title
+from .playlist_rules import suggested_playlist_title, validate_playlist_title
 from .queue_transaction import (
     MAX_RESTORABLE_QUEUE_ITEMS,
     QueueBackup,
@@ -188,6 +188,7 @@ def _capture_target(speaker: Any, playlist_name: str) -> TargetCapture:
         "queue": queue_state,
         "transportState": backup.transport_state,
         "playbackSource": backup.source,
+        "mediaFingerprint": backup.media_marker,
         "volume": {
             "room": mixer["roomVolume"],
             "group": mixer["groupVolume"],
@@ -317,53 +318,52 @@ def _verify_environment(speaker: Any, expected_state: dict[str, Any]) -> None:
 def _remove_partial_playlist(
     coordinator: Any,
     *,
-    playlist_name: str,
     original_ids: frozenset[str],
-    created_playlist: Any | None,
+    created_playlist_id: str,
+    created_playlist_title: str,
 ) -> bool:
+    playlist_id = validate_playlist_id(created_playlist_id)
+    if playlist_id in original_ids:
+        return False
     inventory = _playlist_inventory(coordinator)
-    created_id = clean(item_attr(created_playlist, "item_id")) if created_playlist else ""
-    if created_id:
-        candidates = [
-            item
-            for item in inventory.items
-            if clean(item_attr(item, "item_id")) == created_id and created_id not in original_ids
-        ]
-    else:
-        candidates = [
-            item
-            for item in inventory.items
-            if clean(item_attr(item, "item_id")) not in original_ids
-            and clean(item_attr(item, "title")) == playlist_name
-        ]
-    if not candidates:
-        return True
+    candidates = [
+        item
+        for item in inventory.items
+        if clean(item_attr(item, "item_id")) == playlist_id
+        and clean(item_attr(item, "title")) == created_playlist_title
+    ]
     if len(candidates) != 1:
         return False
     coordinator.remove_sonos_playlist(candidates[0])
     after = _playlist_inventory(coordinator)
-    return clean(item_attr(candidates[0], "item_id")) not in after.ids
+    return playlist_id not in after.ids
 
 
 def _rollback(
     speaker: Any,
     capture: TargetCapture,
-    playlist_name: str,
-    created_playlist: Any | None,
+    *,
+    playlist_creation_attempted: bool,
+    created_playlist_id: str | None,
+    created_playlist_title: str | None,
 ) -> dict[str, Any]:
     coordinator = coordinator_for(speaker)
     playlist_removed = False
+    playlist_cleanup_required = playlist_creation_attempted
     queue_restored = False
     environment_unchanged = False
-    try:
-        playlist_removed = _remove_partial_playlist(
-            coordinator,
-            playlist_name=playlist_name,
-            original_ids=capture.playlists.ids,
-            created_playlist=created_playlist,
-        )
-    except Exception:  # noqa: BLE001 - rollback reports only bounded booleans
-        playlist_removed = False
+    if created_playlist_id is not None and created_playlist_title is not None:
+        try:
+            playlist_removed = _remove_partial_playlist(
+                coordinator,
+                original_ids=capture.playlists.ids,
+                created_playlist_id=created_playlist_id,
+                created_playlist_title=created_playlist_title,
+            )
+            playlist_cleanup_required = not playlist_removed
+        except Exception:  # noqa: BLE001 - rollback reports only bounded booleans
+            playlist_removed = False
+            playlist_cleanup_required = True
     try:
         restore_queue(coordinator, capture.backup)
         verify_restored_queue(coordinator, capture.backup)
@@ -375,10 +375,11 @@ def _rollback(
         environment_unchanged = True
     except Exception:  # noqa: BLE001 - rollback reports only bounded booleans
         environment_unchanged = False
-    succeeded = playlist_removed and queue_restored and environment_unchanged
+    succeeded = not playlist_cleanup_required and queue_restored and environment_unchanged
     return {
         "attempted": True,
         "playlistRemoved": playlist_removed,
+        "playlistCleanupRequired": playlist_cleanup_required,
         "queueRestored": queue_restored,
         "environmentUnchanged": environment_unchanged,
         "succeeded": succeeded,
@@ -422,13 +423,16 @@ def create_preflighted_apple_playlist(
     capture = _capture_target(speaker, playlist_name)
     if capture.state != expected_state:
         raise PlanConflictError(
-            "Room, topology, queue, transport, volume, mute, playlist, or capability state changed",
+            "Room, topology, media, queue, transport, volume, mute, playlist, "
+            "or capability state changed",
             details={"reason": "preflight_state_changed"},
         )
 
     coordinator = coordinator_for(speaker)
     phase = "queue_clear"
-    created_playlist: Any | None = None
+    playlist_creation_attempted = False
+    created_playlist_id: str | None = None
+    created_playlist_title: str | None = None
     try:
         coordinator.clear_queue()
         phase = "queue_construction"
@@ -450,9 +454,12 @@ def create_preflighted_apple_playlist(
         queue_evidence = verify_apple_items(queue_items, tracks, container="constructed queue")
 
         phase = "playlist_creation"
+        playlist_creation_attempted = True
         created_playlist = coordinator.create_sonos_playlist_from_queue(playlist_name)
         playlist_id = validate_playlist_id(item_attr(created_playlist, "item_id"))
-        if clean(item_attr(created_playlist, "title")) != playlist_name:
+        created_playlist_id = playlist_id
+        created_playlist_title = validate_playlist_title(item_attr(created_playlist, "title"))
+        if created_playlist_title != playlist_name:
             raise ValueError("Sonos returned an unexpected playlist name")
 
         phase = "playlist_verification"
@@ -534,5 +541,11 @@ def create_preflighted_apple_playlist(
             "rollback": {"attempted": False, "succeeded": None},
         }
     except Exception as exc:
-        rollback = _rollback(speaker, capture, playlist_name, created_playlist)
+        rollback = _rollback(
+            speaker,
+            capture,
+            playlist_creation_attempted=playlist_creation_attempted,
+            created_playlist_id=created_playlist_id,
+            created_playlist_title=created_playlist_title,
+        )
         raise PlaylistTransactionError(phase=phase, rollback=rollback) from exc

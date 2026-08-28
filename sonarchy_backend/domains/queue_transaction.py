@@ -9,6 +9,18 @@ from .common import clean, safe_call, safe_index
 from .media import item_attr
 
 MAX_RESTORABLE_QUEUE_ITEMS = 100
+PINNED_SOCO_PLAYBACK_SOURCES = frozenset(
+    {
+        "AIRPLAY",
+        "LIBRARY",
+        "LINE_IN",
+        "NONE",
+        "RADIO",
+        "SPOTIFY_CONNECT",
+        "TV",
+        "WEB_FILE",
+    }
+)
 
 
 class QueueStateError(ValueError):
@@ -39,6 +51,10 @@ class QueueBackup:
         update = str(self.update_id) if self.update_id >= 0 else "unknown"
         return f"update:{update}:sha256:{self.freshness_fingerprint[:16]}"
 
+    @property
+    def media_marker(self) -> str:
+        return f"sha256:{self.media_fingerprint}"
+
 
 def _resource_uris(item: Any) -> list[str]:
     resources = item_attr(item, "resources", []) or []
@@ -66,6 +82,13 @@ def queue_fingerprint(items: list[Any] | tuple[Any, ...], *, include_queue_ids: 
     return _fingerprint(
         [_item_projection(item, include_queue_id=include_queue_ids) for item in items]
     )
+
+
+def _playback_source(coordinator: Any, *, queue_active: bool) -> str:
+    if queue_active:
+        return "QUEUE"
+    source = clean(safe_call(lambda: coordinator.music_source, "")).upper()
+    return source if source in PINNED_SOCO_PLAYBACK_SOURCES else "UNKNOWN"
 
 
 def read_complete_queue(
@@ -106,7 +129,7 @@ def capture_queue_backup(
         raise QueueStateError("The active queue is empty and cannot be restored safely")
     transport = safe_call(coordinator.get_current_transport_info, {}) or {}
     transport_state = clean(transport.get("current_transport_state")).upper() or "UNKNOWN"
-    source = clean(safe_call(lambda: coordinator.music_source, "")) or "UNKNOWN"
+    source = _playback_source(coordinator, queue_active=queue_active)
     return QueueBackup(
         items=tuple(items),
         total=total,
@@ -151,6 +174,6 @@ def verify_restored_queue(coordinator: Any, expected: QueueBackup) -> QueueBacku
         raise QueueStateError("The previous playing state was not restored")
     if actual.source != expected.source:
         raise QueueStateError("The previous playback source was not restored")
-    if not expected.queue_active and actual.media_fingerprint != expected.media_fingerprint:
-        raise QueueStateError("The previous non-queue source was not preserved")
+    if actual.media_fingerprint != expected.media_fingerprint:
+        raise QueueStateError("The previous exact playback source was not preserved")
     return actual

@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import copy
+import json
+import re
 from types import SimpleNamespace
 
 import pytest
 
+from sonarchy_backend.domains.apple_playlist_plan import ApplePlaylistPlanService, PlanTicketStore
 from sonarchy_backend.domains.apple_playlist_transaction import (
     apple_song_identity_from_item,
     create_preflighted_apple_playlist,
     inspect_apple_playlist_target,
     verify_apple_items,
 )
+from sonarchy_backend.domains.common import RequestContext
 from sonarchy_backend.domains.errors import PlanConflictError, PlaylistTransactionError
 from sonarchy_backend.domains.queue_transaction import (
     QueueStateError,
@@ -106,6 +110,11 @@ class FakeShareLinks:
         track = self.owner.catalog[url]
         self.owner.queue.append(apple_item(track, f"Q:{len(self.owner.queue) + 1}"))
         self.owner.queue_update += 1
+        if self.owner.concurrent_playlist_during_queue:
+            self.owner.concurrent_playlist_during_queue = False
+            raced = SimpleNamespace(item_id="SQ:99", title="AI Friday")
+            self.owner.playlists[raced.item_id] = raced
+            self.owner.playlist_tracks[raced.item_id] = copy.deepcopy(self.owner.queue)
         first_position = len(self.owner.queue)
         if self.owner.expand_share:
             self.owner.queue.append(apple_item(track, f"Q:{len(self.owner.queue) + 1}"))
@@ -165,6 +174,7 @@ class FakeSpeaker:
         self.saved_verification = ""
         self.saved_browse_total = None
         self.create_name_race = False
+        self.concurrent_playlist_during_queue = False
         self.topology_change_on_create = False
         self.volume_change_on_create = False
         self.unexpected_queue_extra = False
@@ -392,13 +402,104 @@ def test_save_only_restores_playing_queue_and_position():
 
 def test_save_only_handles_empty_stopped_non_queue_source():
     speaker = FakeSpeaker(queue=[], transport_state="STOPPED", queue_active=False)
-    result = execute(speaker, plan_for(speaker))
+    plan = plan_for(speaker)
+    observed = plan["targetState"]["observedState"]
+    assert observed["playbackSource"] == "RADIO"
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}", observed["mediaFingerprint"])
+    assert speaker.current_uri not in json.dumps(plan["targetState"])
+    result = execute(speaker, plan)
 
     assert speaker.queue == []
     assert speaker.current_uri == "x-sonosapi-stream:radio"
     assert speaker.music_source == "RADIO"
     assert result["queue"]["length"] == 0
     assert result["playback"]["state"] == "STOPPED"
+
+
+def test_changed_non_queue_media_identity_conflicts_before_mutation_without_uri_leak():
+    speaker = FakeSpeaker(queue=[], transport_state="STOPPED", queue_active=False)
+    plan = plan_for(speaker)
+    changed_uri = "x-sonosapi-stream:private-station?token=secret"
+    speaker.current_uri = changed_uri
+
+    with pytest.raises(PlanConflictError) as error:
+        execute(speaker, plan)
+
+    assert error.value.details == {"reason": "preflight_state_changed"}
+    assert changed_uri not in str(error.value)
+    assert changed_uri not in json.dumps(error.value.details)
+    assert speaker.clear_calls == 0
+
+
+def test_changed_non_queue_media_conflict_consumes_single_use_ticket():
+    speaker = FakeSpeaker(queue=[], transport_state="STOPPED", queue_active=False)
+
+    class Backend:
+        def inspect_apple_playlist_target(self, room_uid, playlist_name):
+            assert room_uid == speaker.uid
+            return inspect_apple_playlist_target(speaker, playlist_name)
+
+        def create_preflighted_apple_playlist(self, plan):
+            return execute(speaker, plan)
+
+    tickets = PlanTicketStore(token_factory=lambda: "media_change_ticket_12345678901234567890")
+    validation, creation = ApplePlaylistPlanService(Backend(), tickets=tickets).services()
+    preflight = validation.execute(
+        "playlist_plan.apple.validate",
+        {
+            "roomUid": "R1",
+            "playlistName": "AI Friday",
+            "mode": "save-only",
+            "tracks": [copy.deepcopy(TRACK_ONE), copy.deepcopy(TRACK_TWO)],
+        },
+        RequestContext(backend_revision=7),
+    )
+    speaker.current_uri = "x-sonosapi-stream:changed-after-approval"
+
+    with pytest.raises(PlanConflictError, match="state changed"):
+        creation.execute(
+            "playlists.apple.create",
+            {"planToken": preflight["planToken"], "approved": True},
+            RequestContext(backend_revision=7),
+        )
+    assert speaker.clear_calls == 0
+    with pytest.raises(PlanConflictError, match="already used"):
+        creation.execute(
+            "playlists.apple.create",
+            {"planToken": preflight["planToken"], "approved": True},
+            RequestContext(backend_revision=7),
+        )
+
+
+@pytest.mark.parametrize("transport_state", ("STOPPED", "PLAYING"))
+def test_queue_uri_makes_unknown_coarse_source_eligible_and_restorable(transport_state):
+    speaker = FakeSpeaker(
+        queue=original_queue(),
+        position=1,
+        transport_state=transport_state,
+        queue_active=True,
+    )
+    speaker.music_source = "UNKNOWN"
+    plan = plan_for(speaker)
+
+    observed = plan["targetState"]["observedState"]
+    assert observed["playbackSource"] == "QUEUE"
+    assert speaker.current_uri not in json.dumps(observed)
+    result = execute(speaker, plan)
+
+    assert result["playback"]["source"] == "QUEUE"
+    assert speaker.current_position == 1
+    assert speaker.transport_state == transport_state
+
+
+def test_non_queue_unknown_or_unbounded_source_remains_ineligible_without_leak():
+    for source in ("UNKNOWN", "x-sonosapi-stream:private?token=secret"):
+        speaker = FakeSpeaker(queue=[], transport_state="STOPPED", queue_active=False)
+        speaker.music_source = source
+        with pytest.raises(PlanConflictError, match="source must be known") as error:
+            inspect_apple_playlist_target(speaker, "AI Friday")
+        assert source not in str(error.value)
+        assert speaker.clear_calls == 0
 
 
 def test_queue_at_supported_backup_limit_is_accepted():
@@ -550,7 +651,7 @@ def test_changed_preflight_state_requires_a_fresh_plan_without_mutation(change):
     assert speaker.clear_calls == 0
 
 
-def test_playlist_create_failure_restores_original_queue_and_reports_rollback():
+def test_playlist_create_failure_restores_queue_but_reports_unattributable_cleanup():
     speaker = FakeSpeaker(queue=original_queue(), position=1, transport_state="PLAYING")
     plan = plan_for(speaker)
     speaker.fail_create = True
@@ -561,10 +662,11 @@ def test_playlist_create_failure_restores_original_queue_and_reports_rollback():
         "phase": "playlist_creation",
         "rollback": {
             "attempted": True,
-            "playlistRemoved": True,
+            "playlistRemoved": False,
+            "playlistCleanupRequired": True,
             "queueRestored": True,
             "environmentUnchanged": True,
-            "succeeded": True,
+            "succeeded": False,
         },
     }
     assert [item.title for item in speaker.queue] == ["Original 1", "Original 2"]
@@ -583,6 +685,7 @@ def test_saved_playlist_verification_failure_removes_partial_and_restores(failur
         execute(speaker, plan)
     assert error.value.details["phase"] == "playlist_verification"
     assert error.value.details["rollback"]["succeeded"] is True
+    assert error.value.details["rollback"]["playlistCleanupRequired"] is False
     assert speaker.playlists == {}
     assert [item.title for item in speaker.queue] == ["Original 1", "Original 2"]
 
@@ -627,14 +730,65 @@ def test_reopen_failure_removes_exact_new_playlist_and_restores():
     assert speaker.playlists == {}
 
 
-def test_partial_create_failure_finds_and_removes_only_new_exact_playlist():
+def test_create_succeeding_remotely_without_returned_id_never_guesses_cleanup_ownership():
     speaker = FakeSpeaker(queue=original_queue())
     plan = plan_for(speaker)
     speaker.partial_create_failure = True
     with pytest.raises(PlaylistTransactionError) as error:
         execute(speaker, plan)
-    assert error.value.details["rollback"]["playlistRemoved"] is True
-    assert speaker.playlists == {}
+    rollback = error.value.details["rollback"]
+    assert rollback["playlistRemoved"] is False
+    assert rollback["playlistCleanupRequired"] is True
+    assert rollback["queueRestored"] is True
+    assert rollback["succeeded"] is False
+    assert set(speaker.playlists) == {"SQ:1"}
+
+
+def test_concurrent_same_name_during_queue_construction_is_never_deleted():
+    speaker = FakeSpeaker(queue=original_queue())
+    plan = plan_for(speaker)
+    speaker.concurrent_playlist_during_queue = True
+    speaker.wrong_insert_position = True
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    rollback = error.value.details["rollback"]
+    assert error.value.details["phase"] == "queue_construction"
+    assert rollback["playlistRemoved"] is False
+    assert rollback["playlistCleanupRequired"] is False
+    assert rollback["succeeded"] is True
+    assert set(speaker.playlists) == {"SQ:99"}
+
+
+def test_same_name_created_after_preflight_conflicts_without_mutation_or_deletion():
+    speaker = FakeSpeaker(queue=original_queue())
+    plan = plan_for(speaker)
+    unrelated = SimpleNamespace(item_id="SQ:99", title="AI Friday")
+    speaker.playlists[unrelated.item_id] = unrelated
+    speaker.playlist_tracks[unrelated.item_id] = []
+
+    with pytest.raises(PlanConflictError, match="exact name"):
+        execute(speaker, plan)
+
+    assert speaker.clear_calls == 0
+    assert set(speaker.playlists) == {"SQ:99"}
+
+
+def test_unattributable_cleanup_leaves_every_ambiguous_playlist_untouched():
+    speaker = FakeSpeaker(queue=original_queue())
+    plan = plan_for(speaker)
+    speaker.concurrent_playlist_during_queue = True
+    speaker.partial_create_failure = True
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    rollback = error.value.details["rollback"]
+    assert rollback["playlistRemoved"] is False
+    assert rollback["playlistCleanupRequired"] is True
+    assert rollback["succeeded"] is False
+    assert set(speaker.playlists) == {"SQ:1", "SQ:99"}
 
 
 def test_exact_name_race_aborts_without_deleting_the_unrelated_playlist():
@@ -645,7 +799,26 @@ def test_exact_name_race_aborts_without_deleting_the_unrelated_playlist():
         execute(speaker, plan)
     assert error.value.details["phase"] == "playlist_verification"
     assert error.value.details["rollback"]["succeeded"] is True
+    assert error.value.details["rollback"]["playlistRemoved"] is True
+    assert error.value.details["rollback"]["playlistCleanupRequired"] is False
     assert set(speaker.playlists) == {"SQ:99"}
+
+
+def test_create_returning_an_original_playlist_id_is_never_cleanup_owned():
+    speaker = FakeSpeaker(queue=original_queue())
+    original = SimpleNamespace(item_id="SQ:1", title="Existing playlist")
+    speaker.playlists[original.item_id] = original
+    speaker.playlist_tracks[original.item_id] = [queue_item("P:old", "Old playlist item")]
+    plan = plan_for(speaker)
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    rollback = error.value.details["rollback"]
+    assert rollback["playlistRemoved"] is False
+    assert rollback["playlistCleanupRequired"] is True
+    assert rollback["succeeded"] is False
+    assert set(speaker.playlists) == {"SQ:1"}
 
 
 def test_topology_change_during_mutation_aborts_and_is_not_claimed_restored():
@@ -738,6 +911,7 @@ def test_playlist_cleanup_failure_is_reported_as_incomplete_rollback():
         execute(speaker, plan)
     rollback = error.value.details["rollback"]
     assert rollback["playlistRemoved"] is False
+    assert rollback["playlistCleanupRequired"] is True
     assert rollback["queueRestored"] is True
     assert rollback["succeeded"] is False
 
@@ -771,7 +945,6 @@ def test_internal_room_or_mode_mismatch_still_cannot_start_mutation():
         ("source-kind", "playback source"),
         ("position", "queue position"),
         ("transport", "playing state"),
-        ("source", "playback source"),
     ),
 )
 def test_restoration_verification_rejects_each_changed_authoritative_fact(change, message):
@@ -786,8 +959,6 @@ def test_restoration_verification_rejects_each_changed_authoritative_fact(change
         speaker.current_position = 0
     elif change == "transport":
         speaker.transport_state = "PLAYING"
-    else:
-        speaker.music_source = "OTHER"
     with pytest.raises(QueueStateError, match=message):
         verify_restored_queue(speaker, expected)
 
@@ -796,5 +967,23 @@ def test_non_queue_restoration_verifies_exact_media_identity():
     speaker = FakeSpeaker(queue=[], transport_state="STOPPED", queue_active=False)
     expected = capture_queue_backup(speaker)
     speaker.current_uri = "x-sonosapi-stream:another-radio"
-    with pytest.raises(QueueStateError, match="non-queue source"):
+    with pytest.raises(QueueStateError, match="exact playback source"):
+        verify_restored_queue(speaker, expected)
+
+
+def test_queue_restoration_verifies_exact_queue_uri_not_coarse_source():
+    speaker = FakeSpeaker(queue=original_queue(), position=0, queue_active=True)
+    speaker.music_source = "UNKNOWN"
+    expected = capture_queue_backup(speaker)
+    assert expected.source == "QUEUE"
+    speaker.current_uri = "x-rincon-queue:ANOTHER_ROOM#0"
+    with pytest.raises(QueueStateError, match="exact playback source"):
+        verify_restored_queue(speaker, expected)
+
+
+def test_non_queue_restoration_verifies_bounded_coarse_source_fact():
+    speaker = FakeSpeaker(queue=[], transport_state="STOPPED", queue_active=False)
+    expected = capture_queue_backup(speaker)
+    speaker.music_source = "WEB_FILE"
+    with pytest.raises(QueueStateError, match="playback source"):
         verify_restored_queue(speaker, expected)
