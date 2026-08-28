@@ -9,6 +9,9 @@
   order/identities, shares the bounded queue backup policy, and reports
   authoritative rollback evidence. Native Apple export and external MCP
   exposure remain deliberately separate/deferred boundaries.
+- Bound the exact current media source into Apple playlist plans through a safe
+  SHA-256 marker, recognize queue-active URIs despite coarse SoCo `UNKNOWN`, and
+  require a create-returned `SQ:<id>` before rollback can delete a playlist.
 - Replaced every one-shot QML command with one canonical versioned persistent
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,

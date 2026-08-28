@@ -68,9 +68,12 @@ substitutes a catalog result based on display metadata.
 
 Preflight authoritatively checks the exact room and topology, the complete
 restorable queue (maximum 100 items), queue position and revision/fingerprint,
-transport and source, room/group volume and mute, required capabilities, the
-Sonos Playlist inventory, name collision, ordered identities, duplicate policy,
-and total duration. Its response includes the exact review, expected side
+transport and source, a SHA-256 media-identity fingerprint, room/group volume
+and mute, required capabilities, the Sonos Playlist inventory, name collision,
+ordered identities, duplicate policy, and total duration. The raw Sonos media
+URI is never returned. An `x-rincon-queue:` current URI authoritatively projects
+`QUEUE` even when pinned SoCo's coarse source is `UNKNOWN`; non-queue `UNKNOWN`
+remains ineligible. The response includes the exact review, expected side
 effects, and a random opaque plan token that expires after at most 120 seconds.
 The initial restoration contract accepts an authoritatively `PLAYING` or
 `STOPPED` transport; paused, transitioning, unknown, oversized, or otherwise
@@ -78,11 +81,12 @@ unrestorable state requires a safe state before preflight can succeed.
 
 The token is memory-only, process-local, single-use, and atomically consumed
 before mutation. It binds the operation, backend revision, exact room,
-topology, queue identity/order and length, transport/source, volume/mute,
-capabilities, playlist inventory and name, mode, duplicate policy, ordered
-canonical songs, expiry, and random nonce. It proves recent validation, not
-human approval. A backend restart, replay, expiry, newer backend revision, or
-changed authoritative target state requires a new preflight.
+topology, queue identity/order and length, transport/source, exact hashed media
+identity, volume/mute, capabilities, playlist inventory and name, mode,
+duplicate policy, ordered canonical songs, expiry, and random nonce. It proves
+recent validation, not human approval. A backend restart, replay, expiry, newer
+backend revision, or changed authoritative target state requires a new
+preflight.
 
 `playlists.apple.create` is the corresponding write. Its arguments are exactly:
 
@@ -105,10 +109,14 @@ collisions are never overwritten or deleted.
   position, source, and exact `PLAYING`/`STOPPED` state.
 - `save-and-play` starts queue item 1 and leaves the approved queue active.
 
-After a post-mutation failure, the transaction tries to remove only the exact
-new partial playlist and restore the prior queue/state. A safe structured error
-reports the controlled failure phase and Boolean rollback evidence; it never
-contains an exception, address, token, DIDL, URI, or raw service metadata.
+After a post-mutation failure, the transaction removes a partial playlist only
+when the create invocation returned a valid new `SQ:<id>` and that exact ID
+still resolves to the invocation's expected playlist. It never infers ownership
+from a new name. If creation might have succeeded without returning an
+attributable ID, every candidate is left untouched and
+`playlistCleanupRequired` is `true`. A safe structured error reports the
+controlled failure phase and bounded rollback evidence; it never contains an
+exception, address, token, DIDL, URI, or raw service metadata.
 
 `alarms.save` carries both the selected anchor `roomUid` and the requested
 `alarmRoomUid`. The backend accepts the target only when it is currently
@@ -159,7 +167,8 @@ Messages are safe for direct display. They never contain raw exceptions,
 private addresses, credentials, or service metadata.
 Transactional failures may additionally contain a bounded `details` object,
 for example `phase` plus `rollback.attempted`, `playlistRemoved`,
-`queueRestored`, `environmentUnchanged`, and `succeeded`.
+`playlistCleanupRequired`, `queueRestored`, `environmentUnchanged`, and
+`succeeded`.
 
 ## Snapshot
 

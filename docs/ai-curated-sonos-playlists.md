@@ -16,6 +16,10 @@ The AI client still owns curation: interpreting the request, choosing exact
 catalogue versions, and presenting the ordered review. Sonarchy owns exact
 room identity, Apple song/link validation, duplicates, bounds, freshness,
 queue safety, Sonos Playlist persistence, playback, verification, and rollback.
+Preflight binds a safe SHA-256 fingerprint of the exact current media URI, not
+the URI itself. A current `x-rincon-queue:` URI is authoritative `QUEUE` even
+when the pinned SoCo coarse classifier says `UNKNOWN`; other unknown sources
+remain ineligible.
 
 The initial modes are:
 
@@ -27,6 +31,12 @@ The initial modes are:
 Temporary play without saving is intentionally deferred. Sonos Playlist
 creation is create-only: an exact existing name is rejected with a
 deterministic suggestion and is never overwritten or deleted.
+Rollback removes a partial playlist only through the exact new `SQ:<id>`
+returned by this transaction's create call and confirmed in the authoritative
+inventory. A matching new title is never treated as ownership. If the create
+call might have succeeded without returning an attributable ID, Sonarchy
+restores what it can, leaves every playlist untouched, and reports that cleanup
+is still required.
 
 Every track must contain a bounded decimal Apple catalogue song ID, the exact
 public Apple Music share URL, title, artist, album, and duration. Sonarchy

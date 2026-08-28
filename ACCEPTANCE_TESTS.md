@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 406 automated Python tests pass with 86% branch coverage, alongside
+- [x] All 417 automated Python tests pass with 86% branch coverage, alongside
   32 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
@@ -82,16 +82,19 @@ an existing name.
 
 1. Resolve one exact standalone room UID; record its name only as supporting
    evidence. Confirm its sole member and coordinator are that UID.
-2. Record authoritative room/group volume and mute, transport and source,
-   current item when present, complete queue identities/order/length/update
-   marker, active position, and every existing Sonos Playlist ID/name.
+2. Record authoritative room/group volume and mute, transport and bounded
+   source, the safe current-media fingerprint, current item when present,
+   complete queue identities/order/length/update marker, active position, and
+   every existing Sonos Playlist ID/name. Do not record the raw media URI.
 3. Confirm the queue contains no more than 100 items and every item is
    restorable. A stopped transport is not required to retain a current-item
    marker.
 4. Submit `playlist_plan.apple.validate` in `save-only` mode. Confirm the
-   returned room/topology, queue, transport/source, volume/mute, positive
-   capabilities, exact ordered canonical `song:<id>` values, total duration,
-   unique name, side effects, expiry, and approval requirement.
+   returned room/topology, queue, transport/source and media fingerprint,
+   volume/mute, positive capabilities, exact ordered canonical `song:<id>`
+   values, total duration, unique name, side effects, expiry, and approval
+   requirement. A queue-active URI may safely project `QUEUE` even if the coarse
+   source probe reports `UNKNOWN`; an unverified non-queue `UNKNOWN` must fail.
 5. Stop. Obtain explicit owner approval for the one token-only write.
 
 ### Stage 2: save only
@@ -106,6 +109,8 @@ an existing name.
    changed and no playback started prematurely.
 4. Verify every unrelated Sonos Playlist ID/name/content remains unchanged.
 5. Retain the disposable playlist until cleanup receives separate approval.
+   Any failure without an exact create-returned playlist ID must leave all
+   candidates untouched and report `playlistCleanupRequired: true`.
 
 ### Stage 3: save and play plus natural progression
 

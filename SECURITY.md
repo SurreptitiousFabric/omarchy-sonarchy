@@ -76,15 +76,20 @@ There is no REST API, browser UI, or listener on port 8000.
   shell, or protocol-execution operation is exposed.
 - Playlist plan tokens are random, opaque, memory-only, process-local,
   single-use, and valid for no more than two minutes. They bind authoritative
-  room/topology, queue identity/order and length, transport/source,
-  volume/mute, capabilities, playlist inventory/name, mode, ordered song
-  identities, and backend revision. They are claimed before mutation and are
-  not a replacement for explicit client/user approval.
+  room/topology, queue identity/order and length, transport/source, a SHA-256
+  fingerprint of the exact current media URI, volume/mute, capabilities,
+  playlist inventory/name, mode, ordered song identities, and backend revision.
+  Raw media URIs are never projected. Tickets are claimed before mutation and
+  are not a replacement for explicit client/user approval.
 - Exact-song playlist construction shares the existing 100-item queue backup
   limit. It verifies the constructed queue and reopens the new Sonos Playlist;
   save-only also verifies complete queue/source/position/transport restoration.
-  Failure results contain controlled phases and Boolean recovery status, never
-  raw exceptions, addresses, DIDL, provider URIs, credentials, or tokens.
+  Rollback deletes a partial playlist only by a validated new `SQ:<id>` returned
+  by that create invocation; title-only ownership is forbidden. Missing or
+  ambiguous identity leaves every candidate untouched and reports required
+  cleanup. Failure results contain controlled phases and bounded recovery
+  status, never raw exceptions, addresses, DIDL, provider URIs, credentials, or
+  tokens.
 - Alarms returned to QML contain a human label, not their potentially
   credential-bearing program URI or service metadata.
 - No service or account credentials are requested, logged, or stored.

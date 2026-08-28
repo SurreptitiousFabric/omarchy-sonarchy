@@ -119,13 +119,18 @@ Playlist construction/reopen verification. `domains/queue_transaction.py`
 owns the shared 100-item backup, fingerprints, restoration, and authoritative
 restoration checks used by both ordinary queue replacement and Apple plans.
 Neither Apple/SoCo objects nor queue backup objects cross the protocol.
+The target projection binds only a SHA-256 fingerprint of the exact current
+media URI. An exact `x-rincon-queue:` URI overrides SoCo's coarse `UNKNOWN`
+classification as verified `QUEUE`; no raw URI crosses the boundary.
 
 The transaction deliberately creates a Sonos Playlist, not a native Apple
 Music playlist. `save-only` temporarily constructs and verifies the approved
 queue, saves and reopens the playlist, then restores the original queue and
 transport. `save-and-play` performs the same save verification, starts item 1,
 and leaves the approved queue active. Failures after the first mutation attempt
-one shared rollback path and expose only bounded rollback evidence.
+one shared rollback path and expose only bounded rollback evidence. Playlist
+rollback requires the exact new `SQ:<id>` returned by the create invocation and
+never claims ownership from title or inventory difference alone.
 
 ## AI and MCP boundary
 

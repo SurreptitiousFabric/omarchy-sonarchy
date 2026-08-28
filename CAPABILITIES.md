@@ -25,8 +25,8 @@ reviewers and users do not need to infer them from the code.
 
 When at least one room is authoritatively available, snapshots now advertise:
 
-- `playlist_plan.apple.validate`: read-only exact-room, queue, topology,
-  playlist-name, capability, and Apple-song preflight; and
+- `playlist_plan.apple.validate`: read-only exact-room, queue, topology, hashed
+  media identity, playlist-name, capability, and Apple-song preflight; and
 - `playlists.apple.create`: the explicitly approved, token-only create/save
   transaction.
 
