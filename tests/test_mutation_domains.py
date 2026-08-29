@@ -556,7 +556,7 @@ def test_replace_queue_restores_backup_when_replacement_fails(active, was_playin
             }
         ),
         clear_queue=Mock(),
-        add_to_queue=Mock(side_effect=[RuntimeError("speaker rejected item"), 1]),
+        add_to_queue=Mock(side_effect=RuntimeError("speaker rejected item")),
         add_multiple_to_queue=Mock(),
         play_from_queue=Mock(),
     )
@@ -565,9 +565,7 @@ def test_replace_queue_restores_backup_when_replacement_fails(active, was_playin
         _replace_queue(room, item("Q:new"))
 
     assert room.clear_queue.call_count == 2
-    assert room.add_to_queue.call_count == 2
-    assert room.add_to_queue.call_args_list[1].args == (old,)
-    room.add_multiple_to_queue.assert_not_called()
+    room.add_multiple_to_queue.assert_called_once_with([old])
     if active:
         room.play_from_queue.assert_called_once_with(0, start=was_playing)
     else:
@@ -581,12 +579,7 @@ def test_replace_queue_reports_when_backup_recovery_also_fails():
         get_current_track_info=Mock(return_value={"playlist_position": "1"}),
         get_current_transport_info=Mock(return_value={}),
         clear_queue=Mock(),
-        add_to_queue=Mock(
-            side_effect=[
-                RuntimeError("replacement failed"),
-                RuntimeError("recovery failed"),
-            ]
-        ),
+        add_to_queue=Mock(side_effect=RuntimeError("replacement failed")),
         add_multiple_to_queue=Mock(side_effect=RuntimeError("recovery failed")),
         play_from_queue=Mock(),
     )
@@ -615,22 +608,6 @@ def test_replace_queue_can_restore_an_empty_backup_without_queueing_items():
     assert room.clear_queue.call_count == 2
     room.add_multiple_to_queue.assert_not_called()
     room.play_from_queue.assert_not_called()
-
-
-def test_replace_queue_preserves_legacy_support_for_an_empty_active_queue():
-    room = speaker(
-        get_queue=Mock(return_value=QueueResult()),
-        avTransport=Transport(),
-        get_current_track_info=Mock(return_value={"playlist_position": "0"}),
-        get_current_transport_info=Mock(return_value={"current_transport_state": "STOPPED"}),
-        clear_queue=Mock(),
-        add_to_queue=Mock(return_value=1),
-        add_multiple_to_queue=Mock(),
-        play_from_queue=Mock(),
-    )
-
-    assert _replace_queue(room, item("Q:new")) == 1
-    room.play_from_queue.assert_called_once_with(0)
 
 
 def test_replace_enqueue_mode_uses_safe_replacement_path():

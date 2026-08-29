@@ -56,6 +56,12 @@ class SonarchyApplication:
             if service.mutates and service.conditional_mutation
             for operation in service.operations
         )
+        self.non_refreshing_mutating_operations = frozenset(
+            operation
+            for service in self.services
+            if service.mutates and not service.refresh_after_mutation
+            for operation in service.operations
+        )
 
     def execute(
         self,
@@ -79,6 +85,9 @@ class SonarchyApplication:
 
     def mutation_is_conditional(self, operation: str) -> bool:
         return operation in self.conditional_mutating_operations
+
+    def refreshes_after_mutation(self, operation: str) -> bool:
+        return operation not in self.non_refreshing_mutating_operations
 
     def refresh(self, *, rediscover: bool = True) -> dict[str, Any]:
         return self.backend.refresh(rediscover=rediscover)

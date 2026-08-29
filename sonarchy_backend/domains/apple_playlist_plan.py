@@ -30,7 +30,7 @@ PLAN_TICKET_TTL_SEC = 120
 MAX_PENDING_PLAN_TICKETS = 256
 MAX_CONSUMED_PLAN_TICKETS = 1024
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{16,256}")
-PLAN_MODES = frozenset({"save-only", "save-and-play"})
+PLAN_MODES = frozenset({"save-only"})
 TRACK_FIELDS = frozenset({"catalogId", "url", "title", "artist", "album", "durationMs"})
 
 
@@ -53,7 +53,6 @@ class AppleSongPlanItem:
             "catalogId": self.catalog_id,
             "canonicalContentType": "song",
             "canonicalIdentity": self.canonical_identity,
-            "url": self.url,
             "title": self.title,
             "artist": self.artist,
             "album": self.album,
@@ -282,6 +281,7 @@ class ApplePlaylistPlanService:
         create = DomainService(
             {},
             conditional_mutation=True,
+            refresh_after_mutation=False,
             contextual_handlers={"playlists.apple.create": self.create},
         )
         return validate, create
@@ -298,13 +298,6 @@ class ApplePlaylistPlanService:
         allow_duplicates = bool_arg(args, "allowDuplicates") if "allowDuplicates" in args else False
         tracks = validate_apple_song_items(args.get("tracks"), allow_duplicates=allow_duplicates)
         target_state = self.backend.inspect_apple_playlist_target(room_uid, playlist_name)
-        observed_state = target_state.get("observedState") or {}
-        playback_source = observed_state.get("playbackSource")
-        queue_active = (observed_state.get("queue") or {}).get("active")
-        if mode == "save-and-play" and (playback_source != "QUEUE" or queue_active is not True):
-            raise PlanConflictError(
-                "Save and play requires an active Sonos queue so failure recovery is exact"
-            )
         fingerprint = _plan_fingerprint(
             room_uid=room_uid,
             playlist_name=playlist_name,
@@ -327,13 +320,12 @@ class ApplePlaylistPlanService:
         )
         ticket = self.tickets.issue(plan)
         side_effects = [
-            "Temporarily replace the target queue",
-            "Create one new Sonos Playlist",
+            "Create one new Sonos Playlist on success",
+            "Add the reviewed Apple songs directly to that saved playlist in order",
+            "Authoritatively reopen and verify the exact new Sonos Playlist",
+            "Do not change any room queue or start playback",
+            "A partial exact-ID playlist may briefly exist; exact cleanup is attempted on failure",
         ]
-        if mode == "save-only":
-            side_effects.append("Restore and verify the previous queue and playing state")
-        else:
-            side_effects.append("Leave the approved queue active and start track 1")
         review = {
             "ok": True,
             "operation": plan.operation,
@@ -347,6 +339,10 @@ class ApplePlaylistPlanService:
             "playlist": {"name": playlist_name, "collision": False},
             "mode": mode,
             "allowDuplicates": allow_duplicates,
+            "catalogueIdentityValidated": True,
+            "sonosAcceptance": "unproven_until_create",
+            "queueMutation": False,
+            "playbackMutation": False,
             "trackCount": len(tracks),
             "totalDurationMs": sum(track.duration_ms for track in tracks),
             "tracks": [track.public_value(index) for index, track in enumerate(tracks, 1)],

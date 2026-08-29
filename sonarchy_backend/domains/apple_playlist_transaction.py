@@ -3,36 +3,26 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from soco.exceptions import SoCoUPnPException
-from soco.plugins.sharelink import ShareLinkPlugin
 
-from .common import clean, coordinator_for, safe_call, safe_index
+from ..infrastructure.apple_saved_queue import DirectAppleSavedQueueAdapter
+from .apple_playlist_plan import validate_apple_song_items
+from .common import clean, safe_index
 from .errors import PlanConflictError, PlaylistTransactionError
 from .media import item_attr, validate_playlist_id
 from .playlist_rules import suggested_playlist_title, validate_playlist_title
-from .queue_transaction import (
-    MAX_RESTORABLE_QUEUE_ITEMS,
-    QueueBackup,
-    QueueRestoreError,
-    QueueStateError,
-    QueueVerificationError,
-    capture_queue_backup,
-    queue_backup_public_state,
-    read_complete_queue,
-    restore_queue,
-    verify_restored_queue,
-)
 
 MAX_SONOS_PLAYLISTS = 100
 MAX_TRANSACTION_PLAYLISTS = MAX_SONOS_PLAYLISTS + 1
-APPLE_CANONICAL_SONG_ID = re.compile(
-    r"song(?::|%3a)([1-9]\d{0,19})",
-    re.IGNORECASE,
-)
+MAX_APPLE_PLAYLIST_ITEMS = 25
+PLAYLIST_VISIBILITY_ATTEMPTS = 3
+PLAYLIST_VISIBILITY_DELAY_SEC = 0.05
+APPLE_CANONICAL_SONG_ID = re.compile(r"song(?::|%3a)([1-9]\d{0,19})", re.IGNORECASE)
 APPLE_SONOS_ITEM_ID = re.compile(
     r"10032020song(?::|%3a)([1-9]\d{0,19})",
     re.IGNORECASE,
@@ -47,6 +37,7 @@ SONOS_ERROR_CODE = re.compile(r"(?:\d{1,6}|[A-Z][A-Z0-9_]{0,31})")
 @dataclass(frozen=True)
 class PlaylistInventory:
     items: tuple[Any, ...]
+    entries: tuple[tuple[str, str], ...]
     ids: frozenset[str]
     titles: frozenset[str]
     fingerprint: str
@@ -55,29 +46,8 @@ class PlaylistInventory:
 @dataclass(frozen=True)
 class TargetCapture:
     state: dict[str, Any]
-    backup: QueueBackup
     playlists: PlaylistInventory
-
-
-class QueueConstructionError(ValueError):
-    """An internal construction failure carrying only bounded public evidence."""
-
-    def __init__(
-        self,
-        step: str,
-        *,
-        track_position: int | None = None,
-        canonical_identity: str | None = None,
-        sonos_error_code: str | None = None,
-    ) -> None:
-        super().__init__("The approved Apple queue could not be constructed")
-        self.diagnostics: dict[str, Any] = {"queueConstructionStep": step}
-        if track_position is not None:
-            self.diagnostics["failedTrackPosition"] = track_position
-        if canonical_identity is not None:
-            self.diagnostics["failedCanonicalIdentity"] = canonical_identity
-        if sonos_error_code is not None:
-            self.diagnostics["sonosErrorCode"] = sonos_error_code
+    coordinator: Any
 
 
 def _fingerprint(value: Any) -> str:
@@ -85,68 +55,46 @@ def _fingerprint(value: Any) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _safe_uid(value: Any) -> str:
-    uid = clean(value)
-    if not uid or len(uid) > 128 or any(ord(character) < 32 for character in uid):
-        raise PlanConflictError("The exact Sonos room identity could not be verified")
-    return uid
+def _safe_identity(value: Any, label: str) -> str:
+    identity = clean(value)
+    if not identity or len(identity) > 128 or any(ord(character) < 32 for character in identity):
+        raise PlanConflictError(f"The exact Sonos {label} could not be verified")
+    return identity
 
 
-def _target_topology(speaker: Any) -> dict[str, Any]:
-    room_uid = _safe_uid(getattr(speaker, "uid", ""))
+def _anchor_state(speaker: Any) -> tuple[dict[str, str], Any]:
+    room_uid = _safe_identity(getattr(speaker, "uid", ""), "room identity")
     try:
         group = speaker.group
+        coordinator = (
+            getattr(group, "coordinator", None) if group is not None else None
+        ) or speaker
     except Exception as exc:
-        raise PlanConflictError("The Sonos room topology could not be verified") from exc
+        raise PlanConflictError("The exact Sonos coordinator could not be verified") from exc
+    coordinator_uid = _safe_identity(
+        getattr(coordinator, "uid", ""),
+        "coordinator identity",
+    )
     try:
-        coordinator = getattr(group, "coordinator", None) if group is not None else speaker
-        coordinator = coordinator or speaker
-        coordinator_uid = _safe_uid(getattr(coordinator, "uid", ""))
-        raw_members = getattr(group, "members", None) if group is not None else None
-        members = list(raw_members or [speaker])
+        room_household = _safe_identity(speaker.household_id, "household identity")
+        coordinator_household = _safe_identity(
+            coordinator.household_id,
+            "household identity",
+        )
+    except PlanConflictError:
+        raise
     except Exception as exc:
-        raise PlanConflictError("The Sonos room topology could not be verified") from exc
-    member_uids = sorted({_safe_uid(getattr(member, "uid", "")) for member in members})
-    if room_uid not in member_uids or coordinator_uid not in member_uids:
-        raise PlanConflictError("The Sonos room topology is internally inconsistent")
-    binding = {
-        "roomUid": room_uid,
-        "coordinatorUid": coordinator_uid,
-        "memberUids": member_uids,
-    }
-    return {
-        **binding,
-        "standalone": len(member_uids) == 1,
-        "topologyFingerprint": f"sha256:{_fingerprint(binding)}",
-    }
-
-
-def _bounded_volume(target: Any, label: str) -> int:
-    volume = safe_index(safe_call(lambda: target.volume, -1), -1)
-    if not 0 <= volume <= 100:
-        raise PlanConflictError(f"The {label} volume could not be verified")
-    return volume
-
-
-def _bounded_mute(target: Any, label: str) -> bool:
-    try:
-        mute = target.mute
-    except Exception as exc:
-        raise PlanConflictError(f"The {label} mute state could not be verified") from exc
-    if not isinstance(mute, bool):
-        raise PlanConflictError(f"The {label} mute state could not be verified")
-    return mute
-
-
-def _mixer_state(speaker: Any, coordinator: Any) -> dict[str, Any]:
-    group = safe_call(lambda: speaker.group, None)
-    group_target = group or coordinator
-    return {
-        "roomVolume": _bounded_volume(speaker, "room"),
-        "roomMuted": _bounded_mute(speaker, "room"),
-        "groupVolume": _bounded_volume(group_target, "group"),
-        "groupMuted": _bounded_mute(group_target, "group"),
-    }
+        raise PlanConflictError("The exact Sonos household identity could not be verified") from exc
+    if room_household != coordinator_household:
+        raise PlanConflictError("The Sonos room and coordinator household identities differ")
+    return (
+        {
+            "uid": room_uid,
+            "coordinatorUid": coordinator_uid,
+            "householdFingerprint": f"sha256:{_fingerprint(room_household)}",
+        },
+        coordinator,
+    )
 
 
 def _playlist_inventory(
@@ -162,58 +110,49 @@ def _playlist_inventory(
     total = safe_index(item_attr(result, "total_matches", len(items)), len(items))
     if total != len(items) or total > maximum:
         raise PlanConflictError("There are too many Sonos Playlists to check safely")
-    projection: list[dict[str, str]] = []
-    ids: set[str] = set()
-    titles: set[str] = set()
+    entries: list[tuple[str, str]] = []
     for item in items:
-        item_id = clean(item_attr(item, "item_id"))
-        title = clean(item_attr(item, "title"))
-        if item_id:
-            ids.add(item_id)
-        if title:
-            titles.add(title)
-        projection.append({"id": item_id, "title": title})
+        try:
+            playlist_id = validate_playlist_id(item_attr(item, "item_id"))
+            title = validate_playlist_title(item_attr(item, "title"))
+        except ValueError as exc:
+            raise PlanConflictError(
+                "The Sonos Playlist inventory is not safely identifiable"
+            ) from exc
+        entries.append((playlist_id, title))
+    if len({playlist_id for playlist_id, _title in entries}) != len(entries):
+        raise PlanConflictError("The Sonos Playlist inventory contains duplicate identities")
+    ordered = tuple(sorted(entries))
     return PlaylistInventory(
         items=tuple(items),
-        ids=frozenset(ids),
-        titles=frozenset(titles),
-        fingerprint=_fingerprint(projection),
+        entries=ordered,
+        ids=frozenset(playlist_id for playlist_id, _title in ordered),
+        titles=frozenset(title for _playlist_id, title in ordered),
+        fingerprint=_fingerprint(ordered),
     )
 
 
 def _required_capability(coordinator: Any) -> bool:
     methods = (
-        "get_queue",
-        "clear_queue",
-        "add_to_queue",
-        "play_from_queue",
         "get_sonos_playlists",
-        "create_sonos_playlist_from_queue",
+        "create_sonos_playlist",
         "get_sonos_playlist_by_attr",
         "remove_sonos_playlist",
     )
-    library = getattr(coordinator, "music_library", None)
-    return all(callable(getattr(coordinator, method, None)) for method in methods) and callable(
-        getattr(library, "browse", None)
-    )
+    if not all(callable(getattr(coordinator, method, None)) for method in methods):
+        return False
+    try:
+        DirectAppleSavedQueueAdapter(coordinator)
+    except Exception:  # noqa: BLE001 - capability failure is deliberately collapsed
+        return False
+    return True
 
 
 def _capture_target(speaker: Any, playlist_name: str) -> TargetCapture:
-    topology = _target_topology(speaker)
-    coordinator = coordinator_for(speaker)
-    if _safe_uid(getattr(coordinator, "uid", "")) != topology["coordinatorUid"]:
-        raise PlanConflictError("The Sonos coordinator changed during validation")
+    room, coordinator = _anchor_state(speaker)
     if not _required_capability(coordinator):
-        raise PlanConflictError("This Sonos target cannot safely create an Apple playlist")
-    try:
-        backup = capture_queue_backup(coordinator)
-    except QueueStateError as exc:
-        raise PlanConflictError(str(exc)) from exc
-    except Exception as exc:
-        raise PlanConflictError("The current queue state could not be read safely") from exc
-    if backup.transport_state not in {"PLAYING", "STOPPED"} or backup.source == "UNKNOWN":
         raise PlanConflictError(
-            "The current source must be known and transport must be playing or stopped"
+            "This Sonos household cannot create direct Apple Sonos Playlists safely"
         )
     playlists = _playlist_inventory(coordinator)
     if len(playlists.items) >= MAX_SONOS_PLAYLISTS:
@@ -226,40 +165,25 @@ def _capture_target(speaker: Any, playlist_name: str) -> TargetCapture:
             "A Sonos Playlist with that exact name already exists",
             details={"suggestedPlaylistName": suggestion},
         )
-    mixer = _mixer_state(speaker, coordinator)
-    queue_state = queue_backup_public_state(backup)
     observed = {
-        "topologyFingerprint": topology["topologyFingerprint"],
-        "queue": queue_state,
-        "transportState": backup.transport_state,
-        "playbackSource": backup.source,
-        "mediaFingerprint": backup.media_marker,
-        "volume": {
-            "room": mixer["roomVolume"],
-            "group": mixer["groupVolume"],
-        },
-        "mute": {
-            "room": mixer["roomMuted"],
-            "group": mixer["groupMuted"],
-        },
-        "capabilities": ["playlist_plan.apple.validate", "playlists.apple.create"],
         "playlistCount": len(playlists.items),
         "playlistInventoryFingerprint": f"sha256:{playlists.fingerprint}",
-    }
-    room = {
-        "uid": topology["roomUid"],
-        "standalone": topology["standalone"],
-        "memberUids": topology["memberUids"],
-        "coordinatorUid": topology["coordinatorUid"],
+        "capabilities": [
+            "playlist_plan.apple.validate",
+            "playlists.apple.create",
+            "direct-apple-saved-queue",
+        ],
     }
     return TargetCapture(
         state={"room": room, "observedState": observed},
-        backup=backup,
         playlists=playlists,
+        coordinator=coordinator,
     )
 
 
 def inspect_apple_playlist_target(speaker: Any, playlist_name: str) -> dict[str, Any]:
+    """Capture only household anchor and Sonos Playlist state for create-only."""
+
     return _capture_target(speaker, playlist_name).state
 
 
@@ -299,37 +223,27 @@ def verify_apple_items(
         if not catalog_id or catalog_id != track["catalogId"]:
             raise ValueError(f"The {container} contains an unexpected Apple song identity")
         title = clean(item_attr(item, "title"))
-        artist = clean(item_attr(item, "creator"))
+        artist = clean(item_attr(item, "creator")) or clean(item_attr(item, "artist"))
         album = clean(item_attr(item, "album"))
-        if not title or not artist:
-            raise ValueError(f"The {container} did not provide title and artist evidence")
-        if not _metadata_matches(title, track["title"]) or not _metadata_matches(
-            artist, track["artist"]
+        if not title or not artist or not album:
+            raise ValueError(f"The {container} did not provide complete reviewed metadata")
+        if (
+            not _metadata_matches(title, track["title"])
+            or not _metadata_matches(artist, track["artist"])
+            or not _metadata_matches(album, track["album"])
         ):
             raise ValueError(f"The {container} metadata does not match the reviewed song")
-        if album and not _metadata_matches(album, track["album"]):
-            raise ValueError(f"The {container} album metadata does not match the reviewed song")
-        evidence = {
-            "position": position,
-            "catalogId": catalog_id,
-            "canonicalIdentity": f"song:{catalog_id}",
-            "title": track["title"],
-            "artist": track["artist"],
-            "album": track["album"] if album else "",
-        }
-        verified.append(evidence)
+        verified.append(
+            {
+                "position": position,
+                "catalogId": catalog_id,
+                "canonicalIdentity": f"song:{catalog_id}",
+                "title": track["title"],
+                "artist": track["artist"],
+                "album": track["album"],
+            }
+        )
     return verified
-
-
-def _queue_identity_evidence(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "position": item["position"],
-            "catalogId": item["catalogId"],
-            "canonicalIdentity": item["canonicalIdentity"],
-        }
-        for item in items
-    ]
 
 
 def _safe_sonos_error_code(error: Exception) -> str | None:
@@ -342,337 +256,285 @@ def _safe_sonos_error_code(error: Exception) -> str | None:
     return value if SONOS_ERROR_CODE.fullmatch(value) else None
 
 
-def _track_failure(
-    step: str,
-    track: dict[str, Any],
-    position: int,
+def _inventory_preserves_original(
+    current: PlaylistInventory,
+    original: PlaylistInventory,
     *,
-    error: Exception | None = None,
-) -> QueueConstructionError:
-    catalog_id = str(track["catalogId"])
-    return QueueConstructionError(
-        step,
-        track_position=position,
-        canonical_identity=f"song:{catalog_id}",
-        sonos_error_code=_safe_sonos_error_code(error) if error is not None else None,
-    )
+    owned_playlist_id: str = "",
+) -> bool:
+    current_entries = tuple(entry for entry in current.entries if entry[0] != owned_playlist_id)
+    return current_entries == original.entries
 
 
-def _construct_approved_queue(
-    coordinator: Any,
-    tracks: list[dict[str, Any]],
-    share_link_factory: Callable[..., Any],
-) -> None:
-    try:
-        share_links = share_link_factory(coordinator)
-    except Exception as exc:
-        raise QueueConstructionError("share_link_initialization") from exc
-    for expected_position, track in enumerate(tracks, 1):
-        try:
-            returned_position = share_links.add_share_link_to_queue(
-                track["url"],
-                dc_title=track["title"],
-            )
-        except Exception as exc:
-            raise _track_failure(
-                "enqueue",
-                track,
-                expected_position,
-                error=exc,
-            ) from exc
-        if not isinstance(returned_position, int) or isinstance(returned_position, bool):
-            raise _track_failure("position_decode", track, expected_position)
-        actual_position = returned_position
-        if actual_position != expected_position:
-            raise _track_failure("position_verify", track, expected_position)
-
-
-def _playlist_tracks(coordinator: Any, playlist: Any) -> list[Any]:
+def _browse_exact_playlist(coordinator: Any, playlist: Any) -> tuple[list[Any], int]:
     result = coordinator.music_library.browse(
         ml_item=playlist,
-        max_items=MAX_RESTORABLE_QUEUE_ITEMS,
+        start=0,
+        max_items=MAX_APPLE_PLAYLIST_ITEMS + 1,
+        full_album_art_uri=False,
     )
     items = list(result)
     total = safe_index(item_attr(result, "total_matches", len(items)), len(items))
-    if total != len(items) or total > MAX_RESTORABLE_QUEUE_ITEMS:
+    if total != len(items) or total > MAX_APPLE_PLAYLIST_ITEMS:
         raise ValueError("The saved Sonos Playlist could not be reopened completely")
-    return items
+    return items, total
 
 
-def _verify_environment(speaker: Any, expected_state: dict[str, Any]) -> None:
-    topology = _target_topology(speaker)
-    room = expected_state["room"]
-    if (
-        topology["roomUid"] != room["uid"]
-        or topology["coordinatorUid"] != room["coordinatorUid"]
-        or topology["memberUids"] != room["memberUids"]
-    ):
-        raise ValueError("The target room topology changed during the operation")
-    coordinator = coordinator_for(speaker)
-    mixer = _mixer_state(speaker, coordinator)
-    expected = expected_state["observedState"]
-    if (
-        mixer["roomVolume"] != expected["volume"]["room"]
-        or mixer["groupVolume"] != expected["volume"]["group"]
-        or mixer["roomMuted"] != expected["mute"]["room"]
-        or mixer["groupMuted"] != expected["mute"]["group"]
-    ):
-        raise ValueError("Volume or mute changed during the playlist operation")
-    if not _required_capability(coordinator):
-        raise ValueError("The target playlist capability changed during the operation")
-
-
-def _remove_partial_playlist(
+def _reopen_and_verify(
     coordinator: Any,
     *,
-    original_ids: frozenset[str],
-    created_playlist_id: str,
-    created_playlist_titles: frozenset[str],
-) -> bool:
-    playlist_id = validate_playlist_id(created_playlist_id)
-    if playlist_id in original_ids:
-        return False
-    playlist_titles = frozenset(validate_playlist_title(title) for title in created_playlist_titles)
-    if not playlist_titles:
-        return False
-    inventory = _playlist_inventory(coordinator, maximum=MAX_TRANSACTION_PLAYLISTS)
-    candidates = [
-        item
-        for item in inventory.items
-        if clean(item_attr(item, "item_id")) == playlist_id
-        and clean(item_attr(item, "title")) in playlist_titles
-    ]
-    if len(candidates) != 1:
-        return False
-    coordinator.remove_sonos_playlist(candidates[0])
-    after = _playlist_inventory(coordinator, maximum=MAX_TRANSACTION_PLAYLISTS)
-    return playlist_id not in after.ids
-
-
-def _rollback(
-    speaker: Any,
-    capture: TargetCapture,
-    *,
-    playlist_creation_attempted: bool,
-    created_playlist_id: str | None,
-    created_playlist_titles: frozenset[str],
-) -> dict[str, Any]:
-    coordinator = coordinator_for(speaker)
-    playlist_removed = False
-    playlist_cleanup_required = playlist_creation_attempted
-    queue_restored = False
-    environment_unchanged = False
-    queue_failure: dict[str, Any] = {}
-    if created_playlist_id is not None and created_playlist_titles:
+    playlist_id: str,
+    playlist_name: str,
+    tracks: list[dict[str, Any]],
+    attempts: int,
+    sleeper: Callable[[float], None],
+) -> tuple[Any, list[dict[str, Any]]]:
+    failure: Exception | None = None
+    for attempt in range(attempts):
         try:
-            playlist_removed = _remove_partial_playlist(
-                coordinator,
-                original_ids=capture.playlists.ids,
-                created_playlist_id=created_playlist_id,
-                created_playlist_titles=created_playlist_titles,
+            playlist = coordinator.get_sonos_playlist_by_attr("item_id", playlist_id)
+            if clean(item_attr(playlist, "title")) != playlist_name:
+                raise ValueError("The saved Sonos Playlist reopened with another name")
+            items, total = _browse_exact_playlist(coordinator, playlist)
+            if total != len(tracks):
+                raise ValueError("The saved Sonos Playlist has an unexpected item count")
+            return playlist, verify_apple_items(
+                items,
+                tracks,
+                container="saved Sonos Playlist",
             )
-            playlist_cleanup_required = not playlist_removed
-        except Exception:  # noqa: BLE001 - rollback reports only bounded booleans
-            playlist_removed = False
-            playlist_cleanup_required = True
-    try:
-        restore_queue(coordinator, capture.backup)
-    except QueueRestoreError as exc:
-        queue_failure["rollbackQueueStep"] = exc.step
-        if exc.item_position is not None:
-            queue_failure["rollbackFailedItemPosition"] = exc.item_position
-    except Exception:  # noqa: BLE001 - unexpected rollback errors expose no details
-        queue_failure = {}
-    else:
-        try:
-            verify_restored_queue(coordinator, capture.backup)
-            queue_restored = True
-        except QueueVerificationError as exc:
-            queue_failure = {
-                "rollbackQueueStep": "verification",
-                "rollbackVerificationReason": exc.reason,
-            }
-        except Exception:  # noqa: BLE001 - unexpected verification errors expose no details
-            queue_failure = {"rollbackQueueStep": "verification"}
-    try:
-        _verify_environment(speaker, capture.state)
-        environment_unchanged = True
-    except Exception:  # noqa: BLE001 - rollback reports only bounded booleans
-        environment_unchanged = False
-    succeeded = not playlist_cleanup_required and queue_restored and environment_unchanged
-    return {
-        "attempted": True,
-        "playlistRemoved": playlist_removed,
-        "playlistCleanupRequired": playlist_cleanup_required,
-        "queueRestored": queue_restored,
-        "environmentUnchanged": environment_unchanged,
-        "succeeded": succeeded,
-        **queue_failure,
-    }
+        except Exception as exc:  # noqa: BLE001 - bounded retry hides provider details
+            failure = exc
+            if attempt + 1 < attempts:
+                sleeper(PLAYLIST_VISIBILITY_DELAY_SEC)
+    raise ValueError("The saved Sonos Playlist could not be verified authoritatively") from failure
 
 
-def _verify_new_playlist_inventory(
+def _verify_created_inventory(
     coordinator: Any,
     *,
     original: PlaylistInventory,
     playlist_id: str,
     playlist_name: str,
-) -> None:
+) -> bool:
     inventory = _playlist_inventory(coordinator, maximum=MAX_TRANSACTION_PLAYLISTS)
-    matching_title = [
-        item for item in inventory.items if clean(item_attr(item, "title")) == playlist_name
+    expected_entry = (playlist_id, playlist_name)
+    return (
+        playlist_id not in original.ids
+        and inventory.entries.count(expected_entry) == 1
+        and len(inventory.entries) == len(original.entries) + 1
+        and _inventory_preserves_original(
+            inventory,
+            original,
+            owned_playlist_id=playlist_id,
+        )
+    )
+
+
+def _cleanup_owned_playlist(
+    coordinator: Any,
+    *,
+    original: PlaylistInventory,
+    playlist_id: str,
+    playlist_name: str,
+) -> tuple[bool, bool]:
+    if playlist_id in original.ids:
+        return False, False
+    inventory = _playlist_inventory(coordinator, maximum=MAX_TRANSACTION_PLAYLISTS)
+    candidates = [
+        item
+        for item in inventory.items
+        if clean(item_attr(item, "item_id")) == playlist_id
+        and clean(item_attr(item, "title")) == playlist_name
     ]
+    if len(candidates) != 1:
+        original_preserved = _inventory_preserves_original(
+            inventory,
+            original,
+            owned_playlist_id=playlist_id,
+        )
+        return playlist_id not in inventory.ids and original_preserved, original_preserved
+    reopened = coordinator.get_sonos_playlist_by_attr("item_id", playlist_id)
     if (
-        len(matching_title) != 1
-        or clean(item_attr(matching_title[0], "item_id")) != playlist_id
-        or playlist_id in original.ids
+        clean(item_attr(reopened, "item_id")) != playlist_id
+        or clean(item_attr(reopened, "title")) != playlist_name
     ):
-        raise ValueError("The new Sonos Playlist identity was not confirmed authoritatively")
+        return False, False
+    coordinator.remove_sonos_playlist(reopened)
+    after = _playlist_inventory(coordinator, maximum=MAX_TRANSACTION_PLAYLISTS)
+    return playlist_id not in after.ids, _inventory_preserves_original(after, original)
 
 
 def create_preflighted_apple_playlist(
     speaker: Any,
     plan: dict[str, Any],
     *,
-    share_link_factory: Callable[..., Any] = ShareLinkPlugin,
+    adapter_factory: Callable[[Any], Any] = DirectAppleSavedQueueAdapter,
+    verification_attempts: int = PLAYLIST_VISIBILITY_ATTEMPTS,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
     room_uid = str(plan["roomUid"])
-    playlist_name = str(plan["playlistName"])
-    mode = str(plan["mode"])
-    tracks = list(plan["tracks"])
+    try:
+        playlist_name = validate_playlist_title(plan["playlistName"])
+    except (KeyError, ValueError) as exc:
+        raise PlanConflictError("The playlist plan name is no longer valid") from exc
+    if plan.get("operation") != "playlists.apple.create" or plan.get("mode") != "save-only":
+        raise PlanConflictError("The playlist plan no longer matches create-only execution")
+    allow_duplicates = plan.get("allowDuplicates") is True
+    validated_tracks = validate_apple_song_items(
+        plan.get("tracks"),
+        allow_duplicates=allow_duplicates,
+    )
+    tracks = [track.backend_value() for track in validated_tracks]
     expected_state = dict(plan["targetState"])
-    if _safe_uid(getattr(speaker, "uid", "")) != room_uid:
+    if not 1 <= verification_attempts <= PLAYLIST_VISIBILITY_ATTEMPTS:
+        raise ValueError("Invalid saved-playlist verification retry policy")
+    if clean(getattr(speaker, "uid", "")) != room_uid:
         raise PlanConflictError("The exact target room no longer matches the playlist plan")
-    if mode not in {"save-only", "save-and-play"}:
-        raise PlanConflictError("The playlist plan mode no longer matches a supported operation")
     capture = _capture_target(speaker, playlist_name)
     if capture.state != expected_state:
         raise PlanConflictError(
-            "Room, topology, media, queue, transport, volume, mute, playlist, "
-            "or capability state changed",
+            "The room, household anchor, playlist inventory, or direct capability changed",
             details={"reason": "preflight_state_changed"},
         )
-    if mode == "save-and-play" and not capture.backup.queue_active:
-        raise PlanConflictError(
-            "Save and play requires an active Sonos queue so failure recovery is exact"
-        )
 
-    coordinator = coordinator_for(speaker)
-    phase = "queue_clear"
-    playlist_creation_attempted = False
-    created_playlist_id: str | None = None
-    created_playlist_titles: frozenset[str] = frozenset()
+    coordinator = capture.coordinator
+    adapter = adapter_factory(coordinator)
+    construction_step = "create"
+    failed_position: int | None = None
+    failed_identity: str | None = None
+    creation_attempted = False
+    attributable_playlist_id = ""
+    playlist_removed = False
+    pre_existing_unchanged = True
     try:
-        coordinator.clear_queue()
-        phase = "queue_construction"
-        _construct_approved_queue(coordinator, tracks, share_link_factory)
+        creation_attempted = True
+        created = coordinator.create_sonos_playlist(playlist_name)
+        created_playlist_id = validate_playlist_id(item_attr(created, "item_id"))
+        if created_playlist_id in capture.playlists.ids:
+            raise ValueError("Sonos returned a pre-existing Sonos Playlist identity")
+        attributable_playlist_id = created_playlist_id
 
-        phase = "queue_verification"
-        queue_items, queue_total, _queue_update = read_complete_queue(coordinator)
-        if queue_total != len(tracks):
-            raise ValueError("The approved Apple plan expanded to unexpected queue content")
-        queue_evidence = verify_apple_items(queue_items, tracks, container="constructed queue")
-
-        phase = "playlist_creation"
-        playlist_creation_attempted = True
-        created_playlist = coordinator.create_sonos_playlist_from_queue(playlist_name)
-        playlist_id = validate_playlist_id(item_attr(created_playlist, "item_id"))
-        created_playlist_id = playlist_id
-        created_playlist_titles = frozenset({playlist_name})
-        returned_playlist_title = validate_playlist_title(item_attr(created_playlist, "title"))
-        created_playlist_titles = created_playlist_titles | {returned_playlist_title}
-        if returned_playlist_title != playlist_name:
-            raise ValueError("Sonos returned an unexpected playlist name")
-
-        phase = "playlist_verification"
-        reopened = coordinator.get_sonos_playlist_by_attr("item_id", playlist_id)
-        if clean(item_attr(reopened, "title")) != playlist_name:
-            raise ValueError("The saved Sonos Playlist reopened with another name")
-        playlist_evidence = verify_apple_items(
-            _playlist_tracks(coordinator, reopened),
-            tracks,
-            container="saved Sonos Playlist",
+        created, _empty_evidence = _reopen_and_verify(
+            coordinator,
+            playlist_id=created_playlist_id,
+            playlist_name=playlist_name,
+            tracks=[],
+            attempts=verification_attempts,
+            sleeper=sleeper,
         )
-        _verify_new_playlist_inventory(
+        if not _verify_created_inventory(
             coordinator,
             original=capture.playlists,
-            playlist_id=playlist_id,
+            playlist_id=created_playlist_id,
             playlist_name=playlist_name,
-        )
-        post_save_items, post_save_total, _post_save_update = read_complete_queue(coordinator)
-        if post_save_total != len(tracks):
-            raise ValueError("The queue changed while the Sonos Playlist was being saved")
-        queue_evidence = verify_apple_items(
-            post_save_items,
-            tracks,
-            container="post-save queue",
-        )
+        ):
+            raise ValueError("The new Sonos Playlist identity was not confirmed authoritatively")
+        evidence: list[dict[str, Any]] = []
+        for failed_position, track in enumerate(tracks, 1):
+            failed_identity = f"song:{track['catalogId']}"
+            construction_step = "add_track"
+            adapter.add_track(created, track)
+            construction_step = "verify_track"
+            created, evidence = _reopen_and_verify(
+                coordinator,
+                playlist_id=created_playlist_id,
+                playlist_name=playlist_name,
+                tracks=tracks[:failed_position],
+                attempts=verification_attempts,
+                sleeper=sleeper,
+            )
 
-        if mode == "save-only":
-            phase = "queue_restoration"
-            restore_queue(coordinator, capture.backup)
-            restored = verify_restored_queue(coordinator, capture.backup)
-            _verify_environment(speaker, capture.state)
-            final_queue = queue_backup_public_state(restored)
-            playback = {
-                "state": restored.transport_state,
-                "source": restored.source,
-                "queuePosition": restored.position + 1 if restored.position >= 0 else 0,
-            }
-            queue_disposition = "restored"
-        else:
-            phase = "playback_start"
-            coordinator.play_from_queue(0)
-            phase = "playback_verification"
-            active = capture_queue_backup(coordinator)
-            if not active.queue_active or not active.was_playing or active.position != 0:
-                raise ValueError("The first approved track did not start playing")
-            active_items = list(active.items)
-            verify_apple_items(active_items, tracks, container="active queue")
-            current = safe_call(coordinator.get_current_track_info, {}) or {}
-            if not _metadata_matches(clean(current.get("title")), tracks[0]["title"]) or not (
-                _metadata_matches(clean(current.get("artist")), tracks[0]["artist"])
-            ):
-                raise ValueError("Authoritative playback does not match the first approved track")
-            _verify_environment(speaker, capture.state)
-            final_queue = queue_backup_public_state(active)
-            playback = {
-                "state": active.transport_state,
-                "source": active.source,
-                "queuePosition": 1,
-                "current": queue_evidence[0],
-            }
-            queue_disposition = "approved-plan-active"
+        construction_step = "verify_playlist"
+        created, evidence = _reopen_and_verify(
+            coordinator,
+            playlist_id=created_playlist_id,
+            playlist_name=playlist_name,
+            tracks=tracks,
+            attempts=verification_attempts,
+            sleeper=sleeper,
+        )
+        if not _verify_created_inventory(
+            coordinator,
+            original=capture.playlists,
+            playlist_id=created_playlist_id,
+            playlist_name=playlist_name,
+        ):
+            raise ValueError("The final Sonos Playlist inventory changed unexpectedly")
         return {
             "ok": True,
             "action": "create-apple-sonos-playlist",
-            "mode": mode,
             "room": expected_state["room"],
             "playlist": {
-                "id": playlist_id,
+                "id": created_playlist_id,
                 "name": playlist_name,
-                "itemCount": len(playlist_evidence),
-                "items": playlist_evidence,
+                "itemCount": len(evidence),
+                "items": evidence,
             },
-            "queue": {
-                **final_queue,
-                "disposition": queue_disposition,
-                "approvedItems": _queue_identity_evidence(queue_evidence),
+            "queueMutation": False,
+            "playbackMutation": False,
+            "verification": {
+                "authoritativeReopen": True,
+                "preExistingPlaylistsUnchanged": True,
             },
-            "playback": playback,
-            "rollback": {"attempted": False, "succeeded": None},
         }
     except Exception as exc:
-        rollback = _rollback(
-            speaker,
-            capture,
-            playlist_creation_attempted=playlist_creation_attempted,
-            created_playlist_id=created_playlist_id,
-            created_playlist_titles=created_playlist_titles,
-        )
-        diagnostics = exc.diagnostics if isinstance(exc, QueueConstructionError) else None
+        original_failure_step = construction_step
+        sonos_error_code = _safe_sonos_error_code(exc)
+        cleanup_required = creation_attempted
+        if attributable_playlist_id:
+            try:
+                playlist_removed, pre_existing_unchanged = _cleanup_owned_playlist(
+                    coordinator,
+                    original=capture.playlists,
+                    playlist_id=attributable_playlist_id,
+                    playlist_name=playlist_name,
+                )
+                cleanup_required = not playlist_removed
+                if cleanup_required:
+                    construction_step = "cleanup"
+            except Exception:  # noqa: BLE001 - cleanup reports only bounded evidence
+                playlist_removed = False
+                cleanup_required = True
+                construction_step = "cleanup"
+                try:
+                    current = _playlist_inventory(
+                        coordinator,
+                        maximum=MAX_TRANSACTION_PLAYLISTS,
+                    )
+                    pre_existing_unchanged = _inventory_preserves_original(
+                        current,
+                        capture.playlists,
+                        owned_playlist_id=attributable_playlist_id,
+                    )
+                except Exception:  # noqa: BLE001 - no provider details cross the boundary
+                    pre_existing_unchanged = False
+        else:
+            try:
+                current = _playlist_inventory(
+                    coordinator,
+                    maximum=MAX_TRANSACTION_PLAYLISTS,
+                )
+                pre_existing_unchanged = current.entries == capture.playlists.entries
+            except Exception:  # noqa: BLE001 - no provider details cross the boundary
+                pre_existing_unchanged = False
+        diagnostics: dict[str, Any] = {
+            "playlistConstructionStep": construction_step,
+            "playlistRemoved": playlist_removed,
+            "playlistCleanupRequired": cleanup_required,
+            "preExistingPlaylistsUnchanged": pre_existing_unchanged,
+            "queueUnchanged": True,
+            "playbackUnchanged": True,
+            "succeeded": False,
+        }
+        if attributable_playlist_id:
+            diagnostics["partialPlaylistId"] = attributable_playlist_id
+        if original_failure_step in {"add_track", "verify_track"} and failed_position is not None:
+            diagnostics["failedTrackPosition"] = failed_position
+            diagnostics["failedCanonicalIdentity"] = failed_identity
+        if sonos_error_code is not None:
+            diagnostics["sonosErrorCode"] = sonos_error_code
         raise PlaylistTransactionError(
-            phase=phase,
-            rollback=rollback,
+            phase="playlist_creation",
             diagnostics=diagnostics,
         ) from exc

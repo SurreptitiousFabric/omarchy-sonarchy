@@ -114,7 +114,6 @@ class DomainFacadeMixin:
 
     def inspect_apple_playlist_target(self, room_uid: str, playlist_name: str) -> dict[str, Any]:
         try:
-            self.refresh(rediscover=False)
             speaker = self._zone(room_uid)
         except ControllerError as exc:
             raise PlanConflictError("The exact Sonos room is unavailable") from exc
@@ -123,7 +122,6 @@ class DomainFacadeMixin:
     def create_preflighted_apple_playlist(self, plan: dict[str, Any]) -> dict[str, Any]:
         room_uid = str(plan.get("roomUid", ""))
         try:
-            self.refresh(rediscover=False)
             speaker = self._zone(room_uid)
         except ControllerError as exc:
             raise PlanConflictError("The exact Sonos room is unavailable") from exc

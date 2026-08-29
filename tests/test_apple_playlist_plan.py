@@ -44,31 +44,25 @@ TRACK_TWO = {
 }
 
 
-def target_state(room_uid: str = "R1", *, queue_fingerprint: str = "sha256:queue"):
+def target_state(
+    room_uid: str = "R1",
+    *,
+    inventory_fingerprint: str = "sha256:playlists",
+):
     return {
         "room": {
             "uid": room_uid,
-            "standalone": True,
-            "memberUids": [room_uid],
             "coordinatorUid": room_uid,
+            "householdFingerprint": "sha256:household",
         },
         "observedState": {
-            "topologyFingerprint": "sha256:topology",
-            "queue": {
-                "length": 2,
-                "position": 1,
-                "revisionMarker": "update:4:sha256:queue",
-                "fingerprint": queue_fingerprint,
-                "active": True,
-            },
-            "transportState": "STOPPED",
-            "playbackSource": "QUEUE",
-            "mediaFingerprint": f"sha256:{'a' * 64}",
-            "volume": {"room": 20, "group": 20},
-            "mute": {"room": False, "group": False},
-            "capabilities": ["playlist_plan.apple.validate", "playlists.apple.create"],
             "playlistCount": 1,
-            "playlistInventoryFingerprint": "sha256:playlists",
+            "playlistInventoryFingerprint": inventory_fingerprint,
+            "capabilities": [
+                "playlist_plan.apple.validate",
+                "playlists.apple.create",
+                "direct-apple-saved-queue",
+            ],
         },
     }
 
@@ -274,8 +268,9 @@ def test_maximal_unicode_plan_review_fits_the_exact_protocol_line_encoding():
     ascii_escaped = (json.dumps(envelope, separators=(",", ":")) + "\n").encode("utf-8")
 
     assert len(encoded) <= MAX_PROTOCOL_LINE_BYTES
-    assert len(ascii_escaped) > MAX_PROTOCOL_LINE_BYTES
+    assert len(ascii_escaped) > len(encoded)
     assert b"\\u754c" not in encoded
+    assert "music.apple.com" not in json.dumps(review)
 
 
 def test_oversized_plan_review_is_rejected_and_its_ticket_is_discarded():
@@ -343,9 +338,16 @@ def test_preflight_returns_review_and_short_lived_opaque_ticket():
         "song:1443065566",
     ]
     assert result["room"]["uid"] == "R1"
-    assert result["observedState"]["queue"]["length"] == 2
-    assert result["observedState"]["mediaFingerprint"] == f"sha256:{'a' * 64}"
-    assert result["expectedSideEffects"][-1].startswith("Restore and verify")
+    assert result["observedState"]["playlistCount"] == 1
+    assert result["catalogueIdentityValidated"] is True
+    assert result["sonosAcceptance"] == "unproven_until_create"
+    assert result["queueMutation"] is False
+    assert result["playbackMutation"] is False
+    assert result["expectedSideEffects"][-1].startswith("A partial exact-ID playlist")
+    serialized = json.dumps(result)
+    for irrelevant in ("mediaFingerprint", "transportState", '"queue"', '"volume"', '"mute"'):
+        assert irrelevant not in serialized
+    assert "music.apple.com" not in serialized
 
 
 @pytest.mark.parametrize(
@@ -378,15 +380,14 @@ def test_preflight_rejects_exact_existing_name_with_deterministic_suggestion():
     assert error.value.details == {"suggestedPlaylistName": "AI Friday (2)"}
 
 
-def test_save_and_play_preflight_requires_an_exact_active_queue_source():
+def test_save_and_play_is_no_longer_advertised_or_accepted():
     backend = FakePlanBackend()
-    backend.states["R1"]["observedState"]["playbackSource"] = "RADIO"
-    backend.states["R1"]["observedState"]["queue"]["active"] = False
     _backend, validation, _creation = services(backend)
 
-    with pytest.raises(PlanConflictError, match="active Sonos queue"):
+    with pytest.raises(ValueError, match="Unsupported Apple playlist plan mode"):
         validate_plan(validation, plan_args(mode="save-and-play"))
 
+    assert backend.inspections == []
     assert backend.executions == []
 
 
@@ -534,22 +535,23 @@ def test_execution_rejects_room_name_mode_or_track_replacements(replacement):
     assert backend.executions == []
 
 
-def test_distinct_room_order_mode_and_name_have_distinct_plan_bindings():
+def test_distinct_room_order_inventory_and_name_have_distinct_plan_bindings():
     _backend, validation, _creation = services()
     values = [
         validate_plan(validation, plan_args()),
         validate_plan(validation, plan_args(roomUid="R2")),
         validate_plan(validation, plan_args(tracks=[TRACK_TWO, TRACK_ONE])),
-        validate_plan(validation, plan_args(mode="save-and-play")),
         validate_plan(validation, plan_args(playlistName="Another name")),
     ]
     assert len({value["planFingerprint"] for value in values}) == len(values)
 
 
-def test_safe_media_fingerprint_is_bound_into_the_plan_fingerprint():
+def test_complete_playlist_inventory_fingerprint_is_bound_into_the_plan_fingerprint():
     backend, validation, _creation = services()
     first = validate_plan(validation)
-    backend.states["R1"]["observedState"]["mediaFingerprint"] = f"sha256:{'b' * 64}"
+    backend.states["R1"]["observedState"]["playlistInventoryFingerprint"] = (
+        "sha256:changed-playlists"
+    )
     second = validate_plan(validation)
 
     assert first["planFingerprint"] != second["planFingerprint"]

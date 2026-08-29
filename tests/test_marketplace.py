@@ -584,6 +584,34 @@ def test_ai_playlist_protocol_has_no_generic_execution_operation():
     assert PROTOCOL_OPERATIONS.isdisjoint(forbidden)
 
 
+def test_direct_apple_saved_queue_adapter_never_crosses_qml_or_protocol_boundary():
+    qml = "\n".join(path.read_text() for path in sorted(ROOT.glob("*.qml")))
+    protocol = (ROOT / "sonarchy_backend/protocol.py").read_text()
+    contracts = (ROOT / "sonarchy_backend/contracts.py").read_text()
+    adapter = ROOT / "sonarchy_backend/infrastructure/apple_saved_queue.py"
+    python_uses = [
+        path
+        for path in (ROOT / "sonarchy_backend").rglob("*.py")
+        if "AddURIToSavedQueue" in path.read_text()
+    ]
+
+    for forbidden in (
+        "soco",
+        "sonarchy_backend.infrastructure",
+        "AddURIToSavedQueue",
+        "EnqueuedURI",
+        "EnqueuedURIMetaData",
+        "CreateSavedQueue",
+        "DIDL-Lite",
+    ):
+        assert forbidden not in qml
+    for public_inventory in (protocol, contracts):
+        assert "AddURIToSavedQueue" not in public_inventory
+        assert "EnqueuedURIMetaData" not in public_inventory
+        assert "CreateSavedQueue" not in public_inventory
+    assert python_uses == [adapter]
+
+
 def test_pages_use_omarchy_tokens_without_debug_chrome():
     pages = "\n".join(path.read_text() for path in sorted(ROOT.glob("Sonarchy*Page.qml")))
 

@@ -906,27 +906,17 @@ def _apple_target_state():
     return {
         "room": {
             "uid": "R1",
-            "standalone": True,
-            "memberUids": ["R1"],
             "coordinatorUid": "R1",
+            "householdFingerprint": "sha256:household",
         },
         "observedState": {
-            "topologyFingerprint": "sha256:topology",
-            "queue": {
-                "length": 0,
-                "position": 0,
-                "revisionMarker": "update:1:sha256:queue",
-                "fingerprint": "sha256:queue",
-                "active": False,
-            },
-            "transportState": "STOPPED",
-            "playbackSource": "RADIO",
-            "mediaFingerprint": f"sha256:{'0' * 64}",
-            "volume": {"room": 20, "group": 20},
-            "mute": {"room": False, "group": False},
-            "capabilities": ["playlist_plan.apple.validate", "playlists.apple.create"],
             "playlistCount": 0,
             "playlistInventoryFingerprint": "sha256:playlists",
+            "capabilities": [
+                "playlist_plan.apple.validate",
+                "playlists.apple.create",
+                "direct-apple-saved-queue",
+            ],
         },
     }
 
@@ -974,8 +964,12 @@ def test_apple_playlist_preflight_is_read_only_and_execution_is_token_only():
     assert preflight["ok"] is True
     assert preflight["revision"] == 0
     assert preflight["value"]["approvalRequired"] is True
-    assert preflight["value"]["observedState"]["mediaFingerprint"].startswith("sha256:")
+    assert preflight["value"]["catalogueIdentityValidated"] is True
+    assert preflight["value"]["sonosAcceptance"] == "unproven_until_create"
+    assert preflight["value"]["queueMutation"] is False
+    assert preflight["value"]["playbackMutation"] is False
     assert "CurrentURI" not in json.dumps(preflight)
+    assert "music.apple.com" not in json.dumps(preflight)
     assert controller.calls == [("inspectApplePlaylistTarget", "R1", "AI Friday")]
 
     server.handle(
@@ -997,7 +991,8 @@ def test_apple_playlist_preflight_is_read_only_and_execution_is_token_only():
     assert execution[1]["roomUid"] == "R1"
     assert execution[1]["playlistName"] == "AI Friday"
     assert execution[1]["tracks"][0]["catalogId"] == "1452806384"
-    assert controller.calls[-1] == ("refresh", False)
+    assert controller.calls[-1][0] == "createPreflightedApplePlaylist"
+    assert not any(call[0] == "refresh" for call in controller.calls)
 
 
 def test_apple_playlist_execution_rejects_replacement_fields_without_consuming_ticket():
@@ -1075,37 +1070,34 @@ def test_apple_playlist_preclaim_rejections_do_not_refresh_or_stale_valid_ticket
     result = next(message for message in decoded(output) if message.get("id") == "valid-create")
     assert result["ok"] is True
     assert result["revision"] == 0
-    assert server.revision == 1
-    assert controller.calls[-1] == ("refresh", False)
+    assert server.revision == 0
+    assert controller.calls[-1][0] == "createPreflightedApplePlaylist"
+    assert not any(call[0] == "refresh" for call in controller.calls)
     assert (
         len([call for call in controller.calls if call[0] == "createPreflightedApplePlaylist"]) == 1
     )
 
 
-def test_apple_playlist_failure_returns_bounded_rollback_evidence_without_raw_details():
+def test_apple_playlist_failure_returns_bounded_cleanup_evidence_without_raw_details():
     controller = ApplePlanController()
     server = ProtocolServer(controller)  # type: ignore[arg-type]
     output = io.StringIO()
     token = _protocol_preflight(server, output)["value"]["planToken"]
     controller.failure = PlaylistTransactionError(
-        phase="queue_construction",
-        rollback={
-            "attempted": True,
-            "playlistRemoved": True,
-            "playlistCleanupRequired": False,
-            "queueRestored": False,
-            "environmentUnchanged": True,
-            "succeeded": False,
-            "rollbackQueueStep": "verification",
-            "rollbackVerificationReason": "metadata",
-            "rawException": "private DIDL at 192.168.1.20 token=secret",
-        },
+        phase="playlist_creation",
         diagnostics={
-            "queueConstructionStep": "enqueue",
+            "playlistConstructionStep": "add_track",
             "failedTrackPosition": 2,
             "failedCanonicalIdentity": "song:1452806384",
             "sonosErrorCode": "701",
-            "rawException": "private CurrentURI service metadata",
+            "partialPlaylistId": "SQ:17",
+            "playlistRemoved": True,
+            "playlistCleanupRequired": False,
+            "preExistingPlaylistsUnchanged": True,
+            "queueUnchanged": True,
+            "playbackUnchanged": True,
+            "succeeded": False,
+            "rawException": "private DIDL at 192.168.1.20 token=secret",
         },
     )
 
@@ -1122,14 +1114,18 @@ def test_apple_playlist_failure_returns_bounded_rollback_evidence_without_raw_de
     assert result["ok"] is False
     assert result["error"]["code"] == "speaker_rejected"
     details = result["error"]["details"]
-    assert details["phase"] == "queue_construction"
-    assert details["queueConstructionStep"] == "enqueue"
+    assert details["phase"] == "playlist_creation"
+    assert details["playlistConstructionStep"] == "add_track"
     assert details["failedTrackPosition"] == 2
     assert details["failedCanonicalIdentity"] == "song:1452806384"
     assert details["sonosErrorCode"] == "701"
-    assert details["rollback"]["succeeded"] is False
-    assert details["rollback"]["rollbackQueueStep"] == "verification"
-    assert details["rollback"]["rollbackVerificationReason"] == "metadata"
+    assert details["partialPlaylistId"] == "SQ:17"
+    assert details["playlistRemoved"] is True
+    assert details["playlistCleanupRequired"] is False
+    assert details["preExistingPlaylistsUnchanged"] is True
+    assert details["queueUnchanged"] is True
+    assert details["playbackUnchanged"] is True
+    assert details["succeeded"] is False
     assert len(protocol_line(result).encode("utf-8")) <= MAX_PROTOCOL_LINE_BYTES
     serialized = json.dumps(result)
     for forbidden in ("192.168", "token=", "DIDL", "CurrentURI", "service metadata"):

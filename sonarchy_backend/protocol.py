@@ -230,7 +230,9 @@ class ProtocolServer:
             )
             return
 
-        refresh_after = self.application.mutates(op)
+        refresh_after = self.application.mutates(op) and self.application.refreshes_after_mutation(
+            op
+        )
         mutation_started = not self.application.mutation_is_conditional(op)
 
         def mark_mutation_started() -> None:

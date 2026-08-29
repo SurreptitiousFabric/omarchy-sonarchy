@@ -27,6 +27,7 @@ class DomainService:
     handlers: dict[str, Callable[[dict[str, Any]], Any]]
     mutates: bool = True
     conditional_mutation: bool = False
+    refresh_after_mutation: bool = True
     contextual_handlers: dict[str, Callable[[dict[str, Any], RequestContext], Any]] = field(
         default_factory=dict
     )
