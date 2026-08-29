@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from sonarchy_backend.contracts import CAPABILITY_NAMES
+from sonarchy_backend.domains.errors import RetainedPlaylistTransactionError
 from sonarchy_backend.protocol import (
     MAX_PROTOCOL_LINE_BYTES,
     PROTOCOL_OPERATIONS,
@@ -57,6 +58,34 @@ class FakeController:
     def list_alarms(self, room_uid):
         self.calls.append(("listAlarms", room_uid))
         return {"ok": True, "kind": "alarms", "items": [], "total": 0}
+
+    def inspect_retained_apple_playlist_target(self, room_uid, playlist_name):
+        self.calls.append(("inspectRetainedApplePlaylist", room_uid, playlist_name))
+        return {
+            "room": {
+                "uid": room_uid,
+                "coordinatorUid": room_uid,
+                "householdFingerprint": f"sha256:{'1' * 64}",
+            },
+            "observedState": {
+                "playlistCount": 0,
+                "playlistInventoryFingerprint": f"sha256:{'2' * 64}",
+                "capabilities": [
+                    "playlist_plan.apple.retained.validate",
+                    "playlists.apple.retained.create",
+                    "direct-apple-saved-queue-retained",
+                ],
+            },
+        }
+
+    def create_retained_apple_playlist(self, plan):
+        self.calls.append(("createRetainedApplePlaylist", plan))
+        return {
+            "ok": True,
+            "playlist": {"id": "SQ:7", "name": plan["playlistName"], "itemCount": 1},
+            "queueMutation": False,
+            "playbackMutation": False,
+        }
 
 
 def decoded(output):
@@ -433,7 +462,108 @@ def test_protocol_action_cases_cover_every_operation():
         "artwork.radio.resolve",
         "content.browse",
         "devices.details.get",
+        "playlist_plan.apple.retained.validate",
+        "playlists.apple.retained.create",
     }
+
+
+def retained_plan_request(request_id="retained-plan"):
+    return {
+        "version": 1,
+        "id": request_id,
+        "op": "playlist_plan.apple.retained.validate",
+        "args": {
+            "roomUid": "R1",
+            "playlistName": "Retained inspection",
+            "retentionMode": "manual-inspection",
+            "allowDuplicates": False,
+            "tracks": [
+                {
+                    "catalogId": "1452806384",
+                    "url": (
+                        "https://music.apple.com/ch/album/kiss-me-kiss-me-kiss-me/"
+                        "1452806377?i=1452806384"
+                    ),
+                    "title": "Just Like Heaven",
+                    "artist": "The Cure",
+                    "album": "Kiss Me, Kiss Me, Kiss Me",
+                    "durationMs": 212000,
+                }
+            ],
+        },
+    }
+
+
+def test_retained_plan_and_approved_create_are_correlated_without_snapshot_refresh():
+    controller = FakeController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    server.handle(retained_plan_request(), output)
+    review = decoded(output)[0]
+    assert review["id"] == "retained-plan"
+    assert review["ok"] is True
+    assert review["value"]["queueMutation"] is False
+    token = review["value"]["planToken"]
+
+    output = io.StringIO()
+    server.handle(
+        {
+            "version": 1,
+            "id": "retained-create",
+            "op": "playlists.apple.retained.create",
+            "args": {"planToken": token, "approved": True},
+        },
+        output,
+    )
+    messages = decoded(output)
+    assert len(messages) == 1
+    assert messages[0]["id"] == "retained-create"
+    assert messages[0]["value"]["playlist"]["id"] == "SQ:7"
+    assert not any(call[0] == "refresh" for call in controller.calls)
+
+
+def test_retained_transaction_error_exposes_only_bounded_inspection_details():
+    class FailedController(FakeController):
+        def create_retained_apple_playlist(self, plan):
+            raise RetainedPlaylistTransactionError(
+                {
+                    "playlistConstructionStep": "verify_track",
+                    "createCallReturned": True,
+                    "addCallReturned": True,
+                    "authoritativeReopen": True,
+                    "verificationStatus": "item_absent",
+                    "partialPlaylistId": "SQ:7",
+                    "playlistRetained": True,
+                    "manualInspectionRequired": True,
+                    "preExistingPlaylistsUnchanged": True,
+                    "queueMutation": False,
+                    "playbackMutation": False,
+                    "succeeded": False,
+                    "failedTrackPosition": 1,
+                    "failedCanonicalIdentity": "song:1452806384",
+                }
+            )
+
+    controller = FailedController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    server.handle(retained_plan_request(), output)
+    token = decoded(output)[0]["value"]["planToken"]
+    output = io.StringIO()
+    server.handle(
+        {
+            "version": 1,
+            "id": "retained-failure",
+            "op": "playlists.apple.retained.create",
+            "args": {"planToken": token, "approved": True},
+        },
+        output,
+    )
+    result = decoded(output)[0]
+    assert result["error"]["code"] == "speaker_rejected"
+    assert result["error"]["details"]["partialPlaylistId"] == "SQ:7"
+    assert result["error"]["details"]["verificationStatus"] == "item_absent"
+    assert "planToken" not in json.dumps(result)
 
 
 def test_device_details_query_returns_value_without_snapshot_refresh():

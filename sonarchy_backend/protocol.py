@@ -11,15 +11,18 @@ from typing import Any, TextIO
 from sonarchy_errors import user_facing_error
 
 from .contracts import (
+    MAX_PROTOCOL_LINE_BYTES,
     PROTOCOL_VERSION,
     ProtocolRequestError,
     error_payload,
     parse_request,
+    protocol_line,
     result_payload,
     snapshot_capabilities,
 )
 from .controller import ControllerError, SonosController
 from .domains import SonarchyApplication
+from .domains.errors import SafeDomainError
 from .live_updates import EventSubscriptionManager, WakeQueue
 
 LOG = logging.getLogger(__name__)
@@ -28,7 +31,6 @@ EVENT_PANEL_POLL_SEC = 5.0
 EVENT_BACKGROUND_POLL_SEC = 15.0
 FALLBACK_PANEL_POLL_SEC = 2.0
 FALLBACK_BACKGROUND_POLL_SEC = 5.0
-MAX_PROTOCOL_LINE_BYTES = 64 * 1024
 PROTOCOL_OPERATIONS = frozenset(
     {
         "alarms.list",
@@ -65,6 +67,8 @@ PROTOCOL_OPERATIONS = frozenset(
         "queue.clear",
         "queue.content.enqueue",
         "playlists.mutate",
+        "playlist_plan.apple.retained.validate",
+        "playlists.apple.retained.create",
         "playlists.track.mutate",
         "content.apple.play",
         "content.apple.album.play",
@@ -88,7 +92,10 @@ class ProtocolServer:
         self.event_subscriptions = EventSubscriptionManager(self.event_queue)
 
     def _emit(self, payload: dict[str, Any], output: TextIO) -> None:
-        output.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        line = protocol_line(payload)
+        if len(line.encode("utf-8")) > MAX_PROTOCOL_LINE_BYTES:
+            raise RuntimeError("Protocol response exceeds the bounded line size")
+        output.write(line)
         output.flush()
 
     def emit_snapshot(self, output: TextIO, *, rediscover: bool = True) -> None:
@@ -197,10 +204,23 @@ class ProtocolServer:
             )
             return
 
-        refresh_after = self.application.mutates(op)
+        refresh_after = self.application.mutates(op) and self.application.refreshes_after_mutation(
+            op
+        )
         try:
             value = self.application.execute(op, args)
             self._emit(result_payload(request_id, revision=self.revision, value=value), output)
+        except SafeDomainError as exc:
+            LOG.warning("Sonarchy operation %s was safely rejected: %s", op, exc.code)
+            self._emit_error(
+                output,
+                request_id=request_id,
+                code=exc.code,
+                message=str(exc),
+                operation=op,
+                retryable=exc.retryable,
+                details=exc.details,
+            )
         except (ControllerError, ValueError, TypeError, OSError) as exc:
             LOG.warning("Sonos command %s failed: %s", op, exc)
             if isinstance(exc, (ValueError, TypeError)):
@@ -245,8 +265,15 @@ class ProtocolServer:
         message: str,
         operation: str = "",
         retryable: bool = False,
+        details: dict[str, Any] | None = None,
     ) -> None:
-        error = error_payload(code, message, operation=operation, retryable=retryable)
+        error = error_payload(
+            code,
+            message,
+            operation=operation,
+            retryable=retryable,
+            details=details,
+        )
         self._emit(result_payload(request_id, revision=self.revision, error=error), output)
 
     def serve(self, input_stream: TextIO = sys.stdin, output: TextIO = sys.stdout) -> None:

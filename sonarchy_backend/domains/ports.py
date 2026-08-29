@@ -151,6 +151,14 @@ class PlaylistsPort(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class RetainedApplePlaylistPort(Protocol):
+    def inspect_retained_apple_playlist_target(
+        self, room_uid: str, playlist_name: str
+    ) -> dict[str, Any]: ...
+
+    def create_retained_apple_playlist(self, plan: dict[str, Any]) -> dict[str, Any]: ...
+
+
 class SonarchyBackendPort(
     StatePort,
     PlaybackPort,
@@ -163,6 +171,7 @@ class SonarchyBackendPort(
     SettingsPort,
     QueuePort,
     PlaylistsPort,
+    RetainedApplePlaylistPort,
     Protocol,
 ):
     """Temporary adapter port implemented by the legacy controller."""

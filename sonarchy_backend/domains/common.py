@@ -10,6 +10,7 @@ from typing import Any
 class DomainService:
     handlers: dict[str, Callable[[dict[str, Any]], Any]]
     mutates: bool = True
+    refresh_after_mutation: bool = True
 
     @property
     def operations(self) -> frozenset[str]:

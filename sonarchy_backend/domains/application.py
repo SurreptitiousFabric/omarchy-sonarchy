@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from .alarms import alarm_mutations_service, alarms_service
+from .apple_retained_plan import RetainedApplePlaylistPlanService
 from .artwork import artwork_service
 from .browse import browse_service
 from .content import content_service
@@ -22,6 +23,7 @@ class SonarchyApplication:
 
     def __init__(self, backend: SonarchyBackendPort) -> None:
         self.backend = backend
+        retained_apple_services = RetainedApplePlaylistPlanService(backend).services()
         self.services = (
             playback_service(backend),
             content_service(backend),
@@ -35,6 +37,7 @@ class SonarchyApplication:
             settings_service(backend),
             queue_service(backend),
             playlists_service(backend),
+            *retained_apple_services,
         )
         operations = [operation for service in self.services for operation in service.operations]
         if len(operations) != len(set(operations)):
@@ -46,6 +49,12 @@ class SonarchyApplication:
             if service.mutates
             for operation in service.operations
         )
+        self.non_refreshing_mutating_operations = frozenset(
+            operation
+            for service in self.services
+            if service.mutates and not service.refresh_after_mutation
+            for operation in service.operations
+        )
 
     def execute(self, operation: str, args: dict[str, Any]) -> Any:
         for service in self.services:
@@ -55,6 +64,9 @@ class SonarchyApplication:
 
     def mutates(self, operation: str) -> bool:
         return operation in self.mutating_operations
+
+    def refreshes_after_mutation(self, operation: str) -> bool:
+        return operation not in self.non_refreshing_mutating_operations
 
     def refresh(self, *, rediscover: bool = True) -> dict[str, Any]:
         return self.backend.refresh(rediscover=rediscover)
