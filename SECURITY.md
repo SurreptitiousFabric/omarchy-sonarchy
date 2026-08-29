@@ -78,8 +78,10 @@ There is no REST API, browser UI, or listener on port 8000.
   single-use, and valid for no more than two minutes. They bind authoritative
   room UID, coordinator and hashed household identity, complete playlist
   inventory fingerprint/count, new name, direct capability, duplicate policy,
-  ordered reviewed songs, backend revision, expiry, and nonce. Queue contents,
+  ordered reviewed songs, expiry, and nonce. Queue contents,
   source, position, media, transport, volume, and mute are deliberately absent.
+  The general snapshot revision is also absent because unchanged background
+  polls increment it; execution instead re-captures every material bound fact.
   Tickets are claimed before the first playlist mutation and are not a
   replacement for explicit client/user approval. Rejections before ticket
   claim do not stale a valid token; every accepted execution attempt consumes

@@ -115,8 +115,11 @@ process-local ticket lifecycle. Its read-only validation and write execution
 are separate services sharing one in-memory store. `apple_catalog.py` owns the
 narrow pinned-SoCo song canonicalisation adapter.
 The create service declares a conditional mutation boundary: protocol errors
-before atomic ticket claim and revision validation do not cause a state refresh
-or revision increment. Create-only does not refresh the general playback
+before atomic ticket claim do not cause a state refresh or revision increment.
+The token does not bind the general snapshot revision because unchanged polls
+advance it; the transaction instead re-captures and compares every material
+room/household, capability, name, and playlist-inventory fact. Create-only does
+not refresh the general playback
 snapshot after execution because the verified result is complete and a refresh
 would perform irrelevant queue, transport, volume, and mute reads.
 `domains/apple_playlist_transaction.py` owns the room/household anchor,

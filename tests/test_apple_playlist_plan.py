@@ -138,7 +138,6 @@ def stored_plan(*, operation="playlists.apple.create"):
         allow_duplicates=False,
         tracks=(item,),
         target_state=target_state(),
-        backend_revision=7,
         plan_fingerprint="test-fingerprint",
     )
 
@@ -478,22 +477,15 @@ def test_ticket_cannot_cross_operation_boundary_or_accept_malformed_value():
         tickets.claim("bad")
 
 
-def test_revision_conflict_consumes_ticket_before_any_mutation():
+def test_unchanged_plan_survives_unrelated_snapshot_revision_changes():
     backend, validation, creation = services()
     token = validate_plan(validation)["planToken"]
-    with pytest.raises(PlanConflictError, match="state changed"):
-        creation.execute(
-            "playlists.apple.create",
-            {"planToken": token, "approved": True},
-            RequestContext(backend_revision=8),
-        )
-    assert backend.executions == []
-    with pytest.raises(PlanConflictError, match="already used"):
-        creation.execute(
-            "playlists.apple.create",
-            {"planToken": token, "approved": True},
-            RequestContext(backend_revision=7),
-        )
+    creation.execute(
+        "playlists.apple.create",
+        {"planToken": token, "approved": True},
+        RequestContext(backend_revision=8),
+    )
+    assert len(backend.executions) == 1
 
 
 def test_ticket_is_consumed_even_when_mutation_attempt_fails():

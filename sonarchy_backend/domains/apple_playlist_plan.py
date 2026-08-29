@@ -79,7 +79,6 @@ class ApplePlaylistPlan:
     allow_duplicates: bool
     tracks: tuple[AppleSongPlanItem, ...]
     target_state: dict[str, Any]
-    backend_revision: int
     plan_fingerprint: str
 
     def backend_value(self) -> dict[str, Any]:
@@ -91,7 +90,6 @@ class ApplePlaylistPlan:
             "allowDuplicates": self.allow_duplicates,
             "tracks": [track.backend_value() for track in self.tracks],
             "targetState": copy.deepcopy(self.target_state),
-            "backendRevision": self.backend_revision,
             "planFingerprint": self.plan_fingerprint,
         }
 
@@ -246,7 +244,6 @@ def _plan_fingerprint(
     allow_duplicates: bool,
     tracks: tuple[AppleSongPlanItem, ...],
     target_state: dict[str, Any],
-    backend_revision: int,
 ) -> str:
     binding = {
         "operation": "playlists.apple.create",
@@ -256,7 +253,6 @@ def _plan_fingerprint(
         "allowDuplicates": allow_duplicates,
         "tracks": [track.backend_value() for track in tracks],
         "targetState": target_state,
-        "backendRevision": backend_revision,
     }
     encoded = json.dumps(binding, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
@@ -305,7 +301,6 @@ class ApplePlaylistPlanService:
             allow_duplicates=allow_duplicates,
             tracks=tracks,
             target_state=target_state,
-            backend_revision=context.backend_revision,
         )
         plan = ApplePlaylistPlan(
             operation="playlists.apple.create",
@@ -315,7 +310,6 @@ class ApplePlaylistPlanService:
             allow_duplicates=allow_duplicates,
             tracks=tracks,
             target_state=copy.deepcopy(target_state),
-            backend_revision=context.backend_revision,
             plan_fingerprint=fingerprint,
         )
         ticket = self.tickets.issue(plan)
@@ -367,11 +361,6 @@ class ApplePlaylistPlanService:
         plan = self.tickets.claim(args.get("planToken"))
         if plan.operation != "playlists.apple.create":
             raise PlanConflictError("The plan token is bound to another operation")
-        if context.backend_revision != plan.backend_revision:
-            raise PlanConflictError(
-                "Backend state changed after validation; validate a new playlist plan",
-                details={"reason": "backend_revision_changed"},
-            )
         # The ticket is now spent and backend execution may mutate or partially fail.
         context.mark_mutation_started()
         return self.backend.create_preflighted_apple_playlist(plan.backend_value())

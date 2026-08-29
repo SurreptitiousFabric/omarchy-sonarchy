@@ -80,18 +80,19 @@ read exactly one bounded transaction extra so a concurrent create cannot make
 the transaction's attributable ID unreachable.
 
 The token is memory-only, process-local, single-use, and atomically consumed
-before the first playlist mutation. It binds the operation, backend revision,
-exact room/household anchor, capabilities, playlist inventory and name,
-create-only mode, duplicate policy, ordered reviewed songs, expiry, and random
-nonce. It proves recent validation, not human approval. A backend restart,
-replay, expiry, newer backend revision, or changed authoritative target state
-requires a new preflight.
+before the first playlist mutation. It binds the operation, exact
+room/household anchor, capabilities, playlist inventory and name, create-only
+mode, duplicate policy, ordered reviewed songs, expiry, and random nonce. It
+proves recent validation, not human approval. A backend restart, replay,
+expiry, or changed authoritative target state requires a new preflight. The
+general snapshot revision is deliberately not bound because unchanged
+background polls advance it; execution re-captures every material target fact.
 Requests rejected before a ticket is claimed, including missing approval,
 replacement arguments, and unavailable tokens, do not emit a mutation refresh
 or advance the backend revision. A still-valid ticket therefore remains usable
 after an unrelated pre-claim rejection. Once a valid ticket is atomically
-claimed and its backend revision matches, every accepted execution attempt
-consumes it. Create-only intentionally does not request the general playback
+claimed, every accepted execution attempt consumes it. Create-only
+intentionally does not request the general playback
 snapshot after execution because that would perform irrelevant queue,
 transport, volume, and mute reads.
 The complete result envelope is serialized as unescaped UTF-8 JSON and measured

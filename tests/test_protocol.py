@@ -991,8 +991,37 @@ def test_apple_playlist_preflight_is_read_only_and_execution_is_token_only():
     assert execution[1]["roomUid"] == "R1"
     assert execution[1]["playlistName"] == "AI Friday"
     assert execution[1]["tracks"][0]["catalogId"] == "1452806384"
+    assert "backendRevision" not in execution[1]
     assert controller.calls[-1][0] == "createPreflightedApplePlaylist"
     assert not any(call[0] == "refresh" for call in controller.calls)
+
+
+def test_apple_playlist_plan_survives_an_unchanged_snapshot_poll():
+    controller = ApplePlanController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    token = _protocol_preflight(server, output)["value"]["planToken"]
+
+    server.emit_snapshot(output, rediscover=False)
+    assert server.revision == 1
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "create-after-poll",
+            "op": "playlists.apple.create",
+            "args": {"planToken": token, "approved": True},
+        },
+        output,
+    )
+
+    result = next(
+        message for message in decoded(output) if message.get("id") == "create-after-poll"
+    )
+    assert result["ok"] is True
+    assert result["revision"] == 1
+    executions = [call for call in controller.calls if call[0] == "createPreflightedApplePlaylist"]
+    assert len(executions) == 1
 
 
 def test_apple_playlist_execution_rejects_replacement_fields_without_consuming_ticket():

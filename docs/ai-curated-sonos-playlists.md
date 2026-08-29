@@ -84,8 +84,10 @@ Plan tokens are opaque, random, process-local, memory-only, single-use, and
 valid for at most 120 seconds. They bind the operation, exact room UID used as
 the household anchor, coordinator and hashed household identity, complete
 playlist inventory fingerprint/count, exact new name, duplicate policy,
-ordered tracks and canonical identities, required direct capability, backend
-revision, expiry, and nonce.
+ordered tracks and canonical identities, required direct capability, expiry,
+and nonce. The general snapshot revision is not bound because unchanged
+background polls advance it. Execution instead re-captures and compares every
+material create-only target fact immediately before mutation.
 
 Queue contents, queue position/source, media identity, transport, volume, and
 mute are deliberately not read or bound. The token is atomically claimed before

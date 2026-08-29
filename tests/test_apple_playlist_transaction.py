@@ -272,7 +272,6 @@ def plan_for(speaker, *, name="AI Friday", planned_tracks=None):
         "allowDuplicates": False,
         "tracks": copy.deepcopy(planned_tracks or [TRACK_ONE, TRACK_TWO]),
         "targetState": inspect_apple_playlist_target(speaker, name),
-        "backendRevision": 7,
         "planFingerprint": "test-only",
     }
 
