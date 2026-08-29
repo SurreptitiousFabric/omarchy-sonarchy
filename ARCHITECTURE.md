@@ -116,50 +116,43 @@ are separate services sharing one in-memory store. `apple_catalog.py` owns the
 narrow pinned-SoCo song canonicalisation adapter.
 The create service declares a conditional mutation boundary: protocol errors
 before atomic ticket claim and revision validation do not cause a state refresh
-or revision increment, while every accepted execution attempt retains the
-normal authoritative post-attempt refresh.
-`domains/apple_playlist_transaction.py` owns exact-room capture and Sonos
-Playlist construction/reopen verification. `domains/queue_transaction.py`
-owns the shared 100-item backup, fingerprints, restoration, and authoritative
-restoration checks used by both ordinary queue replacement and Apple plans.
-Neither Apple/SoCo objects nor queue backup objects cross the protocol.
-The target projection binds only a SHA-256 fingerprint of the exact current
-media URI. An exact `x-rincon-queue:` URI overrides SoCo's coarse `UNKNOWN`
-classification as verified `QUEUE`; no raw URI crosses the boundary.
+or revision increment. Create-only does not refresh the general playback
+snapshot after execution because the verified result is complete and a refresh
+would perform irrelevant queue, transport, volume, and mute reads.
+`domains/apple_playlist_transaction.py` owns the room/household anchor,
+playlist-inventory freshness, exact-ID creation ownership, ordered addition,
+and authoritative reopen verification. It has no dependency on queue backup or
+restoration. Ordinary destructive queue replacement remains unchanged and its
+broader replay defect is tracked separately by issue #19.
 
-The transaction deliberately creates a Sonos Playlist, not a native Apple
-Music playlist. `save-only` temporarily constructs and verifies the approved
-queue, saves and reopens the playlist, then restores the original queue and
-transport. `save-and-play` performs the same save verification, starts item 1,
-and leaves the approved queue active. Queue restoration serializes each
-original bounded DIDL object separately through SoCo's `add_to_queue`, checks
-every returned one-based position, and only then restores the original queue
-position and playing/stopped state. It does not use the bulk
-`AddMultipleURIsToQueue` adapter: the first physical `save-only` attempt showed
-that path could recreate queue slots without preserving complete metadata.
-Stable restoration verification excludes regenerated queue-local IDs but
-separately compares complete resource/provider fields and every DIDL metadata
-field represented by the pinned SoCo object model before checking source,
-position, transport, and exact hashed media identity.
+The transaction creates a Sonos Playlist directly; it never constructs tracks
+in a room's playback queue. SoCo's normal `create_sonos_playlist()` creates the
+empty saved queue and immediately returns its candidate `SQ:<id>`. The private
+`infrastructure/apple_saved_queue.py` adapter then appends one already validated
+Apple song at a time with `AddURIToSavedQueue`. That adapter accepts no generic
+URI or DIDL input. It re-runs `AppleMusicShare` canonicalisation, fixes the
+Apple song key, class, service descriptor, append index, and account sequence,
+and serializes reviewed title/artist/album text with SoCo DIDL data structures
+and ElementTree escaping. It fails closed unless SoCo is exactly 0.31.2 and the
+pinned Apple service assumptions still match.
 
-Failures after the first mutation attempt use one shared rollback path and
-expose only bounded typed evidence. Queue construction identifies
-`share_link_initialization`, `enqueue`, `position_decode`, or
-`position_verify`; an enqueue may include only a validated explicit
-`SoCoUPnPException.error_code`. Rollback identifies `clear`, `readd`,
-`position_select`, or `verification`, with a bounded item position or
-verification reason. No diagnostic is derived from exception text. Playlist
-rollback requires the exact new `SQ:<id>` returned by the create invocation and
-never claims ownership from title or inventory difference alone.
-That ID is retained before the create-returned title is validated. If the title
-cannot be trusted, cleanup still requires the exact new ID to resolve
-authoritatively to the title requested by that same invocation.
-If a valid returned title differs, both it and the requested title remain
-bounded invocation evidence, but neither can authorize deletion without that
-exact new ID. `save-and-play` additionally requires an active queue source at
-preflight and immediate revalidation because switching to queue playback cannot
-safely restore a prior radio, TV, or other non-queue source. `save-only` does not
-switch sources and may preserve a verified non-queue source.
+After creation and every add, the transaction reopens the exact `SQ:<id>` with
+a three-attempt bounded visibility policy. It verifies expected count, exact
+new position, canonical Apple identity, and reviewed title, artist, and album.
+Final verification repeats the complete ordered comparison and confirms the
+pre-existing playlist inventory is unchanged. Catalogue canonicalisation is
+reported honestly as identity validation only; household Sonos acceptance
+remains `unproven_until_create`.
+
+Failure diagnostics identify `create`, `add_track`, `verify_track`,
+`verify_playlist`, or `cleanup`. Track failures may include only the reviewed
+position/identity and a validated `SoCoUPnPException.error_code`; exception
+text is never parsed. Cleanup is attempted once only after the create-returned
+ID is validated as new and that exact ID authoritatively resolves to the
+invocation-bound title. Title alone never establishes ownership and no second
+deletion candidate is guessed. A cleanup failure returns the exact attributable
+partial ID and leaves every unrelated playlist untouched.
+
 Preflight reserves one slot below the 100-item bounded playlist inventory;
 post-create verification and cleanup allow one transaction-scoped extra. The
 shared protocol serializer emits UTF-8 JSON and the plan service measures the
@@ -169,9 +162,9 @@ oversized snapshot is never cached or emitted; the persistent process emits a
 fixed bounded degraded snapshot with no target-derived write capabilities and
 continues serving startup, polling, and post-mutation traffic.
 Successful playlist results project bounded reviewed metadata once under the
-authoritatively reopened playlist. Queue evidence contains only positions and
-canonical Apple identities; raw provider metadata and optional Sonos item IDs
-are not duplicated across the boundary.
+authoritatively reopened playlist plus explicit `queueMutation: false` and
+`playbackMutation: false`. Raw provider metadata and optional Sonos item IDs
+are not exposed.
 Apple identity extraction accepts only complete canonical or pinned Sonos item
 identifiers and the leading token of an expected `x-sonos-http:` or
 `x-sonos-https:` resource; it never searches arbitrary metadata substrings or

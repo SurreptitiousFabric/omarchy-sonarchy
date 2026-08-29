@@ -130,27 +130,32 @@ URL policy and pinned SoCo integration. It never creates a link from a title or
 ID, searches for a substitute, or accepts an album/playlist/artist link as one
 song.
 
-The read-only preflight shows the exact room UID and topology, queue size and
-position, transport/source, volume/mute, capabilities, new playlist name,
-ordered songs, total known duration, and expected side effects. It returns a
-memory-only single-use token valid for no more than two minutes. The token is a
-freshness ticket, not approval; the client must still request explicit approval
-immediately before creation. Any backend restart or state change requires a new
+The read-only preflight shows the exact room/coordinator anchor, a hashed
+household identity, complete Sonos Playlist inventory fingerprint and count,
+new playlist name, ordered songs, total known duration, and expected side
+effects. It states both `catalogueIdentityValidated: true` and
+`sonosAcceptance: unproven_until_create`. It returns a memory-only single-use
+token valid for no more than two minutes. The token is a freshness ticket, not
+approval; the client must still request explicit approval immediately before
+creation. A backend restart or material playlist/anchor change requires a new
 preflight.
-The initial transaction requires transport to be authoritatively playing or
-stopped; paused, transitioning, and unknown states are refused because exact
-restoration cannot yet be guaranteed.
 
-- **Save only** constructs and verifies the exact queue, creates and reopens
-  the Sonos Playlist, then restores and verifies the previous queue, position,
-  source, and playing/stopped state.
-- **Save and play** performs the same playlist verification, starts track 1,
-  and leaves the reviewed queue active.
+Creation is save-only. Sonarchy creates a new empty Sonos Playlist, adds the
+reviewed Apple songs directly to that saved playlist, and authoritatively
+reopens it after every addition and at completion. It does not read or change
+the current room queue, source, position, transport, volume, mute, or topology,
+and it never starts playback.
 
-Existing exact-name Sonos Playlists are never overwritten. A failure attempts
-to remove only a newly created partial playlist and restore the prior queue;
-the result says whether recovery was verified. Queues above 100 items or items
-that cannot be backed up are left untouched.
+Existing exact-name Sonos Playlists are never overwritten. A failed track is
+never retried or silently substituted. Failure cleanup targets only the exact
+new `SQ:<id>` returned by this invocation after that ID is proven new and
+reopens with the invocation-bound title. If exact cleanup cannot be verified,
+the result returns that attributable partial ID and requests later reviewed
+cleanup; every unrelated playlist is left untouched.
+
+Playback is a separate exact-ID action after creation. Safe AI/MCP orchestration
+must first report and review the new `SQ:<id>` and then separately preflight and
+approve playback in an exact room under issues #14 and #11.
 
 A native Apple Music playlist is a separate optional **Export/Copy**, not the
 normal persistence target and not a synchronized object. See

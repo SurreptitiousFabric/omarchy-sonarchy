@@ -25,16 +25,20 @@ reviewers and users do not need to infer them from the code.
 
 When at least one room is authoritatively available, snapshots now advertise:
 
-- `playlist_plan.apple.validate`: read-only exact-room, queue, topology, hashed
-  media identity, playlist-name, capability, and Apple-song preflight; and
-- `playlists.apple.create`: the explicitly approved, token-only create/save
-  transaction.
+- `playlist_plan.apple.validate`: read-only exact room/household anchor,
+  playlist-inventory/name, direct saved-playlist capability, and exact Apple
+  song preflight; and
+- `playlists.apple.create`: the explicitly approved, token-only create and
+  authoritative verification transaction.
 
 These names describe positive operations in the private application protocol;
 they do not create a public API or MCP server. The create operation has no
 plain-title, arbitrary URL/URI, generic protocol, raw SoCo, or overwrite form.
 No Apple credential, private-library permission, or native Apple Music
 playlist-write capability is added.
+The create-only operation does not inspect or mutate a room queue, playback,
+transport, position, volume, mute, or topology. Playback of the returned exact
+`SQ:<id>` remains a separate existing action and is not approved by creation.
 
 A local run of the marketplace's current v3 deterministic scanner marks this
 release **review-required** for `package-manager`, with no findings. The project

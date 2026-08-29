@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 480 automated Python tests pass with 86% branch coverage, alongside
+- [x] All 414 automated Python tests pass with 85% branch coverage, alongside
   32 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
@@ -31,10 +31,10 @@ recorded; it must not be called tested.
   access, alarms, Global Player, and Apple catalog search.
 - [x] Fake-only automated AI-curated playlist tests cover exact Apple song URL
   and identity validation, 25-track bounds, duplicate review, plan expiry and
-  replay, stale state, exact save/reopen verification, both persistence modes,
-  and typed rollback success/failure. The first feature-specific physical
-  `save-only` write failed as recorded below; the repair has not been retested
-  on a speaker.
+  replay, stale inventory/anchor state, direct saved-playlist construction,
+  exact per-add/final reopen verification, code-800 failures, bounded visibility
+  retry, and exact-ID cleanup/cleanup failure. The redesigned direct operation
+  has not been tested on a speaker.
 - [x] Live idempotent writes pass for same-name rename, same-volume write,
   every speaker-reported sound/device setting, and current shuffle, repeat,
   and crossfade values. No effective setting or playback change was requested.
@@ -72,105 +72,79 @@ two controls are not applicable to this household. They remain covered by
 automated capability/visibility tests and must be tested on supporting hardware
 before Sonarchy claims real-device coverage for them.
 
-## AI-curated Sonos Playlist physical acceptance — failed, repair pending review
+## AI-curated Sonos Playlist physical acceptance — direct redesign untested
 
-This feature's automated suite uses fakes and must not mutate real speakers
-without explicit owner approval for the exact run. Use two exact Apple songs
-whose catalogue IDs, URLs, title, artist, album, duration, and order have been
-reviewed. Use unique disposable Sonos Playlist names; never reuse or overwrite
-an existing name.
+The old queue-staging design was rejected after two owner-approved physical
+failures:
 
-The first approved `save-only` attempt on 2026-08-28 passed fresh preflight but
-failed in `queue_construction`. No Sonos Playlist was created. Rollback reported
-`queueRestored: false`; a later read-only assessment found 36 queue slots with
-the original queue source, position, and stopped transport, but every item had
-lost title, artist, album, and safely exposed provider identity. The original
-content/order is therefore `UNDETERMINED`. The failed run retained no track,
-sub-step, returned-position, or UPnP-code evidence, so it does not prove why the
-Apple enqueue failed.
+1. On 2026-08-28, no playlist was created and rollback recreated 36 queue slots
+   without complete title, artist, album, or provider identity. Exact queue
+   restoration was false and the original contents/order became undetermined.
+2. On 2026-08-29, a known stopped one-track **Wish You Were Here — Pink Floyd**
+   baseline was established first. Track 1 (`song:1452806384`) staged
+   successfully; track 2 (`song:1443065566`) failed with Sonos code 800. No
+   playlist was created. Rollback recreated one stopped active queue slot but
+   failed resource verification, and the Pink Floyd metadata/stable identity
+   were not restored.
 
-The repaired implementation replaces bulk restoration with ordered per-item
-DIDL-object replay and exact returned-position checks. It also reports bounded
-construction and rollback sub-steps. This is automated-test evidence only.
-Another physical write remains blocked until the repaired exact commit has
-green CI, fresh review, and a new owner-approved staged acceptance prompt. No
-automated or review workflow may repair or inspect the currently damaged queue.
+The redesign creates an empty Sonos Playlist and adds exact Apple songs directly
+to that saved playlist. It has fake-only evidence and **has not had a physical
+test**. Do not describe it as accepted. Issue #19 separately owns general
+destructive queue rollback; no acceptance for this feature may claim that issue
+fixed.
 
-### Stage 1: read-only preflight
+Another physical write requires green CI on an exact reviewed commit, a fresh
+review, and a new owner-approved staged procedure. The redesign must never
+inspect, clear, play, repair, or otherwise alter the currently undetermined
+queue as preparation.
 
-1. Resolve one exact standalone room UID; record its name only as supporting
-   evidence. Confirm its sole member and coordinator are that UID.
-2. Record authoritative room/group volume and mute, transport and bounded
-   source, the safe current-media fingerprint, current item when present,
-   complete queue identities/order/length/update marker, active position, and
-   every existing Sonos Playlist ID/name. Do not record the raw media URI.
-3. Confirm the queue contains no more than 100 items and every item is
-   restorable. A stopped transport is not required to retain a current-item
-   marker.
-   Confirm the bounded Sonos Playlist inventory contains at most 99 entries so
-   one authoritative create/verification slot remains.
-4. Submit `playlist_plan.apple.validate` in `save-only` mode. Confirm the
-   returned room/topology, queue, transport/source and media fingerprint,
-   volume/mute, positive capabilities, exact ordered canonical `song:<id>`
-   values, total duration, unique name, side effects, expiry, and approval
-   requirement. A queue-active URI may safely project `QUEUE` even if the coarse
-   source probe reports `UNKNOWN`; an unverified non-queue `UNKNOWN` must fail.
-   Confirm the complete UTF-8 result line remains within 64 KiB.
-   Confirm an oversized authoritative snapshot is replaced by a bounded,
-   write-disabled degraded snapshot without stopping the backend process.
-   Confirm the maximal successful 25-track result also fits within 64 KiB and
-   returns full verified metadata only once.
-   Confirm an invalid or unreadable create-returned title retains exact-ID
-   cleanup ownership without permitting name-only deletion.
-   Confirm `save-and-play` is eligible only when CurrentURI proves an active
-   Sonos queue; a verified non-queue source remains eligible for `save-only`.
-5. Stop. Obtain explicit owner approval for the one token-only write.
+### Future Stage 1: read-only create preflight
 
-### Stage 2: save only
+1. Resolve one exact room UID as the household anchor and confirm the exact
+   coordinator/household binding. Do not inspect queue contents, playback
+   source/position, transport, volume, or mute merely for playlist creation.
+2. Read the complete bounded Sonos Playlist inventory. Require one free slot
+   and an unused exact disposable name.
+3. Submit `playlist_plan.apple.validate` with `mode: save-only`, the reviewed
+   exact Apple songs, and duplicate policy. Confirm exact ordered canonical
+   identities, duration, inventory fingerprint/count, direct capability,
+   `catalogueIdentityValidated: true`,
+   `sonosAcceptance: unproven_until_create`, `queueMutation: false`,
+   `playbackMutation: false`, expiry, and approval requirement.
+4. Confirm the review explains that one playlist is created on success, no
+   queue changes and no playback start occur, and an exact-ID partial playlist
+   may briefly exist with cleanup attempted on failure. Confirm the complete
+   result is below 64 KiB and contains no raw infrastructure metadata.
+5. Stop and obtain explicit owner approval for exactly one token-only create.
 
-1. Invoke `playlists.apple.create` exactly once with only the preflight token
-   and `approved: true`. Do not use an ad-hoc SoCo process.
-2. Verify the new authoritative `SQ:<id>`, exact name, exact item count, exact
-   order and Apple song identities, and supporting title/artist evidence after
-   reopening the saved playlist.
-3. Verify the original queue contents/order, active position, source, and exact
-   playing/stopped state were restored. Verify topology, volume, and mute never
-   changed and no playback started prematurely.
-4. Verify every unrelated Sonos Playlist ID/name/content remains unchanged.
-5. Retain the disposable playlist until cleanup receives separate approval.
-   Any failure without an exact create-returned playlist ID must leave all
-   candidates untouched and report `playlistCleanupRequired: true`.
-6. On failure, require bounded `queueConstructionStep` and, when applicable,
-   failed track position/identity and trusted UPnP code. Require rollback to
-   identify `clear`, `readd`, `position_select`, or `verification`, plus an
-   exact backup position or verification reason when available. Raw errors,
-   URIs, DIDL, service metadata, credentials, and addresses remain forbidden.
+### Future Stage 2: direct create only
 
-### Stage 3: save and play plus natural progression
+1. Invoke `playlists.apple.create` exactly once with only `planToken` and
+   `approved: true`. Never retry a consumed token.
+2. Verify the create-returned attributable `SQ:<id>`, exact name, item count,
+   exact order/canonical identities, and title/artist/album after authoritative
+   reopen.
+3. Verify every pre-existing Sonos Playlist is unchanged and the result reports
+   `queueMutation: false` and `playbackMutation: false`. Read-only observation
+   may confirm no unexpected playback, but no queue backup/restoration action
+   belongs to this transaction.
+4. On a track failure, require immediate stop with no retry or substitution.
+   Accept only bounded `playlistConstructionStep`, reviewed failed
+   position/identity, trusted UPnP code, exact attributable partial ID, cleanup
+   booleans, and queue/playback unchanged booleans.
+5. Cleanup may delete only the exact create-returned new ID after exact-ID and
+   invocation-bound-title verification. A cleanup failure must leave every
+   unrelated playlist untouched and return that exact ID with
+   `playlistCleanupRequired: true`.
+6. Retain any successful disposable playlist until separately approved
+   exact-ID cleanup. Do not play it during this acceptance.
 
-1. Repeat Stage 1 with a second unique disposable name and
-   `save-and-play`; obtain fresh explicit approval.
-2. Execute once. Verify the reopened playlist and active queue contain the
-   exact reviewed order and track 1 is authoritatively `PLAYING` in the exact
-   standalone room.
-3. Let track 1 finish naturally. If time-bounded acceptance requires seeking,
-   obtain approval and use the narrow seek operation near the end; never invoke
-   Next to prove sequencing.
-4. Capture authoritative evidence while track 2 is positively playing: exact
-   title, artist, queue position, room UID, and unchanged topology/volume/mute.
-5. Invoke and verify Stop as a separate approved action. Do not infer Stop from
-   a missing current-item marker.
+### Separately reviewed playback
 
-### Stage 4: separately approved cleanup
-
-1. Re-read playlist inventory and match each disposable playlist by both exact
-   `SQ:<id>` and name before deletion. Abort on ambiguity.
-2. Delete only those approved disposable identities. Restore any queue/playback
-   state retained after successful `save-and-play` using a separately reviewed
-   operation.
-3. Verify original topology, volume/mute, unrelated playlists, and other rooms
-   are unchanged. Record any rollback or cleanup uncertainty as a failure, not
-   a pass.
+Playback is not a stage of creation. If later acceptance covers playback, it
+must start with the verified `SQ:<id>`, perform a new exact-room preflight, and
+obtain separate explicit approval under the future issues #14/#11 flow. Never
+infer playback approval from successful playlist creation.
 
 ## Required real-device acceptance
 

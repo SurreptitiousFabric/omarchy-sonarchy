@@ -17,8 +17,8 @@ owners.
 - Sonos Favorites and current-queue playback, drag/keyboard reordering, removal,
   clearing, and safe replacement
 - Sonos Playlist create, save-queue, browse, play, reorder, and delete actions
-- Exact Apple-song plans that create a verified Sonos Playlist, optionally
-  starting item 1, through the persistent backend protocol
+- Exact Apple-song plans that create and verify a Sonos Playlist directly,
+  without changing a room queue or starting playback
 - Hierarchical, paged local Sonos music-library browsing, track search, and index refresh
 - Public Apple Music catalog and Global Player station search
 - Confidence-checked album artwork for radio tracks, with a station-logo fallback

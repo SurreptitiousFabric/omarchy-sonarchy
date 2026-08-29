@@ -76,34 +76,35 @@ There is no REST API, browser UI, or listener on port 8000.
   shell, or protocol-execution operation is exposed.
 - Playlist plan tokens are random, opaque, memory-only, process-local,
   single-use, and valid for no more than two minutes. They bind authoritative
-  room/topology, queue identity/order and length, transport/source, a SHA-256
-  fingerprint of the exact current media URI, volume/mute, capabilities,
-  playlist inventory/name, mode, ordered song identities, and backend revision.
-  Raw media URIs are never projected. Tickets are claimed before mutation and
-  are not a replacement for explicit client/user approval. Rejections before
-  ticket claim do not emit a mutation refresh or increment the revision, so an
-  unrelated invalid request cannot stale another pending plan; every claimed
-  execution attempt still receives the normal authoritative refresh.
-- Exact-song playlist construction shares the existing 100-item queue backup
-  limit. It verifies the constructed queue and reopens the new Sonos Playlist;
-  save-only also verifies complete queue/source/position/transport restoration.
-  Rollback deletes a partial playlist only by a validated new `SQ:<id>` returned
-  by that create invocation; title-only ownership is forbidden. Missing or
-  ambiguous identity leaves every candidate untouched and reports required
-  cleanup. Failure results contain controlled phases and bounded recovery
-  status, never raw exceptions, addresses, DIDL, provider URIs, credentials, or
-  tokens.
+  room UID, coordinator and hashed household identity, complete playlist
+  inventory fingerprint/count, new name, direct capability, duplicate policy,
+  ordered reviewed songs, backend revision, expiry, and nonce. Queue contents,
+  source, position, media, transport, volume, and mute are deliberately absent.
+  Tickets are claimed before the first playlist mutation and are not a
+  replacement for explicit client/user approval. Rejections before ticket
+  claim do not stale a valid token; every accepted execution attempt consumes
+  it whether the operation succeeds or fails.
+- Exact-song persistence creates an empty Sonos Playlist through the normal
+  SoCo API and appends directly to that exact saved queue. It never calls queue
+  or playback methods and does not trigger a general playback snapshot refresh.
+  The Apple-only adapter revalidates an exact song link, fixes every provider
+  and saved-queue field internally, and uses SoCo DIDL objects for XML escaping.
+  It fails closed on any SoCo version or pinned Apple-envelope drift. No generic
+  URI, DIDL, SOAP, service, or command path is exposed.
+- Failure cleanup deletes a partial playlist only by a validated new `SQ:<id>`
+  returned by that invocation and authoritatively reopened with the expected
+  title. Title-only ownership is forbidden. Missing or ambiguous identity
+  leaves every candidate untouched and reports required cleanup. Failure
+  results contain controlled phases and bounded cleanup status, never raw
+  exceptions, addresses, DIDL, provider URIs, credentials, or tokens.
   Apple identity evidence must occupy a complete canonical or pinned Sonos item
   ID, or the leading song token of an expected `x-sonos-http:` or
   `x-sonos-https:` resource; unanchored metadata and query-string substrings are
   never authoritative.
-  The exact returned ID is retained before title validation; an invalid or
-  unreadable returned title can authorize cleanup only when that exact new ID
-  resolves authoritatively to the invocation's requested title.
-  A valid differing returned title and the requested title may both support
-  that exact-ID check, but neither permits name-based ownership. `save-and-play`
-  is denied before mutation unless CurrentURI proves an active queue, because
-  Sonarchy does not retain or execute a raw non-queue URI for rollback.
+  Catalogue identity validation is not evidence that the household Sonos Apple
+  service will accept the item. A direct add rejection stops immediately;
+  Sonarchy never retries or substitutes another recording, edition, remaster,
+  live version, or catalogue ID.
 - Playlist creation requires a free slot below the 100-item bounded inventory;
   post-create verification and exact-ID cleanup can inspect one bounded extra.
   Preflight reviews use unescaped UTF-8 and must fit the complete 64 KiB
@@ -114,8 +115,8 @@ There is no REST API, browser UI, or listener on port 8000.
   backend remains available for later bounded refreshes.
 - Successful playlist results return the bounded reviewed title, artist, and
   album only after authoritative metadata comparison. Raw provider metadata and
-  optional Sonos item IDs are not echoed; duplicate queue evidence is limited to
-  approved positions and canonical Apple identities.
+  optional Sonos item IDs are not echoed. Success explicitly reports no queue or
+  playback mutation.
 - Alarms returned to QML contain a human label, not their potentially
   credential-bearing program URI or service metadata.
 - No service or account credentials are requested, logged, or stored.

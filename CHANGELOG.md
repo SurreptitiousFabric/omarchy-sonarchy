@@ -3,25 +3,25 @@
 ## Unreleased
 
 - Added read-only exact Apple-song playlist preflight and an explicitly
-  approved, single-use-token Sonos Playlist create operation with `save-only`
-  and `save-and-play` modes. The transaction canonicalises every song through
-  pinned SoCo, rejects substitutions and collisions, verifies queue and saved
-  order/identities, shares the bounded queue backup policy, and reports
-  authoritative rollback evidence. Native Apple export and external MCP
-  exposure remain deliberately separate/deferred boundaries.
-- Bound the exact current media source into Apple playlist plans through a safe
-  SHA-256 marker, recognize queue-active URIs despite coarse SoCo `UNKNOWN`, and
-  require a create-returned `SQ:<id>` before rollback can delete a playlist.
+  approved, single-use-token create-only Sonos Playlist operation. It creates
+  an empty saved playlist, adds exact songs directly without reading or
+  changing the room queue/playback state, and authoritatively verifies every
+  addition and the final order.
+- Added one Apple-only saved-queue adapter pinned to SoCo 0.31.2. It reuses
+  Apple canonicalisation, constructs escaped DIDL with fixed internal service
+  assumptions, exposes no generic execution path, and fails closed on version
+  or contract drift.
+- Removed the provisional `save-and-play` mode and all AI playlist dependencies
+  on queue backup/restoration. Playback is a separate exact-ID action; issue
+  #19 continues to track destructive queue replacement rollback.
 - Reserve bounded Sonos Playlist inventory capacity for create verification and
   enforce the 64 KiB UTF-8 protocol limit before publishing a plan ticket.
 - Keep the persistent backend alive when authoritative state exceeds that
   protocol limit by emitting a fixed bounded, write-disabled degraded snapshot.
 - Bound maximal successful playlist responses by returning full verified
-  metadata once and compact position/canonical-identity queue evidence.
-- Preserve exact create-returned playlist ownership across invalid or unreadable
-  returned titles while retaining authoritative ID-and-title cleanup checks.
-- Retain both invocation-bound titles for exact-ID cleanup and reject
-  `save-and-play` before mutation when the prior source is not the active queue.
+  metadata once with explicit false queue/playback mutation flags.
+- Require a create-returned new `SQ:<id>` plus authoritative exact-ID/title
+  resolution before partial cleanup; cleanup never guesses from title.
 - Keep pre-claim playlist execution rejections from advancing backend revision,
   and require Apple identity evidence to use complete canonical or expected
   Sonos item/resource tokens rather than arbitrary metadata substrings.
