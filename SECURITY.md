@@ -62,6 +62,18 @@ There is no REST API, browser UI, or listener on port 8000.
 - Speaker-supplied XML metadata is parsed with `defusedxml`; entity expansion
   and external entity access are forbidden.
 - Persistent-backend protocol lines are capped at 64 KiB.
+- Retained direct Apple Playlist inspection accepts only an exact reviewed
+  `music.apple.com` song URL/catalogue-ID pair and bounded title, artist, album,
+  and duration. Its opaque approval ticket lives only in backend memory for at
+  most 120 seconds, is atomically claimed once, and dies on backend restart.
+  The narrow infrastructure adapter fixes the Apple service envelope to pinned
+  SoCo 0.31.2 and constructs XML through SoCo data structures, never user XML
+  or string-interpolated DIDL. It cannot accept a generic URI, service number,
+  account value, provider, item class, SOAP field, or command.
+- An accepted retained-inspection execution intentionally leaves its exact
+  create-returned `SQ:<id>` and successful prefix in place after failure.
+  Bounded diagnostics contain no raw exception or provider data; cleanup is a
+  later separately approved exact-ID playlist action, never a title lookup.
 - QML process calls use argument arrays and small allowlisted environments;
   user text is never interpolated into a shell command. Search terms,
   room/playlist names, IDs, alarm fields, Boolean settings, and numeric ranges

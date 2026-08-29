@@ -101,6 +101,23 @@ Apple catalog search cannot see a private Apple Music library, personal
 playlists, listening history, or recommendations. Sonarchy never receives the
 user's Apple, Global Player, or Sonos password or service token.
 
+### Owner-supervised retained Apple Playlist inspection
+
+Sonarchy also has an experimental protocol-only diagnostic for a deliberately
+reviewed set of exact Apple songs. It first returns a read-only review and a
+short-lived approval token. After separate approval, it creates one empty
+native Sonos Playlist, adds the exact songs directly to that saved playlist,
+and reopens it for verification. It never reads or changes a room queue and
+never starts playback.
+
+This workflow intentionally retains the exact new `SQ:<id>` and every
+successfully added song when an add call or automated verification fails, so
+the owner can inspect the result in the official Sonos app. Retention is not a
+claim that an unverified song is correct. Cleanup is a later, separately
+confirmed exact-ID playlist action. This diagnostic is not exposed as a normal
+QML control and has not yet passed real-device acceptance; see
+[the retained inspection contract](docs/retained-direct-playlist-inspection.md).
+
 On a home-theater speaker, Sonos can replace music with TV audio whenever TV
 Autoplay is enabled and the TV is sending sound. If that combination is active,
 Sonarchy warns and stops before adding another copy of the album. Select the

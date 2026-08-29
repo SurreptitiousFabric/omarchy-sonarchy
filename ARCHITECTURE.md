@@ -64,6 +64,7 @@ debug overlays.
 | Content | normalized browse/search results and provider routing | QML formatting or device settings |
 | Queue | queue reads and identity-checked mutations | playlists |
 | Playlists | Sonos Playlist reads and identity-checked mutations | current queue |
+| Retained Apple inspection | approved exact-song plans and direct saved-playlist verification | room queues, playback, automatic cleanup, or generic provider commands |
 | Alarms | safe alarm projection and mutations | raw credential-bearing program metadata in QML |
 | Devices | details, capabilities, sound and supported device settings | topology mutation |
 | Sources | validated TV and household line-in switching | arbitrary URI playback |
@@ -108,6 +109,17 @@ album, and song views plus bounded concurrent provider reads. The HTTP adapter
 in `apple_catalog.py` owns request limits, response bounds, identifier and URL
 validation. QML receives only provider-neutral browse items and keeps a small
 presentation-only Back history.
+
+`domains/apple_retained_plan.py` owns the short-lived, process-local approval
+ticket and binds an exact household anchor, complete Sonos Playlist inventory,
+unused name, and ordered reviewed Apple songs. After atomic ticket claim,
+`domains/apple_retained_transaction.py` creates one empty saved playlist,
+retains its exact create-returned `SQ:<id>`, and verifies each direct addition.
+Failures never delete the attributable playlist or successful prefix. The only
+provider-specific construction lives in
+`infrastructure/apple_saved_queue.py`; it reproduces the pinned SoCo 0.31.2
+Apple-song envelope and fails closed on dependency drift. No URI, DIDL, service,
+account, or saved-queue field crosses the domain or protocol boundary.
 
 ## State and capabilities
 
@@ -163,6 +175,14 @@ Current reviewed QML modules above the 600-line trigger are:
 | `SonarchyStore.qml` | Page-facing state projection and capability-gated user actions | Content navigation, artwork, protocol routing, and process ownership are separate components |
 | `SonarchyBrowsePage.qml` | Browse/search presentation and keyboard interaction | Requests, authoritative results, validation, and mutations remain in the Store/backend |
 | `BarWidget.qml` | Root bar/popup composition and shared spatial focus routing | Pages, navigation, reusable controls, state, and backend protocol ownership remain separate |
+
+The 630-line `domains/apple_retained_transaction.py` also crosses the Python
+review trigger. Its single responsibility is the create/add/reopen state
+machine and its bounded retained-failure evidence. Token ownership is in
+`apple_retained_plan.py`, generic playlist rules and media identity are neutral
+helpers, and provider construction is isolated below it in
+`infrastructure/apple_saved_queue.py`; splitting the state machine itself would
+obscure the no-cleanup and stop-after-first-failure invariants.
 
 ## Verification gates
 

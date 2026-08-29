@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 301 automated Python tests pass with 84% branch coverage, alongside
+- [x] All 364 automated Python tests pass, alongside
   27 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
@@ -52,6 +52,11 @@ recorded; it must not be called tested.
   reported no recovery errors.
 - [x] A real failed album attempt was diagnosed: the whole album reached the
   queue, then enabled TV Autoplay replaced the queue transport with TV audio.
+- [x] Fake-only retained direct-playlist tests cover one and 25 exact Apple
+  songs; first, middle, and final add failures; code 800; absent, wrong-count,
+  wrong-order, wrong-identity, and metadata verification failures; delayed
+  visibility; token freshness/replay; bounded diagnostics; and zero queue,
+  playback, mixer, topology, or deletion interactions.
 
 ## Test household products
 
@@ -85,6 +90,10 @@ before Sonarchy claims real-device coverage for them.
   clear, and stale-item protection have passed without starting playback.
 - [ ] Play the disposable Sonos Playlist; create/save/reorder/remove/delete and
   unrelated-playlist preservation have passed without starting playback.
+- [ ] With fresh owner approval, run the retained direct Apple Playlist
+  inspection on one reviewed song. Leave the exact resulting or partial
+  `SQ:<id>` in place, inspect it in the official Sonos app, and confirm no room
+  queue or playback state changed. Device-free tests do not satisfy this row.
 - [ ] Browse every local-library category reported by the test household,
   traverse at least two nested levels, move forward and backward across a
   multi-page result when available, search and play one track, and confirm a

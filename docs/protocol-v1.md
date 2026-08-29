@@ -49,6 +49,59 @@ change rooms through Sonos's native update operation; if that update is
 rejected, every locally cached alarm field is restored before an authoritative
 alarm refresh.
 
+### Retained direct Apple Playlist inspection
+
+`playlist_plan.apple.retained.validate` is a read-only owner-diagnostic
+preflight. It accepts only:
+
+```json
+{
+  "roomUid": "RINCON_…",
+  "playlistName": "Manual inspection",
+  "retentionMode": "manual-inspection",
+  "allowDuplicates": false,
+  "tracks": [{
+    "catalogId": "1452806384",
+    "url": "https://music.apple.com/…?i=1452806384",
+    "title": "Just Like Heaven",
+    "artist": "The Cure",
+    "album": "Kiss Me, Kiss Me, Kiss Me",
+    "durationMs": 212000
+  }]
+}
+```
+
+The review binds the exact room only as a household/coordinator anchor, the
+complete bounded Sonos Playlist inventory, unused name, duplicate policy, and
+ordered exact songs. It reports `catalogueIdentityValidated: true` separately
+from `sonosAcceptance: "unproven_until_create"`, plus
+`playlistRetainedOnFailure: true`, `queueMutation: false`, and
+`playbackMutation: false`. The opaque token is process-local, expires within
+120 seconds, is never persisted, and becomes permanently consumed when an
+approved execution claims it.
+
+`playlists.apple.retained.create` accepts exactly:
+
+```json
+{ "planToken": "<opaque>", "approved": true }
+```
+
+It revalidates the household anchor and complete playlist inventory before any
+write, creates one empty native Sonos Playlist, captures its exact new
+`SQ:<id>`, and adds the bound songs directly to that saved playlist. It does
+not inspect or mutate a room queue and does not start playback. Each add is
+attempted once; no alternate catalogue identity is selected.
+
+Success returns the exact ID/name, reviewed ordered metadata, per-track
+`addCallReturned` and `verificationStatus`, authoritative reopen evidence,
+`playlistRetained: true`, and unchanged queue/playback flags. A post-create
+failure returns safe error `details` including the exact attributable partial
+ID, failed position/identity, validated Sonos error code when present,
+observed item count, bounded verification category, per-track results,
+`playlistRetained: true`, and `manualInspectionRequired: true`. It never
+automatically deletes the partial playlist. Cleanup is a later separately
+approved exact-ID action through the ordinary playlist contract.
+
 Successful `devices.details.get` results include `device.tv_audio_format` only
 as a non-null object for speakers that positively report soundbar support. Its
 `state` is `active`, `idle`, `unavailable`, or `unknown`, and `label` contains a

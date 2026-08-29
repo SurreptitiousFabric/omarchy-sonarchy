@@ -8,7 +8,7 @@ reviewers and users do not need to infer them from the code.
 |---|---:|---|
 | `installer` | Yes, first run only | `sonarchy-backend.sh` creates one private virtual environment below the user's XDG data directory. No install hook runs during `omarchy plugin add`. |
 | `package-manager` | Yes, first run and lock changes | The venv invokes pip in an allowlisted environment, without a download cache, non-interactively against PyPI with `--require-hashes`, `--no-deps`, wheel-only installs, and exact versions from `requirements.lock`. |
-| Local-network access | Yes | SSDP/UPnP control of private IPv4 Sonos speakers, normally TCP 1400. |
+| Local-network access | Yes | SSDP/UPnP control of private IPv4 Sonos speakers, normally TCP 1400. This includes an owner-approved, exact-Apple-song saved-playlist inspection operation that never stages through a room queue. |
 | Inbound LAN listener | Yes, notifications only | SoCo subscriptions bind the attached interface on TCP 1400–1499. Requests are limited to 16 concurrent handlers, 512 KiB bodies, three-second socket timeouts, bounded 1,024-event buffering, valid sequence headers, active subscription IDs, and the exact subscribed speaker IP. No controls are accepted. |
 | Public HTTPS | Yes | Explicit Apple catalog searches, optional popup-scoped matching of Sonos-supplied radio title/artist metadata, and allowlisted artwork/service hosts. Redirects and oversized Apple responses are rejected. |
 | Persistent files | Yes | Selected room UID and private speaker IP cache; private venv and dependency hash. Directories are 0700 and state/cache files are 0600. |

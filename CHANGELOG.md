@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added an explicit owner-approved retained Apple-to-Sonos Playlist inspection
+  protocol: a 120-second single-use plan creates one empty saved playlist and
+  adds exact reviewed songs directly, never touches a room queue or playback,
+  and retains the exact partial `SQ:<id>` for manual inspection after failure.
+- Isolated pinned SoCo 0.31.2 Apple saved-queue construction behind a narrow
+  adapter with safe XML generation, bounded diagnostics, authoritative reopen
+  verification, no generic URI/provider inputs, and fake-only regression tests.
 - Replaced every one-shot QML command with one canonical versioned persistent
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,

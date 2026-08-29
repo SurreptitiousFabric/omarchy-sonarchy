@@ -17,6 +17,8 @@ owners.
 - Sonos Favorites and current-queue playback, drag/keyboard reordering, removal,
   clearing, and safe replacement
 - Sonos Playlist create, save-queue, browse, play, reorder, and delete actions
+- Experimental owner-approved direct Apple-to-Sonos Playlist inspection that
+  retains exact partial results without touching a room queue or playback
 - Hierarchical, paged local Sonos music-library browsing, track search, and index refresh
 - Public Apple Music catalog and Global Player station search
 - Confidence-checked album artwork for radio tracks, with a station-logo fallback
@@ -136,6 +138,12 @@ private Apple Music library, recommendations, or personal playlists because
 the plugin does not possess the user's private Apple/Sonos authenticated
 session. Playing a public result hands its Apple share link to the speaker,
 which then uses the Apple Music account already connected in Sonos.
+
+The separate retained-inspection protocol can create a native Sonos Playlist
+from reviewed exact Apple song identities without queue staging or playback.
+It deliberately retains an attributable partial playlist for manual inspection
+instead of deleting it after an inconclusive result. This path is experimental
+and device-free tested; it is not yet physically accepted.
 
 `Play now` starts the selected song. `Album` queues the result's whole album so
 Sonos continues to the following tracks. If active TV Autoplay on a
