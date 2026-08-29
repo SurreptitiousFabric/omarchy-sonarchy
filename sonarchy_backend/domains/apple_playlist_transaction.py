@@ -10,7 +10,10 @@ from typing import Any
 
 from soco.exceptions import SoCoUPnPException
 
-from ..infrastructure.apple_saved_queue import DirectAppleSavedQueueAdapter
+from ..infrastructure.apple_saved_queue import (
+    DirectAppleSavedQueueAdapter,
+    apple_saved_queue_song_identity,
+)
 from .apple_playlist_plan import validate_apple_song_items
 from .common import clean, safe_index
 from .errors import PlanConflictError, PlaylistTransactionError
@@ -32,6 +35,7 @@ APPLE_SONOS_RESOURCE_URI = re.compile(
     re.IGNORECASE,
 )
 SONOS_ERROR_CODE = re.compile(r"(?:\d{1,6}|[A-Z][A-Z0-9_]{0,31})")
+SONOS_DELUXE_ALBUM_SUFFIX = re.compile(r"\s*\(deluxe edition\)\s*$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -199,12 +203,33 @@ def apple_song_identity_from_item(item: Any) -> str:
         match = APPLE_SONOS_RESOURCE_URI.match(uri)
         if match is not None:
             identities.add(match.group(1))
+        saved_queue_identity = apple_saved_queue_song_identity(resource)
+        if saved_queue_identity:
+            identities.add(saved_queue_identity)
     return next(iter(identities)) if len(identities) == 1 else ""
 
 
 def _metadata_matches(actual: str, expected: str) -> bool:
     def normalize(value: str) -> str:
         return " ".join(value.split()).casefold()
+
+    return normalize(actual) == normalize(expected)
+
+
+def _album_metadata_matches(actual: str, expected: str) -> bool:
+    """Accept the one bounded Sonos album-display normalization seen on SQ:49.
+
+    Exact Apple catalogue identity remains mandatory. This comparison only
+    permits Sonos to omit commas and append its literal ``(Deluxe Edition)``
+    display qualifier; it does not accept other album names or edition labels.
+    """
+
+    if _metadata_matches(actual, expected):
+        return True
+
+    def normalize(value: str) -> str:
+        without_qualifier = SONOS_DELUXE_ALBUM_SUFFIX.sub("", value)
+        return " ".join(without_qualifier.replace(",", " ").split()).casefold()
 
     return normalize(actual) == normalize(expected)
 
@@ -230,7 +255,7 @@ def verify_apple_items(
         if (
             not _metadata_matches(title, track["title"])
             or not _metadata_matches(artist, track["artist"])
-            or not _metadata_matches(album, track["album"])
+            or not _album_metadata_matches(album, track["album"])
         ):
             raise ValueError(f"The {container} metadata does not match the reviewed song")
         verified.append(

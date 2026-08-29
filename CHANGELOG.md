@@ -11,6 +11,11 @@
   Apple canonicalisation, constructs escaped DIDL with fixed internal service
   assumptions, exposes no generic execution path, and fails closed on version
   or contract drift.
+- Recognize the complete Apple HLS-static resource returned by an authoritative
+  saved-playlist browse after direct one-track physical creation. The matcher
+  requires the pinned Apple service and protocol shape, rejects query-only or
+  other-provider identities, and handles the one observed bounded Sonos album
+  display normalization without weakening catalogue identity.
 - Removed the provisional `save-and-play` mode and all AI playlist dependencies
   on queue backup/restoration. Playback is a separate exact-ID action; issue
   #19 continues to track destructive queue replacement rollback.

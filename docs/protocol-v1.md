@@ -135,9 +135,17 @@ new position, canonical identity, and reviewed title/artist/album. Final reopen
 verifies the complete sequence, exact name, and unchanged pre-existing
 playlist inventory. Identity evidence is accepted only as a complete canonical
 `song:<id>`, complete pinned Apple Sonos item ID, or leading song token of the
-expected Sonos Apple resource form. Arbitrary substrings and query parameters
-cannot satisfy verification. Success returns `queueMutation: false` and
-`playbackMutation: false`; no queue or playback method is invoked.
+expected Sonos Apple resource form. A saved-playlist browse may instead return
+the pinned Apple HLS-static form observed during the one-track physical test;
+that form is accepted only as one complete resource with the Apple service
+identity derived from the pinned service type, bounded saved-resource fields,
+and the exact HLS protocol type. Arbitrary substrings, another provider, and
+catalogue IDs present only in query parameters cannot satisfy verification.
+Sonos's physically observed comma removal plus literal `(Deluxe Edition)`
+album-display qualifier is accepted only after exact catalogue identity, title,
+and artist comparison; unrelated album or edition text is rejected. Success
+returns `queueMutation: false` and `playbackMutation: false`; no queue or
+playback method is invoked.
 
 Catalogue validation reports `catalogueIdentityValidated: true` and
 `sonosAcceptance: "unproven_until_create"`. A direct add may still be rejected

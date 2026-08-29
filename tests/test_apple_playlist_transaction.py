@@ -24,6 +24,7 @@ from sonarchy_backend.domains.apple_playlist_transaction import (
 from sonarchy_backend.domains.errors import PlanConflictError, PlaylistTransactionError
 from sonarchy_backend.infrastructure.apple_saved_queue import (
     APPEND_INDEX,
+    APPLE_SAVED_RESOURCE_PROTOCOL_INFO,
     APPLE_SERVICE_NUMBER,
     APPLE_SONG_CLASS,
     APPLE_SONG_KEY,
@@ -65,6 +66,30 @@ def apple_item(track, *, item_id=None):
         artist=track["artist"],
         album=track["album"],
         resources=[SimpleNamespace(uri=f"x-sonos-http:song%3a{catalog_id}.mp4")],
+    )
+
+
+def physical_sq49_item():
+    """Sanitized SQ:49 read-back shape with synthetic non-secret provider values."""
+
+    return SimpleNamespace(
+        item_id=(
+            "SQ:49/x-sonosapi-hls-static%3asong%253a1452806384"
+            "%3fsid%3d204%26flags%3d1234%26sn%3d42:"
+            "AJust%20Like%20Heaven,The%20Cure,"
+            "Kiss%20Me%20Kiss%20Me%20Kiss%20Me%20(Deluxe%20Edition)"
+        ),
+        title="Just Like Heaven",
+        creator="The Cure",
+        artist="",
+        album="Kiss Me Kiss Me Kiss Me (Deluxe Edition)",
+        desc="",
+        resources=[
+            SimpleNamespace(
+                uri=("x-sonosapi-hls-static:song%3a1452806384?sid=204&flags=1234&sn=42"),
+                protocol_info=APPLE_SAVED_RESOURCE_PROTOCOL_INFO,
+            )
+        ],
     )
 
 
@@ -374,6 +399,104 @@ def test_song_identity_requires_anchored_apple_evidence():
         resources=[SimpleNamespace(uri="https://invalid/song:1452806384")],
     )
     assert apple_song_identity_from_item(substring) == ""
+
+
+def test_physical_sq49_shape_has_strong_identity_and_verified_metadata():
+    item = physical_sq49_item()
+
+    assert apple_song_identity_from_item(item) == "1452806384"
+    assert verify_apple_items([item], [TRACK_ONE], container="saved Sonos Playlist") == [
+        {
+            "position": 1,
+            "catalogId": "1452806384",
+            "canonicalIdentity": "song:1452806384",
+            "title": "Just Like Heaven",
+            "artist": "The Cure",
+            "album": "Kiss Me, Kiss Me, Kiss Me",
+        }
+    ]
+
+
+def test_physical_resource_identity_fails_closed_on_soco_version_drift(monkeypatch):
+    item = physical_sq49_item()
+    monkeypatch.setattr(soco, "__version__", "0.32.0")
+
+    assert apple_song_identity_from_item(item) == ""
+
+
+@pytest.mark.parametrize(
+    ("uri", "protocol_info"),
+    (
+        (
+            "x-sonosapi-hls-static:song%3a999999?sid=204&flags=1234&sn=42",
+            APPLE_SAVED_RESOURCE_PROTOCOL_INFO,
+        ),
+        (
+            "x-sonosapi-hls-static:song%3a999999?sid=204&flags=1234&sn=42&reviewed=1452806384",
+            APPLE_SAVED_RESOURCE_PROTOCOL_INFO,
+        ),
+        (
+            "prefix-x-sonosapi-hls-static:song%3a1452806384?sid=204&flags=1234&sn=42",
+            APPLE_SAVED_RESOURCE_PROTOCOL_INFO,
+        ),
+        (
+            "x-sonosapi-hls-static:song%3a1452806384?sid=2311&flags=1234&sn=42",
+            APPLE_SAVED_RESOURCE_PROTOCOL_INFO,
+        ),
+        (
+            "x-sonosapi-hls-static:song%3a1452806384?sid=204&flags=1234&sn=42",
+            "sonos.com-http:*:audio/mpeg:*",
+        ),
+    ),
+)
+def test_physical_resource_shape_rejects_wrong_or_untrusted_identity(uri, protocol_info):
+    item = physical_sq49_item()
+    item.item_id = "SQ:49/sanitized-noncanonical-item"
+    item.resources[0].uri = uri
+    item.resources[0].protocol_info = protocol_info
+
+    assert apple_song_identity_from_item(item) != "1452806384"
+    with pytest.raises(ValueError, match="identity"):
+        verify_apple_items([item], [TRACK_ONE], container="saved Sonos Playlist")
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("title", "Just Like Heaven (Live)"),
+        ("creator", "Another Artist"),
+        ("album", "Disintegration"),
+        ("album", "Kiss Me Kiss Me Kiss Me (Live Edition)"),
+    ),
+)
+def test_physical_resource_shape_still_requires_reviewed_metadata(field, value):
+    item = physical_sq49_item()
+    setattr(item, field, value)
+
+    with pytest.raises(ValueError, match="metadata"):
+        verify_apple_items([item], [TRACK_ONE], container="saved Sonos Playlist")
+
+
+def test_direct_create_retains_verified_physical_shape_without_cleanup_or_queue_calls():
+    speaker = FakeSpeaker()
+
+    class PhysicalReadbackAdapter(FakeDirectAdapter):
+        def add_track(self, playlist, track):
+            self.speaker.add_calls.append(track["catalogId"])
+            self.speaker.playlist_tracks[playlist.item_id].append(physical_sq49_item())
+
+    result = create_preflighted_apple_playlist(
+        speaker,
+        plan_for(speaker, planned_tracks=[TRACK_ONE]),
+        adapter_factory=PhysicalReadbackAdapter,
+        sleeper=lambda _delay: None,
+    )
+
+    assert result["playlist"]["items"][0]["canonicalIdentity"] == "song:1452806384"
+    assert result["queueMutation"] is False
+    assert result["playbackMutation"] is False
+    assert speaker.remove_calls == []
+    assert speaker.forbidden_calls == []
 
 
 def test_verify_items_requires_exact_order_identity_and_complete_metadata():

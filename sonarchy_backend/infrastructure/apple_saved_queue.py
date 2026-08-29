@@ -11,10 +11,17 @@ from ..apple_catalog import canonical_apple_song
 
 PINNED_SOCO_VERSION = "0.31.2"
 APPLE_SERVICE_NUMBER = 52231
+APPLE_SERVICE_ID = (APPLE_SERVICE_NUMBER - 7) // 256
 APPLE_SONG_KEY = "10032020"
 APPLE_SONG_CLASS = "object.item.audioItem.musicTrack"
 APPLE_SONG_PREFIX = ""
 APPLE_CATALOG_ID = re.compile(r"[1-9]\d{0,19}")
+APPLE_SAVED_RESOURCE_PROTOCOL_INFO = "sonos.com-http:*:application/x-mpegURL:*"
+APPLE_SAVED_RESOURCE_URI = re.compile(
+    rf"x-sonosapi-hls-static:song%3a({APPLE_CATALOG_ID.pattern})"
+    rf"\?sid={APPLE_SERVICE_ID}&flags=\d{{1,10}}&sn=\d{{1,10}}",
+    re.IGNORECASE,
+)
 APPLE_TRACK_FIELDS = frozenset({"catalogId", "url", "title", "artist", "album", "durationMs"})
 MAX_TRACK_TEXT_BYTES = 240
 MAX_TRACK_DURATION_MS = 24 * 60 * 60 * 1000
@@ -55,6 +62,27 @@ def _bounded_text(value: Any) -> str:
     ):
         raise ValueError("Direct Apple playlist items require reviewed bounded text")
     return text
+
+
+def apple_saved_queue_song_identity(resource: Any) -> str:
+    """Return one exact Apple song ID from Sonos's saved-playlist resource.
+
+    A saved Sonos Playlist browse does not necessarily replay the ShareLink
+    input form. The physically observed SoCo 0.31.2 representation uses the
+    Apple service ID derived from service type 52231, an HLS-static ``song``
+    resource, and the Sonos HLS protocol type. All components are matched as a
+    complete private infrastructure shape; unrelated query text and other
+    providers are rejected.
+    """
+
+    if soco.__version__ != PINNED_SOCO_VERSION:
+        return ""
+    uri = _clean(_item_attr(resource, "uri"))
+    protocol_info = _clean(_item_attr(resource, "protocol_info"))
+    if protocol_info != APPLE_SAVED_RESOURCE_PROTOCOL_INFO:
+        return ""
+    match = APPLE_SAVED_RESOURCE_URI.fullmatch(uri)
+    return match.group(1) if match is not None else ""
 
 
 class DirectAppleSavedQueueAdapter:

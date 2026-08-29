@@ -100,9 +100,12 @@ There is no REST API, browser UI, or listener on port 8000.
   results contain controlled phases and bounded cleanup status, never raw
   exceptions, addresses, DIDL, provider URIs, credentials, or tokens.
   Apple identity evidence must occupy a complete canonical or pinned Sonos item
-  ID, or the leading song token of an expected `x-sonos-http:` or
-  `x-sonos-https:` resource; unanchored metadata and query-string substrings are
-  never authoritative.
+  ID, the leading song token of an expected `x-sonos-http:` or
+  `x-sonos-https:` resource, or the complete pinned Apple HLS-static
+  saved-playlist resource form. The latter requires the Apple service identity
+  derived from the pinned service type, bounded saved-resource fields, and the
+  exact HLS protocol type. Other providers, unanchored metadata, extra query
+  fields, and query-string-only catalogue IDs are never authoritative.
   Catalogue identity validation is not evidence that the household Sonos Apple
   service will accept the item. A direct add rejection stops immediately;
   Sonarchy never retries or substitutes another recording, edition, remaster,
@@ -118,7 +121,10 @@ There is no REST API, browser UI, or listener on port 8000.
 - Successful playlist results return the bounded reviewed title, artist, and
   album only after authoritative metadata comparison. Raw provider metadata and
   optional Sonos item IDs are not echoed. Success explicitly reports no queue or
-  playback mutation.
+  playback mutation. A physically observed Sonos album display rewrite may omit
+  commas and append the literal `(Deluxe Edition)` qualifier; that single
+  normalization is accepted only after exact Apple catalogue identity, title,
+  and artist verification. Other album names and edition labels fail closed.
 - Alarms returned to QML contain a human label, not their potentially
   credential-bearing program URI or service metadata.
 - No service or account credentials are requested, logged, or stored.

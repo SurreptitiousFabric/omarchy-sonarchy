@@ -72,7 +72,7 @@ two controls are not applicable to this household. They remain covered by
 automated capability/visibility tests and must be tested on supporting hardware
 before Sonarchy claims real-device coverage for them.
 
-## AI-curated Sonos Playlist physical acceptance — direct redesign untested
+## AI-curated Sonos Playlist physical acceptance — one-track direct create succeeded
 
 The old queue-staging design was rejected after two owner-approved physical
 failures:
@@ -88,13 +88,27 @@ failures:
    were not restored.
 
 The redesign creates an empty Sonos Playlist and adds exact Apple songs directly
-to that saved playlist. It has fake-only evidence and **has not had a physical
-test**. Do not describe it as accepted. Issue #19 separately owns general
+to that saved playlist. On 2026-08-29, an owner-approved one-track run created
+and retained `SQ:49` (`Sonarchy Direct Test A 2026-08-29`). The owner manually
+confirmed **Just Like Heaven — The Cure**, album **Kiss Me, Kiss Me, Kiss Me**.
+It was not played, edited, renamed, or deleted, and no queue or playback
+operation was issued.
+
+The automated verifier nevertheless returned a false negative because Sonos
+browsed the saved item as a queue-local `DidlMusicTrack` with an Apple
+HLS-static resource instead of one of the previously accepted forms. Read-only
+inspection confirmed one stable catalogue identity backed by the pinned Apple
+service and HLS protocol type. A read-only run of the corrected verifier against
+the retained item then accepted `song:1452806384` and its reviewed metadata.
+`SQ:49` remains retained and untouched. The corrected matcher has device-free
+regression coverage, but no two-track direct create has been run on it. Do not
+claim broader physical acceptance. Issue #19 separately owns general
 destructive queue rollback; no acceptance for this feature may claim that issue
 fixed.
 
-Another physical write requires green CI on an exact reviewed commit, a fresh
-review, and a new owner-approved staged procedure. The redesign must never
+Another physical write, including the two-track test, requires green CI on an
+exact reviewed commit, a fresh review, and a new owner-approved staged
+procedure. The redesign must never
 inspect, clear, play, repair, or otherwise alter the currently undetermined
 queue as preparation.
 

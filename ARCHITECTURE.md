@@ -147,6 +147,18 @@ pre-existing playlist inventory is unchanged. Catalogue canonicalisation is
 reported honestly as identity validation only; household Sonos acceptance
 remains `unproven_until_create`.
 
+A one-track physical create showed that saved-playlist browse can rewrite the
+ShareLink input into a queue-local `DidlMusicTrack` with one Apple HLS-static
+resource. The private adapter now owns recognition of that exact pinned
+representation: complete song token, Apple service identity derived from the
+pinned service type, bounded saved-resource fields, and exact HLS protocol
+type. The domain still rejects conflicting identities, other providers,
+unanchored substrings, and IDs found only in query text. Sonos also returned a
+punctuation-normalized album plus its literal `(Deluxe Edition)` display
+qualifier. That one bounded display normalization is accepted only after exact
+catalogue identity, title, and artist verification; other album names or
+edition labels remain failures.
+
 Failure diagnostics identify `create`, `add_track`, `verify_track`,
 `verify_playlist`, or `cleanup`. Track failures may include only the reviewed
 position/identity and a validated `SoCoUPnPException.error_code`; exception
@@ -169,9 +181,10 @@ authoritatively reopened playlist plus explicit `queueMutation: false` and
 `playbackMutation: false`. Raw provider metadata and optional Sonos item IDs
 are not exposed.
 Apple identity extraction accepts only complete canonical or pinned Sonos item
-identifiers and the leading token of an expected `x-sonos-http:` or
-`x-sonos-https:` resource; it never searches arbitrary metadata substrings or
-query parameters.
+identifiers, the leading token of an expected `x-sonos-http:` or
+`x-sonos-https:` resource, or the complete pinned Apple HLS-static saved-item
+resource form. It never searches arbitrary metadata substrings or query
+parameters.
 
 ## AI and MCP boundary
 

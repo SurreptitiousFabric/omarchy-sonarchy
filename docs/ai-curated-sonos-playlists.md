@@ -78,6 +78,18 @@ checks the requested playlist name, and confirms every pre-existing playlist
 inventory entry is unchanged. Success returns `queueMutation: false` and
 `playbackMutation: false`.
 
+Saved-playlist browse may not return the original ShareLink item form. The
+one-track physical result returned a queue-local `DidlMusicTrack` with one
+HLS-static resource. Sonarchy recognises it only when the complete resource has
+the reviewed `song:<catalogId>`, the Apple service identity derived from the
+pinned SoCo service type, bounded saved-resource fields, and the exact HLS
+protocol type. Another provider, a different catalogue ID, arbitrary prefix or
+suffix text, and an ID appearing only in query text all fail. Sonos also
+returned the album with commas omitted and the literal `(Deluxe Edition)`
+display qualifier; that exact bounded display normalization is permitted only
+after canonical identity, title, and artist match. It does not permit a
+different album or another edition label.
+
 ## Tokens and freshness
 
 Plan tokens are opaque, random, process-local, memory-only, single-use, and
@@ -147,11 +159,25 @@ proves only that catalogue validation does not guarantee acceptance of this
 exact individual-item route. Direct saved-playlist construction must fail
 safely if Sonos rejects it.
 
-The redesigned implementation has fake-only automated coverage. **No physical
-test has occurred for direct saved-playlist construction, and it must not be
-described as physically accepted.** Issue #19 separately tracks the general
-destructive queue replacement and exact rollback defect; PR #18 neither fixes
-nor closes it.
+### Direct one-track physical result
+
+On 2026-08-29, the direct route created and retained `SQ:49`, named `Sonarchy
+Direct Test A 2026-08-29`. The owner manually confirmed **Just Like Heaven —
+The Cure**, album **Kiss Me, Kiss Me, Kiss Me**, in the Sonos app. The playlist
+was not played, edited, renamed, or deleted; no queue or playback operation was
+issued.
+
+The earlier automated verdict was a false negative. Sonos accepted and retained
+the song, while the verifier rejected the queue-local/HLS-static read-back
+representation. A read-only inspection of `SQ:49` established the narrow
+machine-readable Apple identity form used by the fix. The corrected verifier
+was then run read-only against the same retained item and accepted
+`song:1452806384` with the reviewed title, artist, and album. The retained
+playlist remains untouched. No two-track physical test has been run on the
+corrected verifier, and direct construction must not yet be described as
+physically accepted beyond this exact one-track persistence result. Issue #19
+separately tracks the general destructive queue replacement and exact rollback
+defect; PR #18 neither fixes nor closes it.
 
 ## AI, MCP, and Apple export boundaries
 
