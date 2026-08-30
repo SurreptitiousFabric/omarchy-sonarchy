@@ -177,6 +177,9 @@ class FakeSpeaker:
         self.fail_create = False
         self.partial_create_failure = False
         self.create_return_id = ""
+        self.create_return_title = None
+        self.create_inventory_title = None
+        self.create_return_object = None
         self.get_by_attr_failures = 0
         self.fail_add_position = None
         self.add_failure = RuntimeError("private direct-add failure")
@@ -219,11 +222,18 @@ class FakeSpeaker:
         playlist_id = self.create_return_id or f"SQ:{self.next_playlist}"
         self.next_playlist += 1
         if playlist_id not in self.playlists:
-            playlist = SimpleNamespace(item_id=playlist_id, title=title)
+            playlist = SimpleNamespace(
+                item_id=playlist_id,
+                title=self.create_inventory_title or self.create_return_title or title,
+            )
             self.playlists[playlist_id] = playlist
             self.playlist_tracks[playlist_id] = []
         if self.partial_create_failure:
             raise RuntimeError("private create response failure")
+        if self.create_return_object is not None:
+            return self.create_return_object
+        if self.create_return_title is not None:
+            return SimpleNamespace(item_id=playlist_id, title=self.create_return_title)
         return self.playlists[playlist_id]
 
     def get_sonos_playlist_by_attr(self, attr_name, value):
@@ -807,6 +817,123 @@ def test_create_returned_new_id_is_cleanup_owned_before_first_reopen():
     assert details["playlistCleanupRequired"] is False
     assert speaker.remove_calls == ["SQ:1"]
     assert speaker.playlists == {}
+
+
+def test_normalized_create_returned_title_supports_exact_id_cleanup_after_reopen_rejects():
+    speaker = FakeSpeaker()
+    plan = plan_for(speaker, planned_tracks=[TRACK_ONE])
+    speaker.create_return_title = "AI Friday (normalized)"
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    details = error.value.details
+    assert details["playlistConstructionStep"] == "create"
+    assert details["partialPlaylistId"] == "SQ:1"
+    assert details["playlistRemoved"] is True
+    assert details["playlistCleanupRequired"] is False
+    assert speaker.remove_calls == ["SQ:1"]
+    assert speaker.playlists == {}
+    assert speaker.forbidden_calls == []
+    assert "normalized" not in json.dumps(details)
+
+
+def test_cleanup_accepts_requested_title_when_create_returned_title_differs():
+    speaker = FakeSpeaker()
+    plan = plan_for(speaker, planned_tracks=[TRACK_ONE])
+    speaker.create_return_title = "AI Friday (normalized)"
+    speaker.create_inventory_title = "AI Friday"
+    speaker.fail_add_position = 1
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    assert error.value.details["playlistRemoved"] is True
+    assert speaker.remove_calls == ["SQ:1"]
+    assert speaker.playlists == {}
+
+
+def test_cleanup_never_uses_either_supporting_title_without_exact_attributable_id():
+    speaker = FakeSpeaker()
+    unrelated = add_existing_playlist(speaker, "SQ:50", "AI Friday (normalized)")
+    unrelated_tracks = copy.deepcopy(speaker.playlist_tracks[unrelated.item_id])
+    plan = plan_for(speaker, planned_tracks=[TRACK_ONE])
+    speaker.create_return_title = "AI Friday (normalized)"
+
+    with pytest.raises(PlaylistTransactionError):
+        execute(speaker, plan)
+
+    assert speaker.remove_calls == ["SQ:1"]
+    assert set(speaker.playlists) == {"SQ:50"}
+    assert speaker.playlists["SQ:50"] is unrelated
+    assert speaker.playlist_tracks["SQ:50"] == unrelated_tracks
+
+
+class UnreadableCreatedPlaylist:
+    item_id = "SQ:1"
+
+    @property
+    def title(self):
+        raise RuntimeError("private unreadable title at an address")
+
+
+@pytest.mark.parametrize(
+    "returned_title",
+    ("", "controlled\ntitle", "x" * 81),
+)
+def test_invalid_create_returned_title_falls_back_to_requested_title_cleanup(returned_title):
+    speaker = FakeSpeaker()
+    plan = plan_for(speaker, planned_tracks=[TRACK_ONE])
+    speaker.create_return_title = returned_title
+    speaker.create_inventory_title = "AI Friday"
+    speaker.fail_add_position = 1
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    details = error.value.details
+    assert details["partialPlaylistId"] == "SQ:1"
+    assert details["playlistRemoved"] is True
+    assert speaker.remove_calls == ["SQ:1"]
+    assert returned_title not in json.dumps(details) if returned_title else True
+
+
+def test_unreadable_create_returned_title_falls_back_without_exception_leakage():
+    speaker = FakeSpeaker()
+    plan = plan_for(speaker, planned_tracks=[TRACK_ONE])
+    speaker.create_inventory_title = "AI Friday"
+    speaker.create_return_object = UnreadableCreatedPlaylist()
+    speaker.fail_add_position = 1
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    details = error.value.details
+    assert details["partialPlaylistId"] == "SQ:1"
+    assert details["playlistRemoved"] is True
+    assert speaker.remove_calls == ["SQ:1"]
+    serialized = json.dumps(details)
+    assert "private" not in serialized
+    assert "address" not in serialized
+
+
+def test_normalized_title_cleanup_failure_reports_only_exact_id_and_cleanup_required():
+    speaker = FakeSpeaker()
+    plan = plan_for(speaker, planned_tracks=[TRACK_ONE])
+    speaker.create_return_title = "AI Friday (normalized)"
+    speaker.fail_remove = True
+
+    with pytest.raises(PlaylistTransactionError) as error:
+        execute(speaker, plan)
+
+    details = error.value.details
+    assert details["playlistConstructionStep"] == "cleanup"
+    assert details["partialPlaylistId"] == "SQ:1"
+    assert details["playlistRemoved"] is False
+    assert details["playlistCleanupRequired"] is True
+    assert speaker.remove_calls == ["SQ:1"]
+    assert set(speaker.playlists) == {"SQ:1"}
+    assert "normalized" not in json.dumps(details)
 
 
 def test_concurrent_unrelated_playlist_is_never_deleted_or_title_matched():

@@ -361,7 +361,7 @@ def _cleanup_owned_playlist(
     *,
     original: PlaylistInventory,
     playlist_id: str,
-    playlist_name: str,
+    supporting_titles: frozenset[str],
 ) -> tuple[bool, bool]:
     if playlist_id in original.ids:
         return False, False
@@ -370,7 +370,7 @@ def _cleanup_owned_playlist(
         item
         for item in inventory.items
         if clean(item_attr(item, "item_id")) == playlist_id
-        and clean(item_attr(item, "title")) == playlist_name
+        and clean(item_attr(item, "title")) in supporting_titles
     ]
     if len(candidates) != 1:
         original_preserved = _inventory_preserves_original(
@@ -382,7 +382,7 @@ def _cleanup_owned_playlist(
     reopened = coordinator.get_sonos_playlist_by_attr("item_id", playlist_id)
     if (
         clean(item_attr(reopened, "item_id")) != playlist_id
-        or clean(item_attr(reopened, "title")) != playlist_name
+        or clean(item_attr(reopened, "title")) not in supporting_titles
     ):
         return False, False
     coordinator.remove_sonos_playlist(reopened)
@@ -430,6 +430,7 @@ def create_preflighted_apple_playlist(
     failed_identity: str | None = None
     creation_attempted = False
     attributable_playlist_id = ""
+    cleanup_titles = frozenset({playlist_name})
     playlist_removed = False
     pre_existing_unchanged = True
     try:
@@ -439,6 +440,12 @@ def create_preflighted_apple_playlist(
         if created_playlist_id in capture.playlists.ids:
             raise ValueError("Sonos returned a pre-existing Sonos Playlist identity")
         attributable_playlist_id = created_playlist_id
+        try:
+            returned_title = validate_playlist_title(item_attr(created, "title"))
+        except ValueError:
+            returned_title = ""
+        if returned_title:
+            cleanup_titles = frozenset({playlist_name, returned_title})
 
         created, _empty_evidence = _reopen_and_verify(
             coordinator,
@@ -513,7 +520,7 @@ def create_preflighted_apple_playlist(
                     coordinator,
                     original=capture.playlists,
                     playlist_id=attributable_playlist_id,
-                    playlist_name=playlist_name,
+                    supporting_titles=cleanup_titles,
                 )
                 cleanup_required = not playlist_removed
                 if cleanup_required:
