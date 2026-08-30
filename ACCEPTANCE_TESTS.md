@@ -10,8 +10,8 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 301 automated Python tests pass with 84% branch coverage, alongside
-  27 headless QML runtime checks.
+- [x] All 427 automated Python tests pass with 85% branch coverage, alongside
+  32 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
 - [x] Headless real-event QML tests load Omarchy's installed `PanelSlider`,
@@ -29,6 +29,12 @@ recorded; it must not be called tested.
 - [x] Live read-only checks pass for discovery, every visible room's details,
   Favorites, queue, Sonos Playlists and playlist contents, local-library
   access, alarms, Global Player, and Apple catalog search.
+- [x] Fake-only automated AI-curated playlist tests cover exact Apple song URL
+  and identity validation, 25-track bounds, duplicate review, plan expiry and
+  replay, stale inventory/anchor state, direct saved-playlist construction,
+  exact per-add/final reopen verification, code-800 failures, bounded visibility
+  retry, and exact-ID cleanup/cleanup failure. The redesigned direct operation
+  has also passed the bounded physical cases recorded below.
 - [x] Live idempotent writes pass for same-name rename, same-volume write,
   every speaker-reported sound/device setting, and current shuffle, repeat,
   and crossfade values. No effective setting or playback change was requested.
@@ -65,6 +71,143 @@ These products do not expose Trueplay or Sub crossover through SoCo, so those
 two controls are not applicable to this household. They remain covered by
 automated capability/visibility tests and must be tested on supporting hardware
 before Sonarchy claims real-device coverage for them.
+
+## AI-curated Sonos Playlist physical acceptance — direct ordered persistence passed
+
+The old queue-staging design was rejected after two owner-approved physical
+failures:
+
+1. On 2026-08-28, no playlist was created and rollback recreated 36 queue slots
+   without complete title, artist, album, or provider identity. Exact queue
+   restoration was false and the original contents/order became undetermined.
+2. On 2026-08-29, a known stopped one-track **Wish You Were Here — Pink Floyd**
+   baseline was established first. Track 1 (`song:1452806384`) staged
+   successfully; track 2 (`song:1443065566`) failed with Sonos code 800. No
+   playlist was created. Rollback recreated one stopped active queue slot but
+   failed resource verification, and the Pink Floyd metadata/stable identity
+   were not restored.
+
+The redesign creates an empty Sonos Playlist and adds exact Apple songs directly
+to that saved playlist. On 2026-08-29, an owner-approved one-track run created
+and retained `SQ:49` (`Sonarchy Direct Test A 2026-08-29`). The owner manually
+confirmed **Just Like Heaven — The Cure**, album **Kiss Me, Kiss Me, Kiss Me**.
+It was not played, edited, renamed, or deleted, and no queue or playback
+operation was issued.
+
+The automated verifier nevertheless returned a false negative because Sonos
+browsed the saved item as a queue-local `DidlMusicTrack` with an Apple
+HLS-static resource instead of one of the previously accepted forms. Read-only
+inspection confirmed one stable catalogue identity backed by the pinned Apple
+service and HLS protocol type. A read-only run of the corrected verifier against
+the retained item then accepted `song:1452806384` and its reviewed metadata.
+`SQ:49` remains retained and untouched.
+
+On 2026-08-30, Test C created and retained `SQ:51` (`Sonarchy Direct Test C
+2026-08-30`) with exact canonical identity `song:1551800724`, **Don't Start Now
+— Dua Lipa**, album **Future Nostalgia (The Moonlight Edition)**. Direct
+creation and authoritative verification succeeded without album normalization.
+No queue operation or playback mutation occurred.
+
+Test D then created and retained `SQ:52` (`Sonarchy Direct Test D 2026-08-30`)
+with exactly two authoritatively reopened items in approved order:
+
+1. `song:1452806384` — **Just Like Heaven — The Cure**, reviewed album
+   **Kiss Me, Kiss Me, Kiss Me**, accepted under the already bounded observed
+   Sonos display normalization; and
+2. `song:1551800724` — **Don't Start Now — Dua Lipa**, album **Future Nostalgia
+   (The Moonlight Edition)**, with no normalization required.
+
+Both canonical identities and supporting metadata were verified. `SQ:49`,
+`SQ:51`, and every other pre-existing Sonos Playlist remained unchanged. The
+transaction reported `queueMutation: false` and `playbackMutation: false`,
+issued no queue operation, did not start playback, executed create exactly
+once, and performed no retry or substitution. `SQ:52` remains retained without
+playback or editing.
+
+A separate direct attempt for `song:1443065566`, **Life's What You Make It —
+Talk Talk**, was rejected during saved-playlist addition with undocumented
+Sonos vendor code `814`. Sonarchy stopped without retry or substitution and
+removed attributable partial playlist `SQ:50` through exact-ID automatic
+cleanup. Pre-existing playlists, queue, and playback remained unchanged. Code
+`814` has no assigned semantic meaning here: this evidence establishes only
+that this exact item was rejected through this exact route, not a territory,
+account, licensing, provider, or universal-availability conclusion.
+
+### Physically passed persistence matrix
+
+- [x] Direct one-track Sonos Playlist creation.
+- [x] Direct creation with a second independent Apple catalogue item.
+- [x] Direct multi-track Sonos Playlist creation.
+- [x] Exact two-item count and exact approved order.
+- [x] Authoritative reopen and strong canonical identity verification.
+- [x] Supporting title, artist, and album verification.
+- [x] Unchanged pre-existing Sonos Playlist inventory.
+- [x] Zero queue mutation and zero playback mutation.
+- [x] Zero retry and zero substitution.
+- [x] Exact-ID cleanup after one rejected item.
+- [x] Normal restoration of the installed sole backend after each staged test.
+
+### Deferred acceptance
+
+- [ ] Physical playlists larger than the tested two-item case.
+- [ ] AI-orchestration policy for individually rejected catalogue items.
+- [ ] MCP process ownership and concurrency under issue #11.
+- [ ] MCP room-targeted playback under issue #14.
+- [ ] General destructive queue restoration under issue #19.
+- [ ] Apple private-library access or Apple/Sonos playlist synchronization.
+
+Issue #19 separately owns general destructive queue rollback; this acceptance
+does not claim that issue fixed. Tests A, C, and D do physically demonstrate
+ordered direct Sonos Playlist persistence for the exact accepted items above,
+not universal acceptance of every Apple catalogue song.
+
+### Physical Stage 1: read-only create preflight
+
+1. Resolve one exact room UID as the household anchor and confirm the exact
+   coordinator/household binding. Do not inspect queue contents, playback
+   source/position, transport, volume, or mute merely for playlist creation.
+2. Read the complete bounded Sonos Playlist inventory. Require one free slot
+   and an unused exact disposable name.
+3. Submit `playlist_plan.apple.validate` with `mode: save-only`, the reviewed
+   exact Apple songs, and duplicate policy. Confirm exact ordered canonical
+   identities, duration, inventory fingerprint/count, direct capability,
+   `catalogueIdentityValidated: true`,
+   `sonosAcceptance: unproven_until_create`, `queueMutation: false`,
+   `playbackMutation: false`, expiry, and approval requirement.
+4. Confirm the review explains that one playlist is created on success, no
+   queue changes and no playback start occur, and an exact-ID partial playlist
+   may briefly exist with cleanup attempted on failure. Confirm the complete
+   result is below 64 KiB and contains no raw infrastructure metadata.
+5. Stop and obtain explicit owner approval for exactly one token-only create.
+
+### Physical Stage 2: direct create only
+
+1. Invoke `playlists.apple.create` exactly once with only `planToken` and
+   `approved: true`. Never retry a consumed token.
+2. Verify the create-returned attributable `SQ:<id>`, exact name, item count,
+   exact order/canonical identities, and title/artist/album after authoritative
+   reopen.
+3. Verify every pre-existing Sonos Playlist is unchanged and the result reports
+   `queueMutation: false` and `playbackMutation: false`. Read-only observation
+   may confirm no unexpected playback, but no queue backup/restoration action
+   belongs to this transaction.
+4. On a track failure, require immediate stop with no retry or substitution.
+   Accept only bounded `playlistConstructionStep`, reviewed failed
+   position/identity, trusted UPnP code, exact attributable partial ID, cleanup
+   booleans, and queue/playback unchanged booleans.
+5. Cleanup may delete only the exact create-returned new ID after exact-ID and
+   invocation-bound-title verification. A cleanup failure must leave every
+   unrelated playlist untouched and return that exact ID with
+   `playlistCleanupRequired: true`.
+6. Retain any successful disposable playlist until separately approved
+   exact-ID cleanup. Do not play it during this acceptance.
+
+### Separately reviewed playback
+
+Playback is not a stage of creation. If later acceptance covers playback, it
+must start with the verified `SQ:<id>`, perform a new exact-room preflight, and
+obtain separate explicit approval under the future issues #14/#11 flow. Never
+infer playback approval from successful playlist creation.
 
 ## Required real-device acceptance
 

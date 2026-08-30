@@ -116,6 +116,52 @@ Library navigation is revalidated against the speaker on every request. If the
 Sonos index changes while a folder or page is open, Sonarchy asks you to return
 to the library root or refresh instead of opening or playing a different item.
 
+## AI-curated Sonos Playlists
+
+Sonarchy's persistent backend can accept a reviewed ordered plan of one to 25
+exact Apple catalogue songs and persist it as a new Sonos Playlist. This is a
+protocol capability for an integrated local AI client; there is not yet a QML
+form or supported external MCP connection for it.
+
+Each reviewed song includes its exact Apple catalogue ID and copied
+`https://music.apple.com/...` song link plus bounded title, artist, album, and
+duration evidence. Sonarchy validates the link independently through its Apple
+URL policy and pinned SoCo integration. It never creates a link from a title or
+ID, searches for a substitute, or accepts an album/playlist/artist link as one
+song.
+
+The read-only preflight shows the exact room/coordinator anchor, a hashed
+household identity, complete Sonos Playlist inventory fingerprint and count,
+new playlist name, ordered songs, total known duration, and expected side
+effects. It states both `catalogueIdentityValidated: true` and
+`sonosAcceptance: unproven_until_create`. It returns a memory-only single-use
+token valid for no more than two minutes. The token is a freshness ticket, not
+approval; the client must still request explicit approval immediately before
+creation. A backend restart or material playlist/anchor change requires a new
+preflight.
+
+Creation is save-only. Sonarchy creates a new empty Sonos Playlist, adds the
+reviewed Apple songs directly to that saved playlist, and authoritatively
+reopens it after every addition and at completion. It does not read or change
+the current room queue, source, position, transport, volume, mute, or topology,
+and it never starts playback.
+
+Existing exact-name Sonos Playlists are never overwritten. A failed track is
+never retried or silently substituted. Failure cleanup targets only the exact
+new `SQ:<id>` returned by this invocation after that ID is proven new and
+reopens with the invocation-bound title. If exact cleanup cannot be verified,
+the result returns that attributable partial ID and requests later reviewed
+cleanup; every unrelated playlist is left untouched.
+
+Playback is a separate exact-ID action after creation. Safe AI/MCP orchestration
+must first report and review the new `SQ:<id>` and then separately preflight and
+approve playback in an exact room under issues #14 and #11.
+
+A native Apple Music playlist is a separate optional **Export/Copy**, not the
+normal persistence target and not a synchronized object. See
+[`docs/ai-curated-sonos-playlists.md`](docs/ai-curated-sonos-playlists.md) for
+the complete current workflow, MCP status, and Apple export limitations.
+
 ## Queue page
 
 The dedicated Queue page shows the current Sonos queue for the selected room.

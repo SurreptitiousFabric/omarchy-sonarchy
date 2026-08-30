@@ -518,6 +518,7 @@ def test_group_volume_exposes_shared_authoritative_per_room_controls():
 def test_handler_domains_do_not_import_each_others_private_implementations():
     handler_domains = {
         "alarms",
+        "apple_playlist_plan",
         "artwork",
         "browse",
         "content",
@@ -545,6 +546,70 @@ def test_handler_domains_do_not_import_each_others_private_implementations():
             assert imported_domain not in handler_domains - {domain}, (
                 f"{domain} imports private handler domain {imported_domain}"
             )
+
+
+def test_ai_curated_playlist_docs_keep_mcp_and_apple_export_boundaries_explicit():
+    guide = (ROOT / "docs/ai-curated-sonos-playlists.md").read_text()
+    normalized_guide = " ".join(guide.split())
+    protocol = (ROOT / "docs/protocol-v1.md").read_text()
+    architecture = (ROOT / "ARCHITECTURE.md").read_text()
+
+    for operation in ("playlist_plan.apple.validate", "playlists.apple.create"):
+        assert operation in guide
+        assert operation in protocol
+    for limitation in (
+        "cannot inspect existing personal playlists",
+        "cannot read private-library membership or listening history",
+        "do not synchronize",
+        "Sonarchy cannot adjust the Apple playlist after export",
+        "copy its Apple Music share URL",
+        "cannot modify its contents",
+    ):
+        assert limitation in normalized_guide
+    assert "Export/Copy to Apple Music" in guide
+    assert "does **not** add an MCP server" in guide
+    assert "Issue #11 has not yet accepted" in architecture
+
+
+def test_ai_playlist_protocol_has_no_generic_execution_operation():
+    from sonarchy_backend.protocol import PROTOCOL_OPERATIONS
+
+    forbidden = {
+        "play_uri",
+        "execute_upnp",
+        "call_protocol",
+        "run_soco",
+        "execute_command",
+    }
+    assert PROTOCOL_OPERATIONS.isdisjoint(forbidden)
+
+
+def test_direct_apple_saved_queue_adapter_never_crosses_qml_or_protocol_boundary():
+    qml = "\n".join(path.read_text() for path in sorted(ROOT.glob("*.qml")))
+    protocol = (ROOT / "sonarchy_backend/protocol.py").read_text()
+    contracts = (ROOT / "sonarchy_backend/contracts.py").read_text()
+    adapter = ROOT / "sonarchy_backend/infrastructure/apple_saved_queue.py"
+    python_uses = [
+        path
+        for path in (ROOT / "sonarchy_backend").rglob("*.py")
+        if "AddURIToSavedQueue" in path.read_text()
+    ]
+
+    for forbidden in (
+        "soco",
+        "sonarchy_backend.infrastructure",
+        "AddURIToSavedQueue",
+        "EnqueuedURI",
+        "EnqueuedURIMetaData",
+        "CreateSavedQueue",
+        "DIDL-Lite",
+    ):
+        assert forbidden not in qml
+    for public_inventory in (protocol, contracts):
+        assert "AddURIToSavedQueue" not in public_inventory
+        assert "EnqueuedURIMetaData" not in public_inventory
+        assert "CreateSavedQueue" not in public_inventory
+    assert python_uses == [adapter]
 
 
 def test_pages_use_omarchy_tokens_without_debug_chrome():
@@ -591,6 +656,25 @@ def test_protocol_requests_keep_background_and_action_state_correlated():
         "queuedVolume",
     ):
         assert pending_state in backend_loss
+
+
+def test_qml_accepts_bounded_browse_page_metadata():
+    router = (ROOT / "SonarchyProtocolRouter.qml").read_text()
+    page = (ROOT / "SonarchyBrowsePage.qml").read_text()
+    state = (ROOT / "SonarchyContentState.qml").read_text()
+    store = (ROOT / "SonarchyStore.qml").read_text()
+
+    assert "returnedCount: Number(payload.returned_count || safeItems.length)" in router
+    assert "requestedLimit: Number(payload.requested_limit || payload.page_size || 40)" in router
+    assert "resultTruncated: payload.result_truncated === true" in router
+    assert "nextOffset: Number(payload.next_offset || 0)" in router
+    assert "libraryNext(Number(root.service.contentMeta.nextOffset || 0))" in page
+    assert "contentMeta.pageSize" not in page
+    assert "root.service.libraryPrevious()" in page
+    assert "property var libraryOffsetHistory: []" in state
+    assert "function resetLibraryHistory()" in state
+    assert "contentState.resetLibraryHistory()" in store
+    assert "libraryOffsetHistory" not in router
 
 
 def test_page_sliders_scroll_the_page_without_wheel_mutations():

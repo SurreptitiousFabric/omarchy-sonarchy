@@ -11,15 +11,19 @@ from typing import Any, TextIO
 from sonarchy_errors import user_facing_error
 
 from .contracts import (
+    MAX_PROTOCOL_LINE_BYTES,
     PROTOCOL_VERSION,
     ProtocolRequestError,
     error_payload,
     parse_request,
+    protocol_line,
     result_payload,
     snapshot_capabilities,
 )
 from .controller import ControllerError, SonosController
 from .domains import SonarchyApplication
+from .domains.browse_bounds import bound_browse_result
+from .domains.errors import SafeDomainError
 from .live_updates import EventSubscriptionManager, WakeQueue
 
 LOG = logging.getLogger(__name__)
@@ -28,7 +32,6 @@ EVENT_PANEL_POLL_SEC = 5.0
 EVENT_BACKGROUND_POLL_SEC = 15.0
 FALLBACK_PANEL_POLL_SEC = 2.0
 FALLBACK_BACKGROUND_POLL_SEC = 5.0
-MAX_PROTOCOL_LINE_BYTES = 64 * 1024
 PROTOCOL_OPERATIONS = frozenset(
     {
         "alarms.list",
@@ -65,6 +68,8 @@ PROTOCOL_OPERATIONS = frozenset(
         "queue.clear",
         "queue.content.enqueue",
         "playlists.mutate",
+        "playlist_plan.apple.validate",
+        "playlists.apple.create",
         "playlists.track.mutate",
         "content.apple.play",
         "content.apple.album.play",
@@ -75,6 +80,51 @@ PROTOCOL_OPERATIONS = frozenset(
         "alarms.delete",
     }
 )
+
+
+def _unavailable_snapshot(
+    error: dict[str, Any],
+    *,
+    degraded: bool = False,
+) -> dict[str, Any]:
+    status: dict[str, Any] = {
+        "state": "error",
+        "message": error["message"],
+        "error": error,
+        "lastRefreshEpochMs": int(time.time() * 1000),
+    }
+    if degraded:
+        status["degraded"] = True
+    return {
+        "type": "snapshot",
+        "version": PROTOCOL_VERSION,
+        "status": status,
+        "selectedAnchorRoomUid": "",
+        "targetGroupUid": "",
+        "households": [],
+        "target": None,
+        "favorites": {
+            "state": "not_loaded",
+            "items": [],
+            "total": 0,
+            "unsupported": 0,
+            "error": "",
+        },
+        "playback": {
+            "state": "STOPPED",
+            "title": "",
+            "artist": "",
+            "album": "",
+            "artworkUrl": "",
+            "artworkKind": "",
+            "source": "UNKNOWN",
+            "positionSec": None,
+            "durationSec": None,
+            "availableActions": [],
+            "metadataState": "empty",
+            "stale": False,
+        },
+    }
 
 
 class ProtocolServer:
@@ -88,15 +138,19 @@ class ProtocolServer:
         self.event_subscriptions = EventSubscriptionManager(self.event_queue)
 
     def _emit(self, payload: dict[str, Any], output: TextIO) -> None:
-        output.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        line = protocol_line(payload)
+        if len(line.encode("utf-8")) > MAX_PROTOCOL_LINE_BYTES:
+            raise RuntimeError("Protocol response exceeds the bounded line size")
+        output.write(line)
         output.flush()
 
     def emit_snapshot(self, output: TextIO, *, rediscover: bool = True) -> None:
+        cache_candidate: dict[str, Any] | None = None
         try:
             snapshot = self.application.refresh(rediscover=rediscover)
             diagnostics = self.event_subscriptions.reconcile(self.application.event_services())
             snapshot.setdefault("status", {})["liveUpdates"] = diagnostics
-            self.last_snapshot = copy.deepcopy(snapshot)
+            cache_candidate = copy.deepcopy(snapshot)
         except Exception as exc:
             LOG.exception("Sonos refresh failed")
             refresh_error = error_payload(
@@ -116,46 +170,26 @@ class ProtocolServer:
                 snapshot.setdefault("playback", {})["stale"] = True
                 snapshot["playback"]["metadataState"] = "cached"
             else:
-                snapshot = {
-                    "type": "snapshot",
-                    "version": 1,
-                    "status": {
-                        "state": "error",
-                        "message": refresh_error["message"],
-                        "error": refresh_error,
-                        "lastRefreshEpochMs": int(time.time() * 1000),
-                    },
-                    "selectedAnchorRoomUid": "",
-                    "targetGroupUid": "",
-                    "households": [],
-                    "target": None,
-                    "favorites": {
-                        "state": "not_loaded",
-                        "items": [],
-                        "total": 0,
-                        "unsupported": 0,
-                        "error": "",
-                    },
-                    "playback": {
-                        "state": "STOPPED",
-                        "title": "",
-                        "artist": "",
-                        "album": "",
-                        "artworkUrl": "",
-                        "artworkKind": "",
-                        "source": "UNKNOWN",
-                        "positionSec": None,
-                        "durationSec": None,
-                        "availableActions": [],
-                        "metadataState": "empty",
-                        "stale": False,
-                    },
-                }
+                snapshot = _unavailable_snapshot(refresh_error)
         self.revision += 1
         snapshot["type"] = "snapshot"
         snapshot["version"] = PROTOCOL_VERSION
         snapshot["revision"] = self.revision
         snapshot["capabilities"] = snapshot_capabilities(snapshot)
+        if len(protocol_line(snapshot).encode("utf-8")) > MAX_PROTOCOL_LINE_BYTES:
+            LOG.warning("Authoritative Sonos snapshot exceeded the bounded protocol line size")
+            oversized_error = error_payload(
+                "internal_error",
+                "Sonos state is too large to display safely. Reduce Sonos Favorites and refresh.",
+                operation="state.refresh",
+                retryable=True,
+            )
+            snapshot = _unavailable_snapshot(oversized_error, degraded=True)
+            snapshot["revision"] = self.revision
+            snapshot["capabilities"] = snapshot_capabilities(snapshot)
+            cache_candidate = None
+        elif cache_candidate is not None:
+            self.last_snapshot = cache_candidate
         self.last_refresh = time.monotonic()
         self._emit(snapshot, output)
 
@@ -197,10 +231,40 @@ class ProtocolServer:
             )
             return
 
-        refresh_after = self.application.mutates(op)
+        refresh_after = self.application.mutates(op) and self.application.refreshes_after_mutation(
+            op
+        )
+        mutation_started = not self.application.mutation_is_conditional(op)
+
+        def mark_mutation_started() -> None:
+            nonlocal mutation_started
+            mutation_started = True
+
         try:
-            value = self.application.execute(op, args)
+            value = self.application.execute(
+                op,
+                args,
+                backend_revision=self.revision,
+                mutation_started_callback=mark_mutation_started,
+            )
+            if op == "content.browse":
+                value = bound_browse_result(
+                    value,
+                    revision=self.revision,
+                    requested_limit=int(args.get("limit", 100)),
+                )
             self._emit(result_payload(request_id, revision=self.revision, value=value), output)
+        except SafeDomainError as exc:
+            LOG.warning("Sonarchy operation %s was safely rejected: %s", op, exc.code)
+            self._emit_error(
+                output,
+                request_id=request_id,
+                code=exc.code,
+                message=str(exc),
+                operation=op,
+                retryable=exc.retryable,
+                details=exc.details,
+            )
         except (ControllerError, ValueError, TypeError, OSError) as exc:
             LOG.warning("Sonos command %s failed: %s", op, exc)
             if isinstance(exc, (ValueError, TypeError)):
@@ -231,9 +295,9 @@ class ProtocolServer:
                 operation=op,
             )
         finally:
-            # Mutations are followed by authoritative state, including partial
-            # failures, so the QML never has to pretend its optimistic view won.
-            if refresh_after:
+            # Accepted mutations are followed by authoritative state, including
+            # partial failures. Conditional writes signal after pre-claim checks.
+            if refresh_after and mutation_started:
                 self.emit_snapshot(output, rediscover=False)
 
     def _emit_error(
@@ -245,8 +309,15 @@ class ProtocolServer:
         message: str,
         operation: str = "",
         retryable: bool = False,
+        details: dict[str, Any] | None = None,
     ) -> None:
-        error = error_payload(code, message, operation=operation, retryable=retryable)
+        error = error_payload(
+            code,
+            message,
+            operation=operation,
+            retryable=retryable,
+            details=details,
+        )
         self._emit(result_payload(request_id, revision=self.revision, error=error), output)
 
     def serve(self, input_stream: TextIO = sys.stdin, output: TextIO = sys.stdout) -> None:

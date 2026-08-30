@@ -17,6 +17,8 @@ owners.
 - Sonos Favorites and current-queue playback, drag/keyboard reordering, removal,
   clearing, and safe replacement
 - Sonos Playlist create, save-queue, browse, play, reorder, and delete actions
+- Exact Apple-song plans that create and verify a Sonos Playlist directly,
+  without changing a room queue or starting playback
 - Hierarchical, paged local Sonos music-library browsing, track search, and index refresh
 - Public Apple Music catalog and Global Player station search
 - Confidence-checked album artwork for radio tracks, with a station-logo fallback
@@ -174,7 +176,9 @@ keyboard-first walkthrough is in the [user guide](USER_GUIDE.md).
 
 The runtime boundaries and refactoring target are documented in
 [ARCHITECTURE.md](ARCHITECTURE.md), with decisions and the persistent protocol
-under [`docs/`](docs/).
+under [`docs/`](docs/). The deterministic local-AI playlist workflow and its
+current MCP/Apple boundaries are in
+[`docs/ai-curated-sonos-playlists.md`](docs/ai-curated-sonos-playlists.md).
 
 ## Remove
 

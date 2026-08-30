@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
 PROTOCOL_VERSION = 1
+MAX_PROTOCOL_LINE_BYTES = 64 * 1024
+MAX_PROTOCOL_REQUEST_ID_BYTES = 256
+MAX_PROTOCOL_OPERATION_BYTES = 128
 
 CAPABILITY_NAMES = frozenset(
     {
@@ -34,6 +38,8 @@ CAPABILITY_NAMES = frozenset(
         "playback.stop",
         "playback.toggle",
         "playlists.mutate",
+        "playlist_plan.apple.validate",
+        "playlists.apple.create",
         "playlists.track.mutate",
         "queue.clear",
         "queue.content.enqueue",
@@ -68,26 +74,50 @@ class ProtocolRequestError(ValueError):
         self.operation = operation
 
 
+def protocol_line(payload: dict[str, Any]) -> str:
+    """Serialize one bounded UTF-8 JSON-line protocol message."""
+
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+
+
+def _bounded_protocol_label(raw: Any, maximum: int) -> str:
+    value = str(raw or "")
+    if (
+        not value
+        or len(value.encode("utf-8")) > maximum
+        or any(ord(character) < 32 for character in value)
+    ):
+        return ""
+    return value
+
+
 def parse_request(payload: dict[str, Any]) -> ProtocolRequest:
-    request_id = str(payload.get("id", "") or "")
+    request_id = _bounded_protocol_label(
+        payload.get("id", ""),
+        MAX_PROTOCOL_REQUEST_ID_BYTES,
+    )
     raw_operation = payload.get("op", "")
-    operation = str(raw_operation or "")
+    operation = _bounded_protocol_label(raw_operation, MAX_PROTOCOL_OPERATION_BYTES)
 
     version = payload.get("version")
     if type(version) is not int or version != PROTOCOL_VERSION:
         raise ProtocolRequestError(
             "unsupported_version",
-            f"Protocol version {version!r} is not supported",
+            "Unsupported protocol version",
             request_id=request_id,
             operation=operation,
         )
     if not request_id:
         raise ProtocolRequestError(
-            "invalid_request", "Request id must be a non-empty string", operation=operation
+            "invalid_request",
+            "Request id must be a non-empty bounded string",
+            operation=operation,
         )
     if not operation:
         raise ProtocolRequestError(
-            "invalid_request", "Operation must be a non-empty string", request_id=request_id
+            "invalid_request",
+            "Operation must be a non-empty bounded string",
+            request_id=request_id,
         )
 
     raw_args = payload.get("args")
@@ -112,6 +142,7 @@ def error_payload(
     *,
     operation: str = "",
     retryable: bool = False,
+    details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     error: dict[str, Any] = {
         "code": code,
@@ -120,6 +151,8 @@ def error_payload(
     }
     if operation:
         error["operation"] = operation
+    if details:
+        error["details"] = details
     return error
 
 
@@ -179,6 +212,8 @@ def snapshot_capabilities(snapshot: dict[str, Any]) -> list[str]:
                 "queue.clear",
                 "queue.content.enqueue",
                 "playlists.mutate",
+                "playlist_plan.apple.validate",
+                "playlists.apple.create",
                 "playlists.track.mutate",
                 "content.apple.play",
                 "content.apple.album.play",

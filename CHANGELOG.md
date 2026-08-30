@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- Added read-only exact Apple-song playlist preflight and an explicitly
+  approved, single-use-token create-only Sonos Playlist operation. It creates
+  an empty saved playlist, adds exact songs directly without reading or
+  changing the room queue/playback state, and authoritatively verifies every
+  addition and the final order.
+- Added one Apple-only saved-queue adapter pinned to SoCo 0.31.2. It reuses
+  Apple canonicalisation, constructs escaped DIDL with fixed internal service
+  assumptions, exposes no generic execution path, and fails closed on version
+  or contract drift.
+- Recognize the complete Apple HLS-static resource returned by an authoritative
+  saved-playlist browse after direct one-track physical creation. The matcher
+  requires the pinned Apple service and protocol shape, rejects query-only or
+  other-provider identities, and handles the one observed bounded Sonos album
+  display normalization without weakening catalogue identity.
+- Record physical acceptance of a second independent one-track Apple item and
+  an exact two-item direct Sonos Playlist with preserved order, authoritative
+  reopen, unchanged pre-existing playlists, and no queue or playback mutation.
+  Also record safe exact-ID cleanup after one different exact item was rejected;
+  the undocumented vendor code is not assigned a semantic cause.
+- Removed the provisional `save-and-play` mode and all AI playlist dependencies
+  on queue backup/restoration. Playback is a separate exact-ID action; issue
+  #19 continues to track destructive queue replacement rollback.
+- Reserve bounded Sonos Playlist inventory capacity for create verification and
+  enforce the 64 KiB UTF-8 protocol limit before publishing a plan ticket.
+- Keep the persistent backend alive when authoritative state exceeds that
+  protocol limit by emitting a fixed bounded, write-disabled degraded snapshot.
+- Bound maximal successful playlist responses by returning full verified
+  metadata once with explicit false queue/playback mutation flags.
+- Require a create-returned new `SQ:<id>` plus authoritative exact-ID/title
+  resolution before partial cleanup; cleanup never guesses from title.
+- Keep pre-claim playlist execution rejections from advancing backend revision,
+  and require Apple identity evidence to use complete canonical or expected
+  Sonos item/resource tokens rather than arbitrary metadata substrings.
 - Replaced every one-shot QML command with one canonical versioned persistent
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,

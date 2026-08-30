@@ -371,6 +371,7 @@ Item {
           Button {
             visible: root.service && root.service.contentKind === "library"
               && root.service.contentMeta.hasPrevious === true
+              && root.service.libraryCanGoBack
             iconText: "󰁍"
             tooltipText: "Previous page"
             foreground: root.foreground
@@ -378,9 +379,7 @@ Item {
             enabled: root.service && !root.service.contentLoading
             onClicked: {
               browseFlick.contentY = 0
-              root.service.libraryPage(Math.max(0,
-                Number(root.service.contentMeta.offset || 0)
-                - Number(root.service.contentMeta.pageSize || 40)))
+              root.service.libraryPrevious()
             }
           }
 
@@ -394,8 +393,7 @@ Item {
             enabled: root.service && !root.service.contentLoading
             onClicked: {
               browseFlick.contentY = 0
-              root.service.libraryPage(Number(root.service.contentMeta.offset || 0)
-                + Number(root.service.contentMeta.pageSize || 40))
+              root.service.libraryNext(Number(root.service.contentMeta.nextOffset || 0))
             }
           }
 
