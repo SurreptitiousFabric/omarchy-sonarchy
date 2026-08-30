@@ -11,6 +11,7 @@ from sonarchy_backend.contracts import (
     MAX_PROTOCOL_REQUEST_ID_BYTES,
     protocol_line,
 )
+from sonarchy_backend.domains.browse_bounds import bound_browse_result
 from sonarchy_backend.domains.errors import PlaylistTransactionError
 from sonarchy_backend.protocol import (
     MAX_PROTOCOL_LINE_BYTES,
@@ -765,6 +766,7 @@ def test_large_browse_pages_return_successful_exact_prefixes_with_bounded_envelo
     if kind == "library":
         assert value["offset"] == 40
         assert value["has_next"] is True
+        assert value["next_offset"] == 40 + value["returned_count"]
         assert value["path"] == source["path"]
 
 
@@ -813,6 +815,78 @@ def test_invalid_identity_omits_that_item_and_suffix_without_partial_identity():
     assert [item["id"] for item in value["items"]] == [item["id"] for item in source["items"][:3]]
     assert value["returned_count"] == 3
     assert value["result_truncated"] is True
+
+
+def _library_page(offset, count, total=100):
+    return {
+        "ok": True,
+        "kind": "library",
+        "items": [
+            {
+                "id": f"library-item-{offset + index}",
+                "index": offset + index,
+                "title": f"Item {offset + index}",
+                "subtitle": "Artist",
+                "album_art": "",
+                "playable": True,
+            }
+            for index in range(count)
+        ],
+        "total": total,
+        "offset": offset,
+        "page_size": 100,
+        "next_offset": min(total, offset + count),
+        "has_previous": offset > 0,
+        "has_next": offset + count < total,
+    }
+
+
+def test_library_byte_reduction_returns_exact_continuation_without_gaps():
+    first_source = _library_page(0, 100)
+    second_source = _library_page(20, 80)
+
+    with patch(
+        "sonarchy_backend.domains.browse_bounds._fits_complete_envelope",
+        side_effect=lambda value, _revision: len(value["items"]) <= 20,
+    ):
+        first = bound_browse_result(first_source, revision=0, requested_limit=100)
+    with patch(
+        "sonarchy_backend.domains.browse_bounds._fits_complete_envelope",
+        side_effect=lambda value, _revision: len(value["items"]) <= 17,
+    ):
+        second = bound_browse_result(second_source, revision=0, requested_limit=100)
+
+    assert first["returned_count"] == 20
+    assert first["next_offset"] == 20
+    assert first["has_next"] is True
+    assert second["returned_count"] == 17
+    assert second["next_offset"] == 37
+    assert [item["id"] for item in first["items"] + second["items"]] == [
+        f"library-item-{index}" for index in range(37)
+    ]
+
+
+def test_library_final_page_and_invalid_identity_have_bounded_progress_semantics():
+    final = bound_browse_result(_library_page(90, 10), revision=0, requested_limit=100)
+    invalid = _library_page(0, 100)
+    invalid["items"][0]["id"] = "invalid\nidentity"
+    omitted = bound_browse_result(invalid, revision=0, requested_limit=100)
+    empty = bound_browse_result(_library_page(0, 0), revision=0, requested_limit=100)
+    bounded_terminal = bound_browse_result(
+        _library_page(1_000_000, 1, total=2_000_000), revision=0, requested_limit=100
+    )
+
+    assert final["next_offset"] == 100
+    assert final["has_next"] is False
+    assert omitted["items"] == []
+    assert omitted["returned_count"] == 0
+    assert omitted["omitted_count"] == 1
+    assert omitted["next_offset"] == 1
+    assert omitted["has_next"] is True
+    assert empty["next_offset"] == 0
+    assert empty["has_next"] is False
+    assert bounded_terminal["next_offset"] == 1_000_000
+    assert bounded_terminal["has_next"] is False
 
 
 def test_display_and_artwork_bounding_is_deterministic_and_leaves_small_values_unchanged():

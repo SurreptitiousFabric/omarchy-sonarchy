@@ -9,6 +9,7 @@ from ..contracts import (
     protocol_line,
     result_payload,
 )
+from .library import MAX_LIBRARY_INDEX
 
 DISPLAY_TEXT_BYTES = 512
 DISPLAY_TITLE_BYTES = 256
@@ -105,11 +106,11 @@ def bound_browse_result(
         return value
 
     items: list[dict[str, Any]] = []
-    identity_reduction = False
-    for raw_item in source_items:
+    identity_failure_index: int | None = None
+    for source_index, raw_item in enumerate(source_items):
         item = _bounded_item(raw_item)
         if item is None:
-            identity_reduction = True
+            identity_failure_index = source_index
             break
         items.append(item)
     value["items"] = items
@@ -131,15 +132,36 @@ def bound_browse_result(
 
     value["returned_count"] = len(items)
     value["requested_limit"] = max(1, min(int(requested_limit), 100))
-    value["result_truncated"] = identity_reduction
+    value["result_truncated"] = identity_failure_index is not None
+    if identity_failure_index is not None:
+        value["omitted_count"] = 1
+
+    def update_library_continuation() -> None:
+        if value.get("kind") != "library":
+            return
+        offset = max(0, int(value.get("offset", 0)))
+        total = max(offset, int(value.get("total", offset + len(source_items))))
+        valid_prefix_count = (
+            identity_failure_index if identity_failure_index is not None else len(source_items)
+        )
+        if len(items) < valid_prefix_count:
+            consumed = len(items)
+        elif identity_failure_index is not None:
+            consumed = identity_failure_index + 1
+        else:
+            consumed = len(source_items)
+        next_offset = min(total, MAX_LIBRARY_INDEX, offset + consumed)
+        value["next_offset"] = next_offset
+        value["has_next"] = next_offset > offset and next_offset < total
+
+    update_library_continuation()
 
     while items and not _fits_complete_envelope(value, revision):
         items.pop()
         value["returned_count"] = len(items)
         value["result_truncated"] = True
+        update_library_continuation()
 
-    if value["result_truncated"] and value.get("kind") == "library":
-        value["has_next"] = True
     if not _fits_complete_envelope(value, revision):
         raise RuntimeError("Bounded browse metadata exceeds the protocol line size")
     return value

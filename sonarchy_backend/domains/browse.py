@@ -6,7 +6,12 @@ from urllib.parse import urljoin, urlparse
 
 from .apple_browse import browse_apple_album, browse_apple_artist, search_apple
 from .common import DomainService, number_arg, string_arg
-from .library import is_library_container, resolve_library_path, validate_library_context
+from .library import (
+    MAX_LIBRARY_INDEX,
+    is_library_container,
+    resolve_library_path,
+    validate_library_context,
+)
 from .media import (
     PLAYLIST_ID_PATTERN,
     clean,
@@ -196,6 +201,7 @@ def library_content(
         "current_title": current_title,
         "offset": offset,
         "page_size": limit,
+        "next_offset": min(total, MAX_LIBRARY_INDEX, offset + len(items)),
         "has_previous": offset > 0,
         "has_next": offset + len(items) < total,
     }

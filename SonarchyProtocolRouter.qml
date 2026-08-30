@@ -93,11 +93,13 @@ Item {
             currentTitle: String(payload.current_title || ""),
             offset: Number(payload.offset || 0),
             pageSize: Number(payload.page_size || 40),
+            nextOffset: Number(payload.next_offset || 0),
             hasPrevious: payload.has_previous === true,
             hasNext: payload.has_next === true,
             returnedCount: Number(payload.returned_count || safeItems.length),
             requestedLimit: Number(payload.requested_limit || payload.page_size || 40),
-            resultTruncated: payload.result_truncated === true
+            resultTruncated: payload.result_truncated === true,
+            omittedCount: Number(payload.omitted_count || 0)
           }
           router.store.clearRequestError(completedContentRequestId)
         } else if (stillCurrentContent) {

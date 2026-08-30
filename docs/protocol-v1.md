@@ -41,8 +41,13 @@ items from the end and returns the largest exact prefix that fits.
 `returned_count` always equals the item-list length, `requested_limit` records
 the requested page size, and `result_truncated` reports protocol-budget or
 identity-safe reduction. `total` remains the provider's authoritative total;
-library `offset` is retained and `has_next` stays true when byte-budget
-reduction removed items from that page.
+library `offset` is retained and `next_offset` is the authoritative first
+provider position not consumed by the response. Clients must continue from
+`next_offset`, not `offset + requested_limit`, when a page is reduced. An
+invalid identity is omitted whole and counted by `omitted_count`; continuation
+advances past that provider position so later valid items remain reachable.
+`has_next` is true only when that continuation makes forward progress and
+provider content remains.
 
 `queue.content.enqueue` accepts an optional `libraryPath` with the same bounded
 segments. The backend re-resolves that path and verifies the selected absolute

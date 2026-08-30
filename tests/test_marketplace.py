@@ -660,10 +660,21 @@ def test_protocol_requests_keep_background_and_action_state_correlated():
 
 def test_qml_accepts_bounded_browse_page_metadata():
     router = (ROOT / "SonarchyProtocolRouter.qml").read_text()
+    page = (ROOT / "SonarchyBrowsePage.qml").read_text()
+    state = (ROOT / "SonarchyContentState.qml").read_text()
+    store = (ROOT / "SonarchyStore.qml").read_text()
 
     assert "returnedCount: Number(payload.returned_count || safeItems.length)" in router
     assert "requestedLimit: Number(payload.requested_limit || payload.page_size || 40)" in router
     assert "resultTruncated: payload.result_truncated === true" in router
+    assert "nextOffset: Number(payload.next_offset || 0)" in router
+    assert "libraryNext(Number(root.service.contentMeta.nextOffset || 0))" in page
+    assert "contentMeta.pageSize" not in page
+    assert "root.service.libraryPrevious()" in page
+    assert "property var libraryOffsetHistory: []" in state
+    assert "function resetLibraryHistory()" in state
+    assert "contentState.resetLibraryHistory()" in store
+    assert "libraryOffsetHistory" not in router
 
 
 def test_page_sliders_scroll_the_page_without_wheel_mutations():

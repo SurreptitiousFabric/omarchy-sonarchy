@@ -257,6 +257,7 @@ def test_library_browse_discovers_root_and_pages_nested_containers():
     assert nested["items"][0]["index"] == 40
     assert nested["has_previous"] is True
     assert nested["has_next"] is True
+    assert nested["next_offset"] == 41
     assert library.browse.call_args_list[0].kwargs == {
         "ml_item": None,
         "start": 0,

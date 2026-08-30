@@ -119,6 +119,12 @@ authoritative while explicit returned-count and truncation fields tell QML
 whether the page is an exact prefix. The protocol emitter remains the final
 fail-closed boundary for unexpected oversized responses.
 
+Library results also expose an authoritative `next_offset` based on provider
+positions consumed by the emitted prefix, without redefining the requested
+page size. QML keeps a bounded history of exact prior offsets for Previous and
+uses only `next_offset` for Next. That history survives a same-page refresh but
+resets when the room, content kind, search, or library path changes.
+
 `domains/apple_playlist_plan.py` owns bounded reviewed values and the
 process-local ticket lifecycle. Its read-only validation and write execution
 are separate services sharing one in-memory store. `apple_catalog.py` owns the

@@ -106,6 +106,67 @@ TestCase {
     compare(fakeLive.calls[1].context.path.length, 0)
   }
 
+  function test_truncated_library_pages_use_exact_forward_and_backward_offsets() {
+    subject.load("library", "", [], 0)
+    subject.requestId = ""
+
+    subject.libraryNext(20)
+    compare(fakeLive.calls[1].context.offset, 20)
+    compare(subject.libraryOffsetHistory.length, 1)
+    compare(subject.libraryOffsetHistory[0], 0)
+    subject.requestId = ""
+
+    subject.libraryNext(37)
+    compare(fakeLive.calls[2].context.offset, 37)
+    compare(subject.libraryOffsetHistory.length, 2)
+    compare(subject.libraryOffsetHistory[0], 0)
+    compare(subject.libraryOffsetHistory[1], 20)
+    subject.requestId = ""
+
+    subject.libraryPrevious()
+    compare(fakeLive.calls[3].context.offset, 20)
+    compare(subject.libraryOffsetHistory.length, 1)
+    compare(subject.libraryOffsetHistory[0], 0)
+    subject.requestId = ""
+
+    subject.libraryPrevious()
+    compare(fakeLive.calls[4].context.offset, 0)
+    compare(subject.libraryOffsetHistory.length, 0)
+  }
+
+  function test_library_history_resets_on_context_changes_but_not_refresh() {
+    subject.kind = "library"
+    subject.offset = 20
+    subject.libraryOffsetHistory = [0]
+
+    subject.reload()
+    compare(subject.libraryOffsetHistory.length, 1)
+    compare(subject.libraryOffsetHistory[0], 0)
+    subject.requestId = ""
+
+    subject.load("library", "", [{ id: "A:ARTIST", index: 2 }], 0)
+    compare(subject.libraryOffsetHistory.length, 0)
+    subject.requestId = ""
+
+    subject.libraryOffsetHistory = [0, 20]
+    subject.search("library", "track")
+    compare(subject.libraryOffsetHistory.length, 0)
+    subject.requestId = ""
+
+    subject.libraryOffsetHistory = [0]
+    subject.load("queue", "", [], 0)
+    compare(subject.libraryOffsetHistory.length, 0)
+  }
+
+  function test_non_progressing_library_continuation_is_ignored() {
+    subject.kind = "library"
+    subject.offset = 20
+    subject.libraryNext(20)
+
+    compare(fakeLive.calls.length, 0)
+    compare(subject.libraryOffsetHistory.length, 0)
+  }
+
   function test_favorites_are_projected_without_a_browse_request() {
     subject.load("favorites", "", [], 0)
 

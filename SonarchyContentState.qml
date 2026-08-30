@@ -15,7 +15,9 @@ Item {
   property int offset: 0
   property bool loading: false
   property var appleHistory: []
+  property var libraryOffsetHistory: []
   readonly property bool appleCanGoBack: appleHistory.length > 0
+  readonly property bool libraryCanGoBack: libraryOffsetHistory.length > 0
 
   property string requestId: ""
   property string requestRoomUid: ""
@@ -42,6 +44,8 @@ Item {
   }
 
   function currentContextKey() { return contextKey(path, offset) }
+
+  function resetLibraryHistory() { libraryOffsetHistory = [] }
 
   function syncFavorites() {
     if (kind !== "favorites") return
@@ -75,6 +79,9 @@ Item {
     var nextTerm = String(nextTermValue || "").trim()
     var nextPath = nextKind === "library" ? normalizedPath(nextPathValue) : []
     var nextOffset = nextKind === "library" ? Math.max(0, Number(nextOffsetValue || 0)) : 0
+    if (nextKind !== kind || nextTerm !== term
+        || JSON.stringify(nextPath) !== JSON.stringify(normalizedPath(path)))
+      resetLibraryHistory()
     var contextChanged = nextKind !== kind || nextTerm !== term
       || contextKey(nextPath, nextOffset) !== currentContextKey()
     if (contextChanged) {
@@ -141,6 +148,7 @@ Item {
     meta = ({})
     loading = false
     appleHistory = []
+    resetLibraryHistory()
   }
 
   function search(nextKind, nextTerm) {
@@ -172,6 +180,24 @@ Item {
   function libraryPage(pageOffset) {
     if (kind !== "library") return
     load("library", term, path, Math.max(0, Number(pageOffset || 0)))
+  }
+
+  function libraryNext(nextOffsetValue) {
+    if (kind !== "library") return
+    var continuation = Math.max(0, Number(nextOffsetValue || 0))
+    if (continuation <= offset) return
+    var nextHistory = libraryOffsetHistory.slice(-99)
+    nextHistory.push(offset)
+    libraryOffsetHistory = nextHistory
+    libraryPage(continuation)
+  }
+
+  function libraryPrevious() {
+    if (kind !== "library" || libraryOffsetHistory.length === 0) return
+    var nextHistory = libraryOffsetHistory.slice()
+    var previousOffset = Number(nextHistory.pop() || 0)
+    libraryOffsetHistory = nextHistory
+    libraryPage(previousOffset)
   }
 
   function openAppleItem(item) {
@@ -214,5 +240,6 @@ Item {
     pendingPath = []
     pendingOffset = 0
     appleHistory = []
+    resetLibraryHistory()
   }
 }
