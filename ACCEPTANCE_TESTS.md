@@ -267,3 +267,15 @@ infer playback approval from successful playlist creation.
 
 Until every applicable box is complete, the project remains a local beta and
 must not be submitted to the marketplace.
+## Single-authority MCP acceptance
+
+- [x] Process ownership and socket/config symlink, owner, and mode boundaries
+  are covered with fake-only tests.
+- [x] Read-only default and exact optional create inventory are contract tested.
+- [x] Backend token hiding, opaque single-use handles, restart invalidation, no
+  replacement fields, and exactly-once create dispatch are covered.
+- [x] MCP import boundaries prohibit SoCo/controller/QML imports.
+- [x] Existing protocol, Apple create, QML, plugin, and packaging gates remain
+  required.
+- [ ] No new real-device run is required or authorized for the MCP bridge. The
+  merged PR #18 physical evidence remains the create-operation evidence.

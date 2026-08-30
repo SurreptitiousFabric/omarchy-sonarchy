@@ -31,8 +31,9 @@ When at least one room is authoritatively available, snapshots now advertise:
 - `playlists.apple.create`: the explicitly approved, token-only create and
   authoritative verification transaction.
 
-These names describe positive operations in the private application protocol;
-they do not create a public API or MCP server. The create operation has no
+These names describe positive operations in the private application protocol.
+The local MCP adapter exposes only the separately documented bounded subset;
+the create operation has no
 plain-title, arbitrary URL/URI, generic protocol, raw SoCo, or overwrite form.
 No Apple credential, private-library permission, or native Apple Music
 playlist-write capability is added.
@@ -46,3 +47,15 @@ also declares the first-run venv bootstrap above as installer-like behavior for
 human review even though that scanner does not currently emit an `installer`
 capability for the root launcher. This is an intentional disclosure, not a
 claim that the plugin can bypass review.
+## Local MCP capability boundary
+
+The initial MCP inventory is exactly `rooms_list`, `room_state_get`,
+`content_browse`, `apple_playlist_preflight`, and—only with the explicit
+`playlist-create` permission—`apple_playlist_create`. The first four are
+read-only. Create may add one new exact native Sonos Playlist and explicitly
+reports no queue or playback mutation.
+
+MCP does not expose playback, queues, volume/mute, grouping, room selection,
+sources, alarms, settings, rename, general playlist mutation/deletion, private
+Apple libraries, arbitrary URLs, protocol operations, UPnP, or SoCo. Issue #14
+owns a future separately approved room-targeted playback design.

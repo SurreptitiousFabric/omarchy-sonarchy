@@ -226,14 +226,13 @@ parameters.
 
 ## AI and MCP boundary
 
-The deterministic protocol operations are implemented inside the existing
-persistent application path. Issue #11 has not yet accepted a process-owner,
-transport, or concurrency design for MCP, so this repository does not start a
-second controller and does not currently expose an external MCP server. A
-future adapter must remain thin, consume these operations through the accepted
-single owner, require exact room UIDs and explicit write approval, and remove
-write tools entirely in read-only configuration. It must not add generic
-protocol, SoCo, UPnP, command, URL, or URI passthrough.
+ADR 0002 adds an owner-only Unix socket to the same Quickshell-owned process.
+QML stdin/stdout and bounded same-UID socket clients share the one application,
+controller, ticket store, event manager, revision stream, snapshot cache, and
+serialized dispatcher. The stdio MCP adapter is only a client; it never imports
+SoCo, discovers speakers, subscribes, or launches a backend. The backend socket
+allowlist defaults to read-only and may add only exact reviewed Apple Sonos
+Playlist creation. There is no generic protocol or playback surface.
 
 ## State and capabilities
 
