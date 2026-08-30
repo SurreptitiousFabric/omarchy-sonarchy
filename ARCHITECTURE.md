@@ -132,6 +132,12 @@ omitted as one consumed provider position, while aggregate-only suffix removal
 does not consume the removed positions. Breadcrumb and path identities are
 projected together as the same exact safe prefix.
 
+For non-library browse kinds, identity-invalid items are filtered individually
+while scanning the entire provider page, so a bad item cannot hide later valid
+items. Library browsing deliberately retains its first-invalid-position stop so
+`next_offset` can consume exactly that provider position without skipping a
+later aggregate-reduced item.
+
 `domains/apple_playlist_plan.py` owns bounded reviewed values and the
 process-local ticket lifecycle. Its read-only validation and write execution
 are separate services sharing one in-memory store. `apple_catalog.py` owns the

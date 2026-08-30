@@ -49,6 +49,11 @@ advances past that provider position so later valid items remain reachable.
 `has_next` is true only when that continuation makes forward progress and
 provider content remains.
 
+Non-library browse results have no continuation offset. They scan the complete
+provider page, omit every identity-invalid item, and retain all later valid
+items in their original relative order. Their `omitted_count` is the exact
+number filtered before deterministic end-only wire-budget reduction.
+
 Browse identities are complete-or-omit under explicit UTF-8 byte limits:
 opaque item and library navigation IDs are at most 512 bytes, Apple action
 `url`/`album_url` values are at most 1,024 bytes, and Sonos Playlist IDs are at

@@ -145,11 +145,16 @@ def bound_browse_result(
 
     items: list[dict[str, Any]] = []
     identity_failure_index: int | None = None
+    omitted_count = 0
+    is_library = value.get("kind") == "library"
     for source_index, raw_item in enumerate(source_items):
         item = _bounded_item(raw_item)
         if item is None:
-            identity_failure_index = source_index
-            break
+            omitted_count += 1
+            if is_library:
+                identity_failure_index = source_index
+                break
+            continue
         items.append(item)
     value["items"] = items
 
@@ -162,9 +167,9 @@ def bound_browse_result(
 
     value["returned_count"] = len(items)
     value["requested_limit"] = max(1, min(int(requested_limit), 100))
-    value["result_truncated"] = identity_failure_index is not None
-    if identity_failure_index is not None:
-        value["omitted_count"] = 1
+    value["result_truncated"] = omitted_count > 0
+    if omitted_count:
+        value["omitted_count"] = omitted_count
 
     def update_library_continuation() -> None:
         if value.get("kind") != "library":

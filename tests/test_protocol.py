@@ -800,7 +800,7 @@ def test_browse_bounding_preserves_complete_action_identities_and_unicode_bounda
         item["title"].encode("utf-8").decode("utf-8")
 
 
-def test_invalid_identity_omits_that_item_and_suffix_without_partial_identity():
+def test_invalid_non_library_identity_omits_only_that_item_without_partial_identity():
     source = _oversized_browse_value("queue")
     source["items"][3]["id"] = "invalid\nidentity"
     controller = BrowseResultController(source)
@@ -818,9 +818,154 @@ def test_invalid_identity_omits_that_item_and_suffix_without_partial_identity():
     )
 
     value = decoded(output)[0]["value"]
-    assert [item["id"] for item in value["items"]] == [item["id"] for item in source["items"][:3]]
+    expected = [item["id"] for index, item in enumerate(source["items"]) if index != 3]
+    assert [item["id"] for item in value["items"]] == expected[: value["returned_count"]]
+    assert value["omitted_count"] == 1
+    assert value["result_truncated"] is True
+
+
+NON_LIBRARY_BROWSE_KINDS = (
+    "queue",
+    "favorites",
+    "playlists",
+    "playlist",
+    "global",
+    "apple",
+    "apple-artist",
+    "apple-album",
+)
+
+
+def _identity_test_item(index):
+    return {
+        "id": f"item-{index}",
+        "url": f"https://music.apple.com/ch/song/example/{index}",
+        "album_url": f"https://music.apple.com/ch/album/example/{index}",
+        "title": f"Item {index}",
+        "subtitle": "Artist",
+        "album_art": "",
+        "playable": True,
+    }
+
+
+@pytest.mark.parametrize("kind", NON_LIBRARY_BROWSE_KINDS)
+@pytest.mark.parametrize("invalid_positions", ((0,), (2,), (0, 2, 4)))
+def test_non_library_kinds_skip_invalid_identities_and_preserve_later_order(
+    kind, invalid_positions
+):
+    items = [_identity_test_item(index) for index in range(6)]
+    for index in invalid_positions:
+        items[index]["id"] = "invalid\nidentity"
+    source = {"ok": True, "kind": kind, "items": items, "total": 19}
+
+    value = bound_browse_result(source, revision=0, requested_limit=100)
+
+    assert [item["id"] for item in value["items"]] == [
+        f"item-{index}" for index in range(6) if index not in invalid_positions
+    ]
+    assert value["returned_count"] == len(value["items"])
+    assert value["omitted_count"] == len(invalid_positions)
+    assert value["result_truncated"] is True
+    assert value["total"] == 19
+    assert "next_offset" not in value
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    (
+        ("id", "x" * (BROWSE_IDENTITY_BYTES + 1)),
+        ("url", "x" * (BROWSE_ACTION_URL_BYTES + 1)),
+        ("album_url", "x" * (BROWSE_ACTION_URL_BYTES + 1)),
+        ("id", "controlled\tidentity"),
+        ("id", ""),
+    ),
+)
+@pytest.mark.parametrize("kind", NON_LIBRARY_BROWSE_KINDS)
+def test_non_library_identity_failures_are_whole_item_omissions(kind, field, invalid_value):
+    items = [_identity_test_item(index) for index in range(3)]
+    items[1][field] = invalid_value
+
+    value = bound_browse_result(
+        {"ok": True, "kind": kind, "items": items, "total": 3},
+        revision=0,
+        requested_limit=100,
+    )
+
+    assert [item["id"] for item in value["items"]] == ["item-0", "item-2"]
+    assert value["omitted_count"] == 1
+    assert value["returned_count"] == 2
+    assert all(item["title"] != "Item 1" for item in value["items"])
+    if invalid_value:
+        assert invalid_value not in json.dumps(value)
+
+
+@pytest.mark.parametrize("kind", NON_LIBRARY_BROWSE_KINDS)
+def test_non_library_exact_limit_identity_is_retained_and_one_over_is_omitted(kind):
+    items = [_identity_test_item(index) for index in range(3)]
+    items[0]["id"] = "i" * BROWSE_IDENTITY_BYTES
+    items[1]["url"] = "u" * BROWSE_ACTION_URL_BYTES
+    items[2]["album_url"] = "a" * (BROWSE_ACTION_URL_BYTES + 1)
+
+    value = bound_browse_result(
+        {"ok": True, "kind": kind, "items": items, "total": 3},
+        revision=0,
+        requested_limit=100,
+    )
+
+    assert value["items"][0]["id"] == "i" * BROWSE_IDENTITY_BYTES
+    assert value["items"][1]["url"] == "u" * BROWSE_ACTION_URL_BYTES
+    assert [item["title"] for item in value["items"]] == ["Item 0", "Item 1"]
+    assert value["omitted_count"] == 1
+
+
+@pytest.mark.parametrize("kind", NON_LIBRARY_BROWSE_KINDS)
+def test_non_library_aggregate_reduction_runs_after_invalid_filtering(kind):
+    items = [_identity_test_item(index) for index in range(8)]
+    items[1]["id"] = "invalid\nidentity"
+    items[5]["url"] = "x" * (BROWSE_ACTION_URL_BYTES + 1)
+
+    with patch(
+        "sonarchy_backend.domains.browse_bounds._fits_complete_envelope",
+        side_effect=lambda value, _revision: len(value["items"]) <= 3,
+    ):
+        value = bound_browse_result(
+            {"ok": True, "kind": kind, "items": items, "total": 20},
+            revision=0,
+            requested_limit=100,
+        )
+
+    assert [item["id"] for item in value["items"]] == ["item-0", "item-2", "item-3"]
+    assert value["omitted_count"] == 2
     assert value["returned_count"] == 3
     assert value["result_truncated"] is True
+    assert value["total"] == 20
+
+
+def test_invalid_non_library_page_keeps_protocol_server_alive_for_later_request():
+    items = [_identity_test_item(index) for index in range(3)]
+    items[0]["url"] = "x" * (BROWSE_ACTION_URL_BYTES + 1)
+    controller = BrowseResultController({"ok": True, "kind": "apple", "items": items, "total": 3})
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "invalid-page",
+            "op": "content.browse",
+            "args": {"roomUid": "R1", "kind": "apple", "term": "x", "limit": 100},
+        },
+        output,
+    )
+    server.handle(
+        {"version": 1, "id": "later", "op": "alarms.list", "args": {"roomUid": "R1"}},
+        output,
+    )
+
+    messages = decoded(output)
+    assert [message["id"] for message in messages] == ["invalid-page", "later"]
+    assert all(message["ok"] is True for message in messages)
+    assert [item["id"] for item in messages[0]["value"]["items"]] == ["item-1", "item-2"]
 
 
 def _library_page(offset, count, total=100):
