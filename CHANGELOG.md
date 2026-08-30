@@ -16,6 +16,11 @@
   requires the pinned Apple service and protocol shape, rejects query-only or
   other-provider identities, and handles the one observed bounded Sonos album
   display normalization without weakening catalogue identity.
+- Record physical acceptance of a second independent one-track Apple item and
+  an exact two-item direct Sonos Playlist with preserved order, authoritative
+  reopen, unchanged pre-existing playlists, and no queue or playback mutation.
+  Also record safe exact-ID cleanup after one different exact item was rejected;
+  the undocumented vendor code is not assigned a semantic cause.
 - Removed the provisional `save-and-play` mode and all AI playlist dependencies
   on queue backup/restoration. Playback is a separate exact-ID action; issue
   #19 continues to track destructive queue replacement rollback.

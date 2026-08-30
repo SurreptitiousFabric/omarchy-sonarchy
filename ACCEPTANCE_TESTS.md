@@ -10,7 +10,7 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 415 automated Python tests pass with 85% branch coverage, alongside
+- [x] All 427 automated Python tests pass with 85% branch coverage, alongside
   32 headless QML runtime checks.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
   Omarchy manifest, and standalone QML lint gates pass.
@@ -34,7 +34,7 @@ recorded; it must not be called tested.
   replay, stale inventory/anchor state, direct saved-playlist construction,
   exact per-add/final reopen verification, code-800 failures, bounded visibility
   retry, and exact-ID cleanup/cleanup failure. The redesigned direct operation
-  has not been tested on a speaker.
+  has also passed the bounded physical cases recorded below.
 - [x] Live idempotent writes pass for same-name rename, same-volume write,
   every speaker-reported sound/device setting, and current shuffle, repeat,
   and crossfade values. No effective setting or playback change was requested.
@@ -72,7 +72,7 @@ two controls are not applicable to this household. They remain covered by
 automated capability/visibility tests and must be tested on supporting hardware
 before Sonarchy claims real-device coverage for them.
 
-## AI-curated Sonos Playlist physical acceptance — one-track direct create succeeded
+## AI-curated Sonos Playlist physical acceptance — direct ordered persistence passed
 
 The old queue-staging design was rejected after two owner-approved physical
 failures:
@@ -100,19 +100,68 @@ HLS-static resource instead of one of the previously accepted forms. Read-only
 inspection confirmed one stable catalogue identity backed by the pinned Apple
 service and HLS protocol type. A read-only run of the corrected verifier against
 the retained item then accepted `song:1452806384` and its reviewed metadata.
-`SQ:49` remains retained and untouched. The corrected matcher has device-free
-regression coverage, but no two-track direct create has been run on it. Do not
-claim broader physical acceptance. Issue #19 separately owns general
-destructive queue rollback; no acceptance for this feature may claim that issue
-fixed.
+`SQ:49` remains retained and untouched.
 
-Another physical write, including the two-track test, requires green CI on an
-exact reviewed commit, a fresh review, and a new owner-approved staged
-procedure. The redesign must never
-inspect, clear, play, repair, or otherwise alter the currently undetermined
-queue as preparation.
+On 2026-08-30, Test C created and retained `SQ:51` (`Sonarchy Direct Test C
+2026-08-30`) with exact canonical identity `song:1551800724`, **Don't Start Now
+— Dua Lipa**, album **Future Nostalgia (The Moonlight Edition)**. Direct
+creation and authoritative verification succeeded without album normalization.
+No queue operation or playback mutation occurred.
 
-### Future Stage 1: read-only create preflight
+Test D then created and retained `SQ:52` (`Sonarchy Direct Test D 2026-08-30`)
+with exactly two authoritatively reopened items in approved order:
+
+1. `song:1452806384` — **Just Like Heaven — The Cure**, reviewed album
+   **Kiss Me, Kiss Me, Kiss Me**, accepted under the already bounded observed
+   Sonos display normalization; and
+2. `song:1551800724` — **Don't Start Now — Dua Lipa**, album **Future Nostalgia
+   (The Moonlight Edition)**, with no normalization required.
+
+Both canonical identities and supporting metadata were verified. `SQ:49`,
+`SQ:51`, and every other pre-existing Sonos Playlist remained unchanged. The
+transaction reported `queueMutation: false` and `playbackMutation: false`,
+issued no queue operation, did not start playback, executed create exactly
+once, and performed no retry or substitution. `SQ:52` remains retained without
+playback or editing.
+
+A separate direct attempt for `song:1443065566`, **Life's What You Make It —
+Talk Talk**, was rejected during saved-playlist addition with undocumented
+Sonos vendor code `814`. Sonarchy stopped without retry or substitution and
+removed attributable partial playlist `SQ:50` through exact-ID automatic
+cleanup. Pre-existing playlists, queue, and playback remained unchanged. Code
+`814` has no assigned semantic meaning here: this evidence establishes only
+that this exact item was rejected through this exact route, not a territory,
+account, licensing, provider, or universal-availability conclusion.
+
+### Physically passed persistence matrix
+
+- [x] Direct one-track Sonos Playlist creation.
+- [x] Direct creation with a second independent Apple catalogue item.
+- [x] Direct multi-track Sonos Playlist creation.
+- [x] Exact two-item count and exact approved order.
+- [x] Authoritative reopen and strong canonical identity verification.
+- [x] Supporting title, artist, and album verification.
+- [x] Unchanged pre-existing Sonos Playlist inventory.
+- [x] Zero queue mutation and zero playback mutation.
+- [x] Zero retry and zero substitution.
+- [x] Exact-ID cleanup after one rejected item.
+- [x] Normal restoration of the installed sole backend after each staged test.
+
+### Deferred acceptance
+
+- [ ] Physical playlists larger than the tested two-item case.
+- [ ] AI-orchestration policy for individually rejected catalogue items.
+- [ ] MCP process ownership and concurrency under issue #11.
+- [ ] MCP room-targeted playback under issue #14.
+- [ ] General destructive queue restoration under issue #19.
+- [ ] Apple private-library access or Apple/Sonos playlist synchronization.
+
+Issue #19 separately owns general destructive queue rollback; this acceptance
+does not claim that issue fixed. Tests A, C, and D do physically demonstrate
+ordered direct Sonos Playlist persistence for the exact accepted items above,
+not universal acceptance of every Apple catalogue song.
+
+### Physical Stage 1: read-only create preflight
 
 1. Resolve one exact room UID as the household anchor and confirm the exact
    coordinator/household binding. Do not inspect queue contents, playback
@@ -131,7 +180,7 @@ queue as preparation.
    result is below 64 KiB and contains no raw infrastructure metadata.
 5. Stop and obtain explicit owner approval for exactly one token-only create.
 
-### Future Stage 2: direct create only
+### Physical Stage 2: direct create only
 
 1. Invoke `playlists.apple.create` exactly once with only `planToken` and
    `approved: true`. Never retry a consumed token.

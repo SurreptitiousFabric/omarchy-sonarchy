@@ -159,6 +159,16 @@ qualifier. That one bounded display normalization is accepted only after exact
 catalogue identity, title, and artist verification; other album names or
 edition labels remain failures.
 
+Subsequent physical acceptance created a second independent one-track playlist
+and one exact two-track playlist. The two-track result preserved approved
+canonical order and supporting metadata through final authoritative reopen,
+while every pre-existing playlist remained unchanged and queue/playback
+mutation flags remained false. A different exact Apple item was rejected with
+an undocumented vendor code and its attributable partial playlist was removed
+through the same exact-ID cleanup boundary. These results validate the
+architecture for the tested one- and two-item cases, not universal catalogue
+acceptance or general queue restoration; issue #19 remains separate.
+
 Failure diagnostics identify `create`, `add_track`, `verify_track`,
 `verify_playlist`, or `cleanup`. Track failures may include only the reviewed
 position/identity and a validated `SoCoUPnPException.error_code`; exception

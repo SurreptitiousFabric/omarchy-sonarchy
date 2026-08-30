@@ -159,7 +159,7 @@ proves only that catalogue validation does not guarantee acceptance of this
 exact individual-item route. Direct saved-playlist construction must fail
 safely if Sonos rejects it.
 
-### Direct one-track physical result
+### Direct physical acceptance results
 
 On 2026-08-29, the direct route created and retained `SQ:49`, named `Sonarchy
 Direct Test A 2026-08-29`. The owner manually confirmed **Just Like Heaven —
@@ -173,11 +173,39 @@ representation. A read-only inspection of `SQ:49` established the narrow
 machine-readable Apple identity form used by the fix. The corrected verifier
 was then run read-only against the same retained item and accepted
 `song:1452806384` with the reviewed title, artist, and album. The retained
-playlist remains untouched. No two-track physical test has been run on the
-corrected verifier, and direct construction must not yet be described as
-physically accepted beyond this exact one-track persistence result. Issue #19
-separately tracks the general destructive queue replacement and exact rollback
-defect; PR #18 neither fixes nor closes it.
+playlist remains untouched.
+
+On 2026-08-30, direct Test C created and retained `SQ:51`, named `Sonarchy
+Direct Test C 2026-08-30`, containing `song:1551800724`, **Don't Start Now — Dua
+Lipa**, album **Future Nostalgia (The Moonlight Edition)**. Exact canonical
+identity and reviewed metadata passed authoritative reopen without album
+normalization. No queue operation or playback mutation occurred.
+
+Direct Test D then created and retained `SQ:52`, named `Sonarchy Direct Test D
+2026-08-30`, with two authoritatively verified items in exact approved order:
+`song:1452806384` (**Just Like Heaven — The Cure**) followed by
+`song:1551800724` (**Don't Start Now — Dua Lipa**). The first item used only the
+existing bounded Sonos album-display normalization; the second required none.
+Both identities and all supporting title, artist, and album evidence passed.
+Every pre-existing playlist, including `SQ:49` and `SQ:51`, remained unchanged.
+The single create execution reported `queueMutation: false` and
+`playbackMutation: false`; no queue operation, playback, retry, or substitution
+occurred.
+
+A separate direct attempt to add `song:1443065566`, **Life's What You Make It
+— Talk Talk**, stopped at the rejected item with undocumented Sonos vendor code
+`814`. Exact-ID automatic cleanup removed attributable partial playlist
+`SQ:50`; pre-existing playlists, queue, and playback remained unchanged. No
+semantic cause is assigned to `814`, and the result is not evidence of global
+unavailability. It proves only rejection of this exact item through this exact
+route.
+
+These cases physically demonstrate one- and two-item direct persistence,
+approved ordering, authoritative verification, unchanged existing playlists,
+queue/playback isolation, no retry/substitution, and exact-ID partial cleanup.
+They do not demonstrate universal Apple-song acceptance or larger playlist
+sizes. Issue #19 separately tracks general destructive queue replacement and
+exact rollback; PR #18 neither fixes nor closes it.
 
 ## AI, MCP, and Apple export boundaries
 
