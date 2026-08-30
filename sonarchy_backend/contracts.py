@@ -103,7 +103,7 @@ def parse_request(payload: dict[str, Any]) -> ProtocolRequest:
     if type(version) is not int or version != PROTOCOL_VERSION:
         raise ProtocolRequestError(
             "unsupported_version",
-            f"Protocol version {version!r} is not supported",
+            "Unsupported protocol version",
             request_id=request_id,
             operation=operation,
         )

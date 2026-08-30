@@ -240,6 +240,94 @@ def test_invalid_request_contract_is_rejected_without_execution(request_payload,
     assert controller.calls == []
 
 
+@pytest.mark.parametrize("version", (2, True, None, [2, "private"], {"private": 2}))
+def test_unsupported_versions_use_one_fixed_bounded_correlated_error(version):
+    controller = FakeController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(
+        {
+            "version": version,
+            "id": "unsupported-correlated",
+            "op": "state.refresh",
+            "args": {},
+        },
+        output,
+    )
+
+    line = output.getvalue()
+    result = json.loads(line)
+    assert result["id"] == "unsupported-correlated"
+    assert result["error"] == {
+        "code": "unsupported_version",
+        "message": "Unsupported protocol version",
+        "retryable": False,
+        "operation": "state.refresh",
+    }
+    assert len(line.encode("utf-8")) < MAX_PROTOCOL_LINE_BYTES
+    assert "private" not in line
+
+
+def test_large_unsupported_version_is_bounded_redacted_and_server_survives():
+    private_version = "private-version-fragment-" + ("x" * 65_300)
+    invalid_request = {
+        "version": private_version,
+        "id": "large-version",
+        "op": "session.panel_open.set",
+        "args": {},
+    }
+    invalid_line = protocol_line(invalid_request)
+    assert len(invalid_line.encode("utf-8")) < MAX_PROTOCOL_LINE_BYTES
+
+    controller = FakeController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    with tempfile.TemporaryFile(mode="w+") as input_stream:
+        input_stream.write(invalid_line)
+        input_stream.write(
+            '{"version":1,"id":"after-invalid-version",'
+            '"op":"session.panel_open.set","args":{"open":true}}\n'
+        )
+        input_stream.seek(0)
+        server.serve(input_stream, output)
+
+    messages = decoded(output)
+    invalid_result = next(message for message in messages if message.get("id") == "large-version")
+    later_result = next(
+        message for message in messages if message.get("id") == "after-invalid-version"
+    )
+    assert invalid_result["error"]["code"] == "unsupported_version"
+    assert invalid_result["error"]["message"] == "Unsupported protocol version"
+    assert invalid_result["error"]["operation"] == "session.panel_open.set"
+    invalid_result_line = protocol_line(invalid_result)
+    assert len(invalid_result_line.encode("utf-8")) < MAX_PROTOCOL_LINE_BYTES
+    assert private_version not in output.getvalue()
+    assert "private-version-fragment" not in output.getvalue()
+    assert later_result["ok"] is True
+    assert server.panel_open is True
+
+
+def test_unsupported_version_does_not_echo_an_oversized_request_id():
+    server = ProtocolServer(FakeController())  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(
+        {
+            "version": 2,
+            "id": "private-id-" + ("x" * MAX_PROTOCOL_REQUEST_ID_BYTES),
+            "op": "state.refresh",
+            "args": {},
+        },
+        output,
+    )
+
+    result = decoded(output)[0]
+    assert result["id"] == ""
+    assert result["error"]["message"] == "Unsupported protocol version"
+    assert "private-id" not in output.getvalue()
+
+
 def test_protocol_emits_utf8_without_ascii_escape_expansion():
     server = ProtocolServer(FakeController())  # type: ignore[arg-type]
     output = io.StringIO()
