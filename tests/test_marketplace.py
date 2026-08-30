@@ -112,7 +112,7 @@ def test_tree_has_no_symlinks_or_unexpected_executables():
         mode = stat.S_IMODE(path.stat().st_mode)
         assert mode & 0o022 == 0, path
         executable = bool(mode & 0o111)
-        assert executable is (path.name == "sonarchy-backend.sh"), path
+        assert executable is (path.name in {"sonarchy-backend.sh", "sonarchy-mcp.sh"}), path
 
 
 def test_runtime_lock_is_versioned_and_hashed():
@@ -567,8 +567,8 @@ def test_ai_curated_playlist_docs_keep_mcp_and_apple_export_boundaries_explicit(
     ):
         assert limitation in normalized_guide
     assert "Export/Copy to Apple Music" in guide
-    assert "does **not** add an MCP server" in guide
-    assert "Issue #11 has not yet accepted" in architecture
+    assert "does **not** add a second Sonos controller" in normalized_guide
+    assert "ADR 0002 adds an owner-only Unix socket" in architecture
 
 
 def test_ai_playlist_protocol_has_no_generic_execution_operation():
