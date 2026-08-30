@@ -110,6 +110,15 @@ in `apple_catalog.py` owns request limits, response bounds, identifier and URL
 validation. QML receives only provider-neutral browse items and keeps a small
 presentation-only Back history.
 
+`domains/browse_bounds.py` is the browse wire-budget boundary. It removes
+control characters and byte-bounds display-only text at Unicode boundaries,
+keeps artwork whole or empty, and never shortens an actionable identity. It
+then measures the complete worst-case result envelope and removes only a
+deterministic item suffix until the line fits. The provider total remains
+authoritative while explicit returned-count and truncation fields tell QML
+whether the page is an exact prefix. The protocol emitter remains the final
+fail-closed boundary for unexpected oversized responses.
+
 `domains/apple_playlist_plan.py` owns bounded reviewed values and the
 process-local ticket lifecycle. Its read-only validation and write execution
 are separate services sharing one in-memory store. `apple_catalog.py` owns the

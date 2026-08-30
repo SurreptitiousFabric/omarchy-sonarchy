@@ -22,6 +22,7 @@ from .contracts import (
 )
 from .controller import ControllerError, SonosController
 from .domains import SonarchyApplication
+from .domains.browse_bounds import bound_browse_result
 from .domains.errors import SafeDomainError
 from .live_updates import EventSubscriptionManager, WakeQueue
 
@@ -246,6 +247,12 @@ class ProtocolServer:
                 backend_revision=self.revision,
                 mutation_started_callback=mark_mutation_started,
             )
+            if op == "content.browse":
+                value = bound_browse_result(
+                    value,
+                    revision=self.revision,
+                    requested_limit=int(args.get("limit", 100)),
+                )
             self._emit(result_payload(request_id, revision=self.revision, value=value), output)
         except SafeDomainError as exc:
             LOG.warning("Sonarchy operation %s was safely rejected: %s", op, exc.code)

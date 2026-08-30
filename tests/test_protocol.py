@@ -86,6 +86,16 @@ class OversizedSnapshotController(FakeController):
         return snapshot
 
 
+class BrowseResultController(FakeController):
+    def __init__(self, result):
+        super().__init__()
+        self.result = result
+
+    def browse_content(self, room_uid, kind, term, limit, context=None):
+        self.calls.append(("browseContent", room_uid, kind, term, limit, context))
+        return self.result
+
+
 def decoded(output):
     return [json.loads(line) for line in output.getvalue().splitlines()]
 
@@ -646,7 +656,233 @@ def test_content_query_returns_value_without_snapshot_refresh():
     assert controller.calls == [("browseContent", "R1", "queue", "", 100, None)]
     messages = decoded(output)
     assert len(messages) == 1
-    assert messages[0]["value"] == {"ok": True, "kind": "queue", "items": [], "total": 0}
+    assert messages[0]["value"] == {
+        "ok": True,
+        "kind": "queue",
+        "items": [],
+        "total": 0,
+        "returned_count": 0,
+        "requested_limit": 100,
+        "result_truncated": False,
+    }
+
+
+def _oversized_browse_value(kind):
+    long_text = "Title\n" + ("界" * 1000)
+    long_artwork = "https://is1-ssl.mzstatic.com/" + ("a" * 3000) + ".jpg"
+    items = [
+        {
+            "id": (
+                f"SQ:{index}"
+                if kind == "playlists"
+                else str(9_000_000_000 + index)
+                if kind.startswith("apple")
+                else f"{kind}-identity-{index}-" + ("i" * 480)
+            ),
+            "index": index,
+            "title": long_text,
+            "subtitle": "Subtitle\t" + ("λ" * 1000),
+            "album_art": long_artwork,
+            "playable": True,
+        }
+        for index in range(100)
+    ]
+    value = {"ok": True, "kind": kind, "items": items, "total": 237}
+    if kind == "playlist":
+        value.update(playlist_id="SQ:999", playlist_title=long_text)
+    elif kind == "library":
+        value.update(
+            shares=[long_text] * 32,
+            breadcrumbs=[
+                {"id": "A:ARTIST", "index": 0, "title": long_text},
+                {"id": "A:ALBUM", "index": 4, "title": long_text},
+            ],
+            path=[{"id": "A:ARTIST", "index": 0}, {"id": "A:ALBUM", "index": 4}],
+            current_title=long_text,
+            offset=40,
+            page_size=100,
+            has_previous=True,
+            has_next=False,
+        )
+    elif kind.startswith("apple"):
+        value["current_title"] = long_text
+        for index, item in enumerate(items):
+            item["url"] = f"https://music.apple.com/ch/song/example/{index}?i={index}"
+            item["album_url"] = f"https://music.apple.com/ch/album/example/{index}"
+    return value
+
+
+@pytest.mark.parametrize(
+    "kind",
+    (
+        "queue",
+        "favorites",
+        "playlists",
+        "playlist",
+        "library",
+        "global",
+        "apple",
+        "apple-artist",
+        "apple-album",
+    ),
+)
+def test_large_browse_pages_return_successful_exact_prefixes_with_bounded_envelopes(kind):
+    source = _oversized_browse_value(kind)
+    controller = BrowseResultController(source)
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    server.revision = (1 << 63) - 1
+    output = io.StringIO()
+    request_id = "\\" * MAX_PROTOCOL_REQUEST_ID_BYTES
+
+    server.handle(
+        {
+            "version": 1,
+            "id": request_id,
+            "op": "content.browse",
+            "args": {"roomUid": "R1", "kind": kind, "term": "", "limit": 100},
+        },
+        output,
+    )
+
+    line = output.getvalue()
+    message = json.loads(line)
+    value = message["value"]
+    assert message["ok"] is True
+    assert len(line.encode("utf-8")) <= MAX_PROTOCOL_LINE_BYTES
+    assert 0 < value["returned_count"] == len(value["items"]) < 100
+    assert value["requested_limit"] == 100
+    assert value["result_truncated"] is True
+    assert value["total"] == 237
+    assert [item["id"] for item in value["items"]] == [
+        item["id"] for item in source["items"][: value["returned_count"]]
+    ]
+    assert all(not item["id"].endswith("…") for item in value["items"])
+    assert all(
+        "\n" not in item["title"] and "\t" not in item["subtitle"] for item in value["items"]
+    )
+    assert all(item["title"].endswith("…") for item in value["items"])
+    assert all(item["album_art"] == "" for item in value["items"])
+    if kind == "library":
+        assert value["offset"] == 40
+        assert value["has_next"] is True
+        assert value["path"] == source["path"]
+
+
+def test_browse_bounding_preserves_complete_action_identities_and_unicode_boundaries():
+    source = _oversized_browse_value("apple")
+    controller = BrowseResultController(source)
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "identity",
+            "op": "content.browse",
+            "args": {"roomUid": "R1", "kind": "apple", "term": "x", "limit": 100},
+        },
+        output,
+    )
+
+    value = decoded(output)[0]["value"]
+    for index, item in enumerate(value["items"]):
+        assert item["id"] == source["items"][index]["id"]
+        assert item["url"] == source["items"][index]["url"]
+        assert item["album_url"] == source["items"][index]["album_url"]
+        item["title"].encode("utf-8").decode("utf-8")
+
+
+def test_invalid_identity_omits_that_item_and_suffix_without_partial_identity():
+    source = _oversized_browse_value("queue")
+    source["items"][3]["id"] = "invalid\nidentity"
+    controller = BrowseResultController(source)
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "identity-stop",
+            "op": "content.browse",
+            "args": {"roomUid": "R1", "kind": "queue", "term": "", "limit": 100},
+        },
+        output,
+    )
+
+    value = decoded(output)[0]["value"]
+    assert [item["id"] for item in value["items"]] == [item["id"] for item in source["items"][:3]]
+    assert value["returned_count"] == 3
+    assert value["result_truncated"] is True
+
+
+def test_display_and_artwork_bounding_is_deterministic_and_leaves_small_values_unchanged():
+    short_artwork = "https://is1-ssl.mzstatic.com/image/cover.jpg"
+    result = {
+        "ok": True,
+        "kind": "queue",
+        "items": [
+            {
+                "id": "Q:1",
+                "title": "Short title",
+                "subtitle": "Artist",
+                "album_art": short_artwork,
+                "playable": True,
+            },
+            {
+                "id": "Q:2",
+                "title": "Long\n" + ("界" * 1000),
+                "subtitle": "Artist\t" + ("λ" * 1000),
+                "album_art": "https://is1-ssl.mzstatic.com/" + ("a" * 3000),
+                "playable": True,
+            },
+        ],
+        "total": 2,
+    }
+
+    outputs = []
+    for request_id in ("first", "second"):
+        server = ProtocolServer(BrowseResultController(result))  # type: ignore[arg-type]
+        output = io.StringIO()
+        server.handle(
+            {
+                "version": 1,
+                "id": request_id,
+                "op": "content.browse",
+                "args": {"roomUid": "R1", "kind": "queue", "term": "", "limit": 100},
+            },
+            output,
+        )
+        outputs.append(decoded(output)[0]["value"])
+
+    assert outputs[0] == outputs[1]
+    assert outputs[0]["items"][0] == result["items"][0]
+    assert outputs[0]["items"][1]["title"].endswith("…")
+    assert "\n" not in outputs[0]["items"][1]["title"]
+    assert outputs[0]["items"][1]["album_art"] == ""
+
+
+def test_oversized_browse_result_does_not_prevent_a_later_request():
+    controller = BrowseResultController(_oversized_browse_value("queue"))
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "large",
+            "op": "content.browse",
+            "args": {"roomUid": "R1", "kind": "queue", "term": "", "limit": 100},
+        },
+        output,
+    )
+    server.handle(
+        {"version": 1, "id": "later", "op": "alarms.list", "args": {"roomUid": "R1"}},
+        output,
+    )
+
+    messages = decoded(output)
+    assert [message["id"] for message in messages] == ["large", "later"]
+    assert all(message["ok"] is True for message in messages)
 
 
 def test_library_content_query_forwards_hierarchy_and_page_context():

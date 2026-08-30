@@ -658,6 +658,14 @@ def test_protocol_requests_keep_background_and_action_state_correlated():
         assert pending_state in backend_loss
 
 
+def test_qml_accepts_bounded_browse_page_metadata():
+    router = (ROOT / "SonarchyProtocolRouter.qml").read_text()
+
+    assert "returnedCount: Number(payload.returned_count || safeItems.length)" in router
+    assert "requestedLimit: Number(payload.requested_limit || payload.page_size || 40)" in router
+    assert "resultTruncated: payload.result_truncated === true" in router
+
+
 def test_page_sliders_scroll_the_page_without_wheel_mutations():
     controls = "\n".join(
         path.read_text()

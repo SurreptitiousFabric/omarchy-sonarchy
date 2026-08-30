@@ -94,7 +94,10 @@ Item {
             offset: Number(payload.offset || 0),
             pageSize: Number(payload.page_size || 40),
             hasPrevious: payload.has_previous === true,
-            hasNext: payload.has_next === true
+            hasNext: payload.has_next === true,
+            returnedCount: Number(payload.returned_count || safeItems.length),
+            requestedLimit: Number(payload.requested_limit || payload.page_size || 40),
+            resultTruncated: payload.result_truncated === true
           }
           router.store.clearRequestError(completedContentRequestId)
         } else if (stillCurrentContent) {

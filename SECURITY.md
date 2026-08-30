@@ -61,7 +61,11 @@ There is no REST API, browser UI, or listener on port 8000.
   TuneIn playlist reads use trusted hostnames and a 256 KiB cap.
 - Speaker-supplied XML metadata is parsed with `defusedxml`; entity expansion
   and external entity access are forbidden.
-- Persistent-backend protocol lines are capped at 64 KiB.
+- Persistent-backend protocol lines are capped at 64 KiB. Browse responses
+  pre-bound display fields and, when necessary, return a deterministic exact
+  item prefix measured against the complete worst-case result envelope. They
+  never partially truncate identities or artwork URLs, and explicitly report
+  byte-budget reduction while preserving the provider total.
 - QML process calls use argument arrays and small allowlisted environments;
   user text is never interpolated into a shell command. Search terms,
   room/playlist names, IDs, alarm fields, Boolean settings, and numeric ranges

@@ -31,6 +31,19 @@ bounded, and the backend re-reads each segment before returning a page. The
 result includes authoritative breadcrumbs, page flags, and `browsable` and
 `playable` item capabilities. Existing non-library requests may omit context.
 
+Every `content.browse` result is measured as a complete UTF-8 protocol
+envelope, including the largest valid request ID and revision. Provider display
+text has deterministic byte bounds and a trailing `…` when shortened;
+artwork is returned only as a complete policy-approved URL or as an empty
+field. Exact item, playlist, library-path, and Apple catalogue identities are
+never shortened. If the bounded fields still do not fit, the backend removes
+items from the end and returns the largest exact prefix that fits.
+`returned_count` always equals the item-list length, `requested_limit` records
+the requested page size, and `result_truncated` reports protocol-budget or
+identity-safe reduction. `total` remains the provider's authoritative total;
+library `offset` is retained and `has_next` stays true when byte-budget
+reduction removed items from that page.
+
 `queue.content.enqueue` accepts an optional `libraryPath` with the same bounded
 segments. The backend re-resolves that path and verifies the selected absolute
 index and item ID before mutation; QML-supplied metadata is never treated as an
