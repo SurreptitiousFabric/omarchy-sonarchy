@@ -211,8 +211,9 @@ exact rollback; PR #18 neither fixes nor closes it.
 
 The AI client owns curation and review. Sonarchy owns deterministic validation,
 single-use approval binding, direct Sonos Playlist persistence, exact reopen
-verification, and exact-ID cleanup. This PR does **not** add an MCP server or a
-second Sonos controller; issue #11 still owns that process/concurrency design.
+verification, and exact-ID cleanup. The later local MCP bridge exposes only the
+same preflight/create services through the Quickshell-owned backend; it does
+**not** add a second Sonos controller. Playback remains separately deferred.
 
 Without an explicitly supplied Apple API source, the AI cannot inspect existing
 personal playlists and cannot read private-library membership or listening

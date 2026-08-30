@@ -7,6 +7,7 @@ import sys
 from contextlib import suppress
 
 from sonarchy_backend.controller import SonosController
+from sonarchy_backend.local_mcp import BackendOwnership, MultiClientRuntime, load_mcp_permissions
 from sonarchy_backend.protocol import ProtocolServer
 
 
@@ -22,8 +23,18 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, stop_service)
     signal.signal(signal.SIGINT, stop_service)
-    with suppress(KeyboardInterrupt):
-        ProtocolServer(SonosController()).serve()
+    try:
+        ownership = BackendOwnership.acquire()
+    except RuntimeError as exc:
+        logging.error("Sonarchy backend ownership unavailable: %s", exc)
+        return 1
+    with ownership, suppress(KeyboardInterrupt):
+        listener = ownership.open_listener()
+        # Ownership is acquired before controller construction or discovery.
+        protocol = ProtocolServer(SonosController())
+        MultiClientRuntime(protocol, listener, load_mcp_permissions()).serve(
+            sys.stdin.buffer, sys.stdout.buffer
+        )
     return 0
 
 

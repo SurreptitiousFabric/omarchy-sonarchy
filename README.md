@@ -222,3 +222,10 @@ contributors. Its persistent event backend is derived from OmaSonos 0.2.1 by
 ctl0v0 and retains that project's MIT notice. SoCo and OmaSonos do not sponsor
 or endorse Sonarchy. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and
 [LICENSES/OMASONOS-MIT.txt](LICENSES/OMASONOS-MIT.txt).
+## Local Codex bridge
+
+Sonarchy can expose bounded read context and reviewed exact Apple-track Sonos
+Playlist creation to Codex through a thin stdio adapter and an owner-only Unix
+socket. Quickshell remains the sole backend owner; there is no second Sonos
+controller and no HTTP/LAN listener. Setup and removal are documented in
+[`docs/mcp.md`](docs/mcp.md).

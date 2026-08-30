@@ -13,7 +13,9 @@ Item {
     HOME: Quickshell.env("HOME"),
     LANG: Quickshell.env("LANG") || "C.UTF-8",
     XDG_CACHE_HOME: Quickshell.env("XDG_CACHE_HOME"),
+    XDG_CONFIG_HOME: Quickshell.env("XDG_CONFIG_HOME"),
     XDG_DATA_HOME: Quickshell.env("XDG_DATA_HOME"),
+    XDG_RUNTIME_DIR: Quickshell.env("XDG_RUNTIME_DIR"),
     XDG_STATE_HOME: Quickshell.env("XDG_STATE_HOME")
   })
   property var snapshot: ({

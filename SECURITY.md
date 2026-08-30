@@ -12,6 +12,12 @@ Anyone able to run code as the same desktop user can already send equivalent
 Sonos UPnP commands. This plugin is not an authorization boundary between local
 processes.
 
+The local MCP bridge still applies least privilege against accidental or
+malicious same-user clients. A non-blocking owner lock is acquired before Sonos
+contact. Its Unix socket requires safe owner/mode/type checks and verified Linux
+same-UID peer credentials. The backend enforces a fixed operation allowlist;
+model-visible tool annotations are not authorization.
+
 ## Network surface
 
 Expected traffic is limited to:
@@ -21,6 +27,7 @@ Expected traffic is limited to:
 - a Sonos event callback listener on the attached interface, TCP 1400–1499;
 - explicit HTTPS Apple catalog searches and optional, popup-scoped radio-track
   artwork matching against the same public endpoint;
+- one local Unix-domain control socket below `XDG_RUNTIME_DIR`, never TCP/HTTP;
 - Global Player and compatible Favorite/TuneIn traffic requested by the user;
 - allowlisted public HTTPS artwork and exact speaker-local HTTP artwork on 1400;
   bounded, no-redirect availability probes prevent missing local art from
@@ -155,3 +162,34 @@ report remains private. If private vulnerability reporting is unavailable,
 contact the marketplace maintainer privately before sharing details. Never put
 tokens, passwords, pairing codes, private room metadata, or raw diagnostics in
 a public issue.
+## Local MCP threat model
+
+- A second backend fails its non-blocking process lock before controller
+  construction or discovery and cannot remove the active owner's socket.
+- Runtime, lock, socket, and configuration symlinks fail closed. Wrong socket
+  type, owner, mode, or unverifiable peer credentials are rejected.
+- Same-user clients remain confined to the backend read allowlist and optional
+  exact playlist-create operation. Raw operation names, URI/DIDL/SoCo objects,
+  addresses, service metadata, credentials, and backend tickets never enter the
+  MCP contract or logs.
+- Per-client routing prevents identical request IDs from crossing clients.
+  Controller/application execution is serial, including simultaneous QML and
+  MCP requests; authoritative snapshots are broadcast after accepted writes.
+- Client count, line/incomplete-buffer size, and pending output are bounded.
+  Malformed, oversized, stalled, or disconnected clients are contained and do
+  not terminate or block QML. A disconnect after an accepted mutation neither
+  cancels nor repeats it; the backend finishes once and broadcasts state.
+- Backend restart closes clients, invalidates every ticket, and changes the MCP
+  connection instance. MCP restart loses all memory-only handles. Reads may
+  reconnect; writes are never replayed and require a new preflight.
+- Random plan handles are process-local, short-lived, single-use, claimed before
+  mutation, and removed after every attempt. Execution accepts no replacement
+  fields. Permission upgrades/downgrades require backend and adapter restart.
+- Duplicate room names are returned visibly. Exact stale/missing room UIDs fail
+  instead of selecting another room or mutating QML selection.
+- Safe structured errors omit raw exceptions and private traffic. The adapter
+  does not log handles, tickets, provider metadata, addresses, or socket lines.
+- The consent boundary combines default-absent write tooling, owner opt-in,
+  exact-track review, state revalidation, single-use execution, no retry or
+  substitution, and exact-ID cleanup. The MCP client must obtain current user
+  approval; `approved: true` is not independent evidence of human consent.

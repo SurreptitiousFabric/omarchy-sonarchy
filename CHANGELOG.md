@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a single-authority, Quickshell-owned local MCP bridge over an owner-only
+  Unix socket, with read-only room/content tools and permission-gated exact
+  Apple-track Sonos Playlist preflight/create. Playback is intentionally absent.
 - Added read-only exact Apple-song playlist preflight and an explicitly
   approved, single-use-token create-only Sonos Playlist operation. It creates
   an empty saved playlist, adds exact songs directly without reading or

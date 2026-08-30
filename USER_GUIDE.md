@@ -289,3 +289,9 @@ The event backend is derived from
 [OmaSonos](https://github.com/ctl0v0/omasonos) by ctl0v0 under the MIT License.
 Full notices and dependency licences are in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+## Codex and local MCP
+
+See [`docs/mcp.md`](docs/mcp.md) for read-only setup, the optional
+`playlist-create` permission, exact tools, consent flow, restart behavior, and
+safe diagnostics. Playlist creation never starts playback or alters a room
+queue. Room-targeted playback is not available through MCP in this release.

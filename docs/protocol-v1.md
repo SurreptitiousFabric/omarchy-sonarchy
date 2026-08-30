@@ -300,3 +300,19 @@ ID. QML must not derive speaker state solely from an event.
   possible and otherwise terminates before executing the request.
 - The protocol inventory is tested for exact agreement with registered
   handlers.
+## Local socket transport
+
+The same version-1 bounded JSON-lines envelopes are used on the owner-only
+`${XDG_RUNTIME_DIR}/sonarchy/control.sock`. This is an internal transport, not
+an MCP or generic public protocol endpoint. Linux same-UID peer credentials and
+the backend startup permission snapshot constrain socket clients to:
+
+- read: `state.refresh`, `content.browse`, and
+  `playlist_plan.apple.validate`;
+- playlist-create: additionally `playlists.apple.create`.
+
+`session.panel_open.set` is stdin/QML-only. Results go only to the requesting
+transport even when request IDs collide; snapshots are broadcast. Lines and
+incomplete/pending buffers and client count are bounded. A backend restart
+closes the socket and invalidates tickets; clients must reconnect and revalidate
+without replaying a write.
