@@ -347,8 +347,7 @@ class MultiClientRuntime:
                         self._consume_line(line, None, stdout)
                         continue
                     if key.data == "events":
-                        self.protocol.event_queue.drain_items()
-                        self._refresh_and_broadcast(stdout, rediscover=False)
+                        self._handle_events(stdout)
                         continue
                     client = key.data
                     if mask & selectors.EVENT_WRITE and client.output_buffer:
@@ -427,3 +426,15 @@ class MultiClientRuntime:
         output = io.StringIO()
         self.protocol.emit_snapshot(output, rediscover=rediscover)
         self._broadcast(json.loads(output.getvalue()), stdout)
+
+    def _handle_events(self, stdout: BinaryIO) -> None:
+        topology_households = {
+            str(event.get("subscriptionKey", "")).removeprefix("topology:")
+            for event in self.protocol.event_queue.drain_items()
+            if isinstance(event, dict)
+            and str(event.get("subscriptionKey", "")).startswith("topology:")
+        }
+        topology_households.discard("")
+        if topology_households:
+            self.protocol.application.refresh_event_topologies(topology_households)
+        self._refresh_and_broadcast(stdout, rediscover=False)

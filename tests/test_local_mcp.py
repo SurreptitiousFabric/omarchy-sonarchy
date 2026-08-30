@@ -6,6 +6,7 @@ import os
 import socket
 import stat
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -211,4 +212,24 @@ def test_socket_result_is_private_but_snapshot_broadcasts_to_qml(tmp_path: Path)
     assert socket_messages[0]["id"] == "duplicate"
     runtime._close_client(client)
     peer_sock.close()
+    listener.close()
+
+
+def test_topology_events_refresh_authoritative_households_before_snapshot(tmp_path: Path):
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(tmp_path / "listener"))
+    protocol = StubProtocol()
+    protocol.event_queue = Mock()
+    protocol.event_queue.drain_items.return_value = [
+        {"subscriptionKey": "transport:R1"},
+        {"subscriptionKey": "topology:H2"},
+        {"subscriptionKey": "topology:H1"},
+    ]
+    protocol.application = Mock()
+    runtime = MultiClientRuntime(protocol, listener, frozenset({"read"}))  # type: ignore[arg-type]
+    runtime._refresh_and_broadcast = Mock()
+    stdout = io.BytesIO()
+    runtime._handle_events(stdout)
+    protocol.application.refresh_event_topologies.assert_called_once_with({"H1", "H2"})
+    runtime._refresh_and_broadcast.assert_called_once_with(stdout, rediscover=False)
     listener.close()
