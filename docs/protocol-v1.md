@@ -49,6 +49,15 @@ advances past that provider position so later valid items remain reachable.
 `has_next` is true only when that continuation makes forward progress and
 provider content remains.
 
+Browse identities are complete-or-omit under explicit UTF-8 byte limits:
+opaque item and library navigation IDs are at most 512 bytes, Apple action
+`url`/`album_url` values are at most 1,024 bytes, and Sonos Playlist IDs are at
+most 32 bytes. These are separate from display bounds and are never shortened.
+Breadcrumbs and their path segments are retained only as one matching exact
+safe prefix. The limits keep a fully populated maximum-identity item—and all
+eight bounded library navigation levels—well below the complete 64 KiB result
+envelope even with maximally escaped values.
+
 `queue.content.enqueue` accepts an optional `libraryPath` with the same bounded
 segments. The backend re-resolves that path and verifies the selected absolute
 index and item ID before mutation; QML-supplied metadata is never treated as an

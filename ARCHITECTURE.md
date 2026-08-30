@@ -125,6 +125,13 @@ page size. QML keeps a bounded history of exact prior offsets for Previous and
 uses only `next_offset` for Next. That history survives a same-page refresh but
 resets when the room, content kind, search, or library path changes.
 
+Opaque browse and navigation IDs have a separate 512-byte UTF-8 bound, Apple
+action URLs retain their existing 1,024-byte contract, and `SQ:<id>` values
+have a 32-byte bound. An over-limit identity is never truncated: its item is
+omitted as one consumed provider position, while aggregate-only suffix removal
+does not consume the removed positions. Breadcrumb and path identities are
+projected together as the same exact safe prefix.
+
 `domains/apple_playlist_plan.py` owns bounded reviewed values and the
 process-local ticket lifecycle. Its read-only validation and write execution
 are separate services sharing one in-memory store. `apple_catalog.py` owns the

@@ -10,8 +10,14 @@ from sonarchy_backend.contracts import (
     MAX_PROTOCOL_OPERATION_BYTES,
     MAX_PROTOCOL_REQUEST_ID_BYTES,
     protocol_line,
+    result_payload,
 )
-from sonarchy_backend.domains.browse_bounds import bound_browse_result
+from sonarchy_backend.domains.browse_bounds import (
+    BROWSE_ACTION_URL_BYTES,
+    BROWSE_IDENTITY_BYTES,
+    BROWSE_PLAYLIST_ID_BYTES,
+    bound_browse_result,
+)
 from sonarchy_backend.domains.errors import PlaylistTransactionError
 from sonarchy_backend.protocol import (
     MAX_PROTOCOL_LINE_BYTES,
@@ -887,6 +893,154 @@ def test_library_final_page_and_invalid_identity_have_bounded_progress_semantics
     assert empty["has_next"] is False
     assert bounded_terminal["next_offset"] == 1_000_000
     assert bounded_terminal["has_next"] is False
+
+
+def test_oversized_first_library_identity_is_omitted_and_later_item_is_reachable():
+    source = _library_page(0, 3, total=3)
+    source["items"][0]["id"] = "x" * (BROWSE_IDENTITY_BYTES + 1)
+
+    first = bound_browse_result(source, revision=0, requested_limit=100)
+    second = bound_browse_result(
+        {
+            **_library_page(1, 2, total=3),
+            "items": source["items"][1:],
+        },
+        revision=0,
+        requested_limit=100,
+    )
+
+    assert first["items"] == []
+    assert first["returned_count"] == 0
+    assert first["omitted_count"] == 1
+    assert first["result_truncated"] is True
+    assert first["next_offset"] == 1
+    assert first["has_next"] is True
+    assert [item["id"] for item in second["items"]] == ["library-item-1", "library-item-2"]
+
+
+def test_oversized_middle_identity_consumes_only_that_provider_position():
+    source = _library_page(0, 8, total=8)
+    source["items"][5]["id"] = "x" * (BROWSE_IDENTITY_BYTES + 1)
+
+    first = bound_browse_result(source, revision=0, requested_limit=100)
+    second = bound_browse_result(
+        {**_library_page(6, 2, total=8), "items": source["items"][6:]},
+        revision=0,
+        requested_limit=100,
+    )
+
+    assert [item["id"] for item in first["items"]] == [
+        f"library-item-{index}" for index in range(5)
+    ]
+    assert first["omitted_count"] == 1
+    assert first["next_offset"] == 6
+    assert [item["id"] for item in second["items"]] == ["library-item-6", "library-item-7"]
+
+
+def test_aggregate_reduction_does_not_consume_a_later_invalid_identity():
+    source = _library_page(0, 10, total=10)
+    source["items"][5]["id"] = "x" * (BROWSE_IDENTITY_BYTES + 1)
+
+    with patch(
+        "sonarchy_backend.domains.browse_bounds._fits_complete_envelope",
+        side_effect=lambda value, _revision: len(value["items"]) <= 3,
+    ):
+        value = bound_browse_result(source, revision=0, requested_limit=100)
+
+    assert [item["id"] for item in value["items"]] == [
+        "library-item-0",
+        "library-item-1",
+        "library-item-2",
+    ]
+    assert value["next_offset"] == 3
+    assert value["has_next"] is True
+
+
+@pytest.mark.parametrize("field", ("id", "url", "album_url"))
+def test_browse_item_identity_fields_are_complete_at_limit_and_omitted_over_limit(field):
+    maximum = BROWSE_IDENTITY_BYTES if field == "id" else BROWSE_ACTION_URL_BYTES
+    item = {
+        "id": "i" * BROWSE_IDENTITY_BYTES,
+        "title": "Item",
+        "subtitle": "",
+        "album_art": "",
+        "playable": True,
+    }
+    item[field] = "x" * maximum
+    retained = bound_browse_result(
+        {"ok": True, "kind": "apple", "items": [item], "total": 1},
+        revision=(1 << 63) - 1,
+        requested_limit=100,
+    )
+    item[field] += "x"
+    omitted = bound_browse_result(
+        {"ok": True, "kind": "apple", "items": [item], "total": 1},
+        revision=(1 << 63) - 1,
+        requested_limit=100,
+    )
+
+    assert retained["items"][0][field] == "x" * maximum
+    assert omitted["items"] == []
+    assert omitted["omitted_count"] == 1
+
+
+def test_browse_navigation_identities_keep_only_one_matching_exact_safe_prefix():
+    exact = "n" * BROWSE_IDENTITY_BYTES
+    oversized = "n" * (BROWSE_IDENTITY_BYTES + 1)
+    value = _library_page(0, 1)
+    value["breadcrumbs"] = [
+        {"id": exact, "index": 0, "title": "Safe"},
+        {"id": oversized, "index": 1, "title": "Unsafe"},
+    ]
+    value["path"] = [
+        {"id": exact, "index": 0},
+        {"id": oversized, "index": 1},
+    ]
+
+    bounded = bound_browse_result(value, revision=0, requested_limit=100)
+
+    assert bounded["breadcrumbs"] == [{"id": exact, "index": 0, "title": "Safe"}]
+    assert bounded["path"] == [{"id": exact, "index": 0}]
+
+    mismatched = _library_page(0, 1)
+    mismatched["breadcrumbs"] = [{"id": "A", "index": 0, "title": "A"}]
+    mismatched["path"] = [{"id": "B", "index": 0}]
+    bounded_mismatch = bound_browse_result(mismatched, revision=0, requested_limit=100)
+    assert bounded_mismatch["breadcrumbs"] == []
+    assert bounded_mismatch["path"] == []
+
+
+def test_maximum_identity_item_fits_worst_case_complete_envelope_and_playlist_id_is_bounded():
+    item = {
+        "id": "\\" * BROWSE_IDENTITY_BYTES,
+        "url": "\\" * BROWSE_ACTION_URL_BYTES,
+        "album_url": "\\" * BROWSE_ACTION_URL_BYTES,
+        "title": "界" * 200,
+        "subtitle": "λ" * 400,
+        "album_art": "https://is1-ssl.mzstatic.com/" + ("a" * 1900),
+        "playable": True,
+    }
+    value = bound_browse_result(
+        {"ok": True, "kind": "apple", "items": [item], "total": 1},
+        revision=(1 << 63) - 1,
+        requested_limit=100,
+    )
+    envelope = result_payload(
+        "\\" * MAX_PROTOCOL_REQUEST_ID_BYTES,
+        revision=(1 << 63) - 1,
+        value=value,
+    )
+
+    assert value["items"][0]["id"] == item["id"]
+    assert value["items"][0]["url"] == item["url"]
+    assert value["items"][0]["album_url"] == item["album_url"]
+    assert len(protocol_line(envelope).encode("utf-8")) < MAX_PROTOCOL_LINE_BYTES
+
+    playlist = {"ok": True, "kind": "playlist", "playlist_id": "S" * 32, "items": [], "total": 0}
+    assert bound_browse_result(playlist, revision=0, requested_limit=100)["playlist_id"] == "S" * 32
+    playlist["playlist_id"] = "S" * (BROWSE_PLAYLIST_ID_BYTES + 1)
+    with pytest.raises(ValueError, match="playlist identity"):
+        bound_browse_result(playlist, revision=0, requested_limit=100)
 
 
 def test_display_and_artwork_bounding_is_deterministic_and_leaves_small_values_unchanged():

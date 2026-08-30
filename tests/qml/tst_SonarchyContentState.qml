@@ -167,6 +167,23 @@ TestCase {
     compare(subject.libraryOffsetHistory.length, 0)
   }
 
+  function test_empty_omission_page_can_advance_and_return_without_a_loop() {
+    subject.kind = "library"
+    subject.offset = 0
+
+    subject.libraryNext(1)
+    compare(fakeLive.calls.length, 1)
+    compare(fakeLive.calls[0].context.offset, 1)
+    compare(subject.libraryOffsetHistory.length, 1)
+    compare(subject.libraryOffsetHistory[0], 0)
+    subject.requestId = ""
+
+    subject.libraryPrevious()
+    compare(fakeLive.calls.length, 2)
+    compare(fakeLive.calls[1].context.offset, 0)
+    compare(subject.libraryOffsetHistory.length, 0)
+  }
+
   function test_favorites_are_projected_without_a_browse_request() {
     subject.load("favorites", "", [], 0)
 

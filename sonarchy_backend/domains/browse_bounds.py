@@ -14,12 +14,15 @@ from .library import MAX_LIBRARY_INDEX
 DISPLAY_TEXT_BYTES = 512
 DISPLAY_TITLE_BYTES = 256
 ARTWORK_URL_BYTES = 2048
+BROWSE_IDENTITY_BYTES = 512
+BROWSE_ACTION_URL_BYTES = 1024
+BROWSE_PLAYLIST_ID_BYTES = 32
 TRUNCATION_MARKER = "…"
 MAX_ENVELOPE_REVISION = (1 << 63) - 1
 
 DISPLAY_TITLE_FIELDS = frozenset({"title", "playlist_title", "current_title"})
 DISPLAY_TEXT_FIELDS = frozenset({"subtitle", "section", "media_kind", "browse_kind"})
-IDENTITY_FIELDS = frozenset({"id", "url", "album_url"})
+ACTION_IDENTITY_FIELDS = frozenset({"url", "album_url"})
 
 
 def bounded_display_text(raw: Any, maximum_bytes: int = DISPLAY_TEXT_BYTES) -> str:
@@ -38,10 +41,11 @@ def bounded_display_text(raw: Any, maximum_bytes: int = DISPLAY_TEXT_BYTES) -> s
     return prefix + TRUNCATION_MARKER
 
 
-def _complete_identity(raw: Any) -> str | None:
+def _complete_identity(raw: Any, maximum_bytes: int) -> str | None:
     if (
         not isinstance(raw, str)
         or not raw
+        or len(raw.encode("utf-8")) > maximum_bytes
         or any(ord(character) < 32 or ord(character) == 127 for character in raw)
     ):
         return None
@@ -59,14 +63,14 @@ def _bounded_item(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
     item = copy.deepcopy(raw)
-    identity = _complete_identity(item.get("id"))
+    identity = _complete_identity(item.get("id"), BROWSE_IDENTITY_BYTES)
     if identity is None:
         return None
     item["id"] = identity
-    for field in IDENTITY_FIELDS - {"id"}:
+    for field in ACTION_IDENTITY_FIELDS:
         if field not in item or item[field] in (None, ""):
             continue
-        complete = _complete_identity(item[field])
+        complete = _complete_identity(item[field], BROWSE_ACTION_URL_BYTES)
         if complete is None:
             return None
         item[field] = complete
@@ -79,6 +83,35 @@ def _bounded_item(raw: Any) -> dict[str, Any] | None:
     if "album_art" in item:
         item["album_art"] = _bounded_artwork(item["album_art"])
     return item
+
+
+def _bound_navigation_identities(value: dict[str, Any]) -> None:
+    raw_breadcrumbs = value.get("breadcrumbs")
+    raw_path = value.get("path")
+    if not isinstance(raw_breadcrumbs, list) or not isinstance(raw_path, list):
+        return
+    breadcrumbs: list[dict[str, Any]] = []
+    path: list[dict[str, Any]] = []
+    for raw_crumb, raw_segment in zip(raw_breadcrumbs, raw_path, strict=False):
+        if not isinstance(raw_crumb, dict) or not isinstance(raw_segment, dict):
+            break
+        crumb_id = _complete_identity(raw_crumb.get("id"), BROWSE_IDENTITY_BYTES)
+        segment_id = _complete_identity(raw_segment.get("id"), BROWSE_IDENTITY_BYTES)
+        if (
+            crumb_id is None
+            or segment_id != crumb_id
+            or raw_crumb.get("index") != raw_segment.get("index")
+        ):
+            break
+        crumb = copy.deepcopy(raw_crumb)
+        crumb["id"] = crumb_id
+        crumb["title"] = bounded_display_text(crumb.get("title"), DISPLAY_TITLE_BYTES)
+        segment = copy.deepcopy(raw_segment)
+        segment["id"] = segment_id
+        breadcrumbs.append(crumb)
+        path.append(segment)
+    value["breadcrumbs"] = breadcrumbs
+    value["path"] = path
 
 
 def _fits_complete_envelope(value: dict[str, Any], revision: int) -> bool:
@@ -104,6 +137,11 @@ def bound_browse_result(
     source_items = value.get("items")
     if not isinstance(source_items, list):
         return value
+    if "playlist_id" in value:
+        playlist_id = _complete_identity(value["playlist_id"], BROWSE_PLAYLIST_ID_BYTES)
+        if playlist_id is None:
+            raise ValueError("Browse playlist identity is not representable")
+        value["playlist_id"] = playlist_id
 
     items: list[dict[str, Any]] = []
     identity_failure_index: int | None = None
@@ -120,15 +158,7 @@ def bound_browse_result(
             value[field] = bounded_display_text(value[field], DISPLAY_TITLE_BYTES)
     if isinstance(value.get("shares"), list):
         value["shares"] = [bounded_display_text(share) for share in value["shares"][:32]]
-    if isinstance(value.get("breadcrumbs"), list):
-        breadcrumbs = []
-        for raw_crumb in value["breadcrumbs"]:
-            if not isinstance(raw_crumb, dict) or _complete_identity(raw_crumb.get("id")) is None:
-                break
-            crumb = copy.deepcopy(raw_crumb)
-            crumb["title"] = bounded_display_text(crumb.get("title"), DISPLAY_TITLE_BYTES)
-            breadcrumbs.append(crumb)
-        value["breadcrumbs"] = breadcrumbs
+    _bound_navigation_identities(value)
 
     value["returned_count"] = len(items)
     value["requested_limit"] = max(1, min(int(requested_limit), 100))
