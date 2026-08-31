@@ -91,6 +91,7 @@ class FakeSpeaker:
         self.bad_append_position = False
         self.queue_verification_failure = False
         self.playback_verification_failure = False
+        self.post_capture_failure = False
         self.append_calls = []
         self.play_calls = []
         self.get_playlist_calls = []
@@ -124,6 +125,8 @@ class FakeSpeaker:
 
     def get_queue(self, *, max_items, full_album_art_uri):
         assert full_album_art_uri is False
+        if self.post_capture_failure and self.play_calls:
+            raise RuntimeError("private post-write queue read failure at 192.0.2.1")
         values = copy.deepcopy(self.queue_items)
         if self.queue_verification_failure and self.play_calls:
             values[-1].title = "Changed after append"
@@ -507,6 +510,28 @@ def test_playback_rejection_leaves_append_and_attempts_no_rollback():
     assert len(speaker.queue_items) == 3
     assert speaker.append_calls == ["SQ:9"]
     assert speaker.play_calls == [1]
+
+
+def test_post_capture_runtime_failure_preserves_bounded_partial_state():
+    speaker = FakeSpeaker()
+    application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
+    review = preflight(application)
+    speaker.post_capture_failure = True
+
+    with pytest.raises(PlaylistPlayTransactionError) as rejected:
+        execute(application, review)
+
+    details = rejected.value.details
+    assert details["phase"] == "verify_queue"
+    assert details["queueAppended"] is True
+    assert details["playbackStarted"] is True
+    assert details["appendInvocationCount"] == 1
+    assert details["playbackStartInvocationCount"] == 1
+    assert details["queueRollbackAttempted"] is False
+    assert "observedQueueLength" not in details
+    assert speaker.append_calls == ["SQ:9"]
+    assert speaker.play_calls == [1]
+    assert "192.0.2.1" not in str(rejected.value)
 
 
 def test_unexpected_append_position_reports_partial_append_without_starting_playback():

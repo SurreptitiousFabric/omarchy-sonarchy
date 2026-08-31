@@ -469,7 +469,7 @@ def _post_capture(speaker: Any, playlist_id: str) -> PlaylistPlayCapture | None:
             playlist_id,
             enforce_preflight_policy=False,
         )
-    except PlanConflictError:
+    except Exception:  # noqa: BLE001 - partial-state reporting must stay bounded
         return None
 
 
