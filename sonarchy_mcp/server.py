@@ -423,13 +423,19 @@ class SonarchyMcp:
         plan = self.handles.pop(handle, None)
         if plan is None:
             raise ToolError("conflict", "This plan handle is invalid or has already been used")
-        if plan.backend_instance != self.backend.instance or plan.expires_ms <= int(
-            time.time() * 1000
-        ):
+        if plan.backend_instance != self.backend.instance:
             raise ToolError(
-                "conflict", "Sonarchy restarted or the plan expired; run a new preflight"
+                "conflict", "Sonarchy\u2019s backend connection changed; run a new preflight"
             )
-        return self.backend.call("playlists.apple.create", {"planToken": plan.token})
+        if plan.expires_ms <= int(time.time() * 1000):
+            raise ToolError("conflict", "The reviewed playlist plan expired; run a new preflight")
+        return self.backend.call(
+            "playlists.apple.create",
+            {
+                "planToken": plan.token,
+                "approved": True,
+            },
+        )
 
     def run(self) -> None:
         for raw in sys.stdin.buffer:
