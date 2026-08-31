@@ -85,7 +85,7 @@ There is no REST API, browser UI, or listener on port 8000.
   or a non-standard port, and pinned SoCo must independently canonicalise it as
   the same bounded decimal `song` identity. No generic URL, URI, UPnP, SoCo,
   shell, or protocol-execution operation is exposed.
-- Playlist plan tokens are random, opaque, memory-only, process-local,
+- Apple-create plan tokens are random, opaque, memory-only, process-local,
   single-use, and valid for no more than two minutes. They bind authoritative
   room UID, coordinator and hashed household identity, complete playlist
   inventory fingerprint/count, new name, direct capability, duplicate policy,
@@ -97,6 +97,25 @@ There is no REST API, browser UI, or listener on port 8000.
   replacement for explicit client/user approval. Rejections before ticket
   claim do not stale a valid token; every accepted execution attempt consumes
   it whether the operation succeeds or fails.
+- Exact-playback plan tokens use the same single process-local ticket store but
+  bind a separate operation: exact room/coordinator/household, complete
+  standalone topology, online state, volume/mute, transport/source,
+  capabilities, exact `SQ:<id>`/title, complete playlist content fingerprint,
+  bounded preview/first item, and complete queue fingerprint/length/position.
+  Preflight accepts only volume at most 20, stopped or paused transport, a
+  confirmed queue or no active source, 1–25 playlist items, and at most 100
+  combined items. Execution re-reads all facts before the first mutation.
+- Exact-playlist playback reuses the existing playlist domain helper. It
+  appends once, starts once at the returned first appended position, never
+  clears or replaces the queue, and never changes volume, mute, topology,
+  source settings, or playlist contents. Post-write reads verify the preserved
+  queue prefix, appended order, current item/position, playing queue transport,
+  and unchanged bound state.
+- Playback partial failures expose only a controlled phase and bounded hashes,
+  positions, counts, and booleans. If append succeeded, entries may remain.
+  There is no automatic retry, removal, reconstruction, or issue #19 rollback.
+  Raw exceptions, addresses, item/resource URIs, DIDL, SOAP, service metadata,
+  backend tokens, and MCP handles are never returned.
 - Exact-song persistence creates an empty Sonos Playlist through the normal
   SoCo API and appends directly to that exact saved queue. It never calls queue
   or playback methods and does not trigger a general playback snapshot refresh.
@@ -140,9 +159,9 @@ There is no REST API, browser UI, or listener on port 8000.
   credential-bearing program URI or service metadata.
 - No service or account credentials are requested, logged, or stored.
 
-There is still no MCP listener or second AI-owned Sonos controller. The
-deterministic playlist operations use the private persistent protocol; external
-MCP exposure remains blocked on issue #11's process-ownership decision.
+There is no TCP/HTTP MCP listener or second AI-owned Sonos controller. The
+stdio MCP adapter is a same-user client of the Quickshell-owned Unix socket and
+never constructs a controller or fallback backend.
 
 ## Dependency and release policy
 
@@ -168,10 +187,11 @@ a public issue.
   construction or discovery and cannot remove the active owner's socket.
 - Runtime, lock, socket, and configuration symlinks fail closed. Wrong socket
   type, owner, mode, or unverifiable peer credentials are rejected.
-- Same-user clients remain confined to the backend read allowlist and optional
-  exact playlist-create operation. Raw operation names, URI/DIDL/SoCo objects,
-  addresses, service metadata, credentials, and backend tickets never enter the
-  MCP contract or logs.
+- Same-user clients remain confined to the backend read allowlist plus
+  independently permissioned exact playlist-create and exact playlist-play
+  writes. `playlist-create` never authorizes playback. Raw operation names,
+  URI/DIDL/SoCo objects, addresses, service metadata, credentials, and backend
+  tickets never enter the MCP contract or logs.
 - Per-client routing prevents identical request IDs from crossing clients.
   Controller/application execution is serial, including simultaneous QML and
   MCP requests; authoritative snapshots are broadcast after accepted writes.
@@ -189,7 +209,9 @@ a public issue.
   instead of selecting another room or mutating QML selection.
 - Safe structured errors omit raw exceptions and private traffic. The adapter
   does not log handles, tickets, provider metadata, addresses, or socket lines.
-- The consent boundary combines default-absent write tooling, owner opt-in,
-  exact-track review, state revalidation, single-use execution, no retry or
-  substitution, and exact-ID cleanup. The MCP client must obtain current user
-  approval; `approved: true` is not independent evidence of human consent.
+- The consent boundary combines default-absent write tooling, independent owner
+  opt-in, exact review, a fresh identical post-approval preflight, backend state
+  revalidation, single-use execution, and no retry. Playlist create additionally
+  has exact-ID cleanup; playlist playback deliberately has no destructive queue
+  rollback. The MCP client must obtain current user approval; `approved: true`
+  is not independent evidence of human consent.

@@ -65,6 +65,7 @@ debug overlays.
 | Queue | queue reads and identity-checked mutations | playlists |
 | Playlists | Sonos Playlist reads and identity-checked mutations | current queue |
 | Apple playlist plans | exact reviewed song validation, short-lived tickets, and create-only Sonos Playlist orchestration | AI song selection, private Apple libraries, or generic URI execution |
+| Exact playlist playback plans | exact room/playlist/queue review, append-and-play execution, and bounded partial-state evidence | general transport, grouped rooms, queue editing, volume, sources, or rollback |
 | Alarms | safe alarm projection and mutations | raw credential-bearing program metadata in QML |
 | Devices | details, capabilities, sound and supported device settings | topology mutation |
 | Sources | validated TV and household line-in switching | arbitrary URI playback |
@@ -138,9 +139,10 @@ items. Library browsing deliberately retains its first-invalid-position stop so
 `next_offset` can consume exactly that provider position without skipping a
 later aggregate-reduced item.
 
-`domains/apple_playlist_plan.py` owns bounded reviewed values and the
-process-local ticket lifecycle. Its read-only validation and write execution
-are separate services sharing one in-memory store. `apple_catalog.py` owns the
+`domains/apple_playlist_plan.py` owns bounded reviewed Apple-create values and
+the generic process-local ticket lifecycle. Apple create and exact playlist
+playback expose separate read/write services while sharing that one in-memory
+ticket store. `apple_catalog.py` owns the
 narrow pinned-SoCo song canonicalisation adapter.
 The create service declares a conditional mutation boundary: protocol errors
 before atomic ticket claim do not cause a state refresh or revision increment.
@@ -224,6 +226,30 @@ identifiers, the leading token of an expected `x-sonos-http:` or
 resource form. It never searches arbitrary metadata substrings or query
 parameters.
 
+`domains/playlist_play_plan.py` owns the typed `playlists.play.validate` and
+`playlists.play.execute` pair. Validation binds an exact room UID, coordinator,
+complete standalone topology, hashed household, online state, volume/mute,
+transport/source, relevant capabilities, exact `SQ:<id>` and title, complete
+1–25 item content fingerprint, bounded preview, first item, complete queue
+fingerprint/length/current position, and first append position. It permits only
+stopped or paused rooms, a confirmed queue or no active source, volume at most
+20, and at most 100 combined queue/playlist items.
+
+`domains/playlist_playback.py` re-reads every bound fact immediately before the
+first mutation. The UI's existing `playlists.mutate` action `play` and typed
+execution both use `append_and_start_playlist()` in `domains/playlists.py`;
+MCP does not duplicate or import SoCo. Execution appends once and starts once
+at the returned first appended position, then verifies the preserved queue
+prefix, appended order, current position/item, playing queue transport,
+unchanged playlist fingerprint, volume, mute, and topology.
+
+The typed play service is a conditional mutation. Preflight conflicts occur
+before its mutation callback. Once append starts, protocol result routing
+broadcasts an authoritative snapshot to QML after success or partial failure.
+There is no retry. If append succeeds but start or verification fails, bounded
+evidence reports the phase; appended entries remain and no clear,
+reconstruction, removal, or issue #19 rollback is attempted.
+
 ## AI and MCP boundary
 
 ADR 0002 adds an owner-only Unix socket to the same Quickshell-owned process.
@@ -231,8 +257,10 @@ QML stdin/stdout and bounded same-UID socket clients share the one application,
 controller, ticket store, event manager, revision stream, snapshot cache, and
 serialized dispatcher. The stdio MCP adapter is only a client; it never imports
 SoCo, discovers speakers, subscribes, or launches a backend. The backend socket
-allowlist defaults to read-only and may add only exact reviewed Apple Sonos
-Playlist creation. There is no generic protocol or playback surface.
+allowlist defaults to read-only. `playlist-create` adds only exact reviewed
+Apple Sonos Playlist creation; independent `playlist-play` adds only exact
+reviewed native Sonos Playlist append-and-play. There is no generic protocol,
+URI, transport, queue-editing, volume, topology, source, or settings surface.
 
 ## State and capabilities
 

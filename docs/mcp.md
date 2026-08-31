@@ -23,6 +23,17 @@ enabled = true
 permissions = ["read", "playlist-create"]
 ```
 
+To expose exact reviewed native Sonos Playlist playback instead:
+
+```toml
+enabled = true
+permissions = ["read", "playlist-play"]
+```
+
+`playlist-play` is independent from `read` and `playlist-create`. Read remains
+required. A configuration containing only `read` and `playlist-create` does not
+expose playback; both writes require listing both optional permissions.
+
 Set `enabled = false` to disable socket operations, or remove the file to return
 to the read-only default. Reject symlinks and do not make the file group/world
 accessible. Permission changes take effect only after the Quickshell-owned
@@ -44,7 +55,7 @@ The equivalent checked TOML shape is:
 command = "/absolute/path/to/sonarchy-mcp.sh"
 ```
 
-The Codex entry is identical for read-only and playlist-create; the owner-only
+The Codex entry is identical for every permission set; the owner-only
 Sonarchy configuration above controls both tool inventory and backend access.
 Do not edit global Codex configuration during plugin installation.
 
@@ -55,11 +66,18 @@ Do not edit global Codex configuration during plugin installation.
 - `content_browse`: explicitly mapped Sonarchy browse kinds and normalized
   provider-neutral results.
 - `apple_playlist_preflight`: exact 1–25 track review and opaque `planHandle`.
+- `sonos_playlist_play_preflight`: read-only review of one exact existing
+  `SQ:<id>`, exact room UID, complete bounded playlist and queue state, and
+  append-and-play effects.
 - `apple_playlist_create`: present only with `playlist-create`; creates one new
   native Sonos Playlist and does not play or alter a queue.
+- `sonos_playlist_play`: present only with `playlist-play`; accepts exactly a
+  fresh `planHandle` and `approved: true`, appends the reviewed playlist to the
+  unchanged queue, and starts its first newly appended item.
 
-There is no generic operation, command, URI, UPnP, SoCo, playback, volume,
-grouping, settings, alarm, source, rename, replacement, or deletion tool.
+There is no generic operation, command, URI, UPnP, SoCo, arbitrary playback,
+queue clear/replace/edit, volume, grouping, settings, alarm, source, rename,
+playlist edit/replacement, or deletion tool.
 Public Apple catalogue search is supported; private Apple-library access is not.
 
 ## Consent example
@@ -85,6 +103,32 @@ repeat preflight. Writes are never retried.
 An MCP plan handle may be visible in a client's tool invocation display. It is
 not the backend token, is short-lived and single-use, and must not be copied
 into logs or documentation.
+
+### Exact Sonos Playlist playback consent
+
+1. Call `sonos_playlist_play_preflight` with only an exact `roomUid` and exact
+   `playlistId`.
+2. Show the complete room, topology, volume/mute, transport/source, playlist,
+   queue, item-preview, fingerprints, append position, and side-effect review.
+3. Obtain explicit user approval for that exact review.
+4. Immediately call the same preflight again. Compare every reviewed fact
+   except handle and expiry. If anything changed, do not play and request new
+   approval.
+5. If identical, call `sonos_playlist_play` exactly once with only the fresh
+   handle and `approved: true`. Never use the first review handle.
+
+Playback is limited to an online standalone room at volume 20 or below. The
+room must be stopped or paused and its source must be authoritatively the Sonos
+queue or no active source. The playlist must contain 1–25 completely readable
+items, and the complete queue plus playlist may contain at most 100 items.
+
+All existing queue entries remain. Sonarchy appends the complete playlist and
+moves playback to the first appended item, interrupting a paused or stopped
+queue context. It does not change volume, mute, topology, source settings, or
+playlist contents, and never retries. If append succeeds but playback start or
+verification fails, the appended items may remain. Sonarchy reports that
+partial state and does not clear, reconstruct, remove, or roll back queue items;
+general rollback remains deferred to issue #19.
 
 ## Diagnostics and removal
 
