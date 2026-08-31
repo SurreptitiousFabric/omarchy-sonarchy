@@ -64,18 +64,27 @@ Public Apple catalogue search is supported; private Apple-library access is not.
 
 ## Consent example
 
-1. Call `apple_playlist_preflight` with the exact room UID, new name,
-   duplicate policy, and exact reviewed Apple songs.
-2. Display every ordered track, collision state, duration, Sonos-acceptance
-   status, `queueMutation: false`, `playbackMutation: false`, expected side
-   effects, and expiry.
-3. Stop and ask the user to approve creating exactly that playlist.
-4. Only after an explicit current confirmation, call
-   `apple_playlist_create` with only `planHandle` and `approved: true`.
+1. Run `apple_playlist_preflight` and show the exact reviewed plan, including
+   its room UID, playlist name, ordered tracks, collision status, duration,
+   Sonos-acceptance status, mutation flags, expected side effects, and expiry.
+2. Obtain explicit user approval for that exact plan.
+3. Immediately perform a fresh, identical preflight after approval.
+4. Compare the fresh plan's exact fingerprint, room UID, playlist name,
+   ordered tracks, collision status, and side effects with the approved review.
+5. If anything changed, stop and ask for approval again.
+6. If everything is identical, immediately call `apple_playlist_create` with
+   only the fresh `planHandle` and `approved: true`.
 
 The MCP client owns the confirmation interaction. `approved: true` alone is not
-proof that a human approved it. Handles and tickets are single-use; after any
-backend or adapter restart, repeat preflight. Writes are never retried.
+proof that a human approved it. Revalidating immediately after approval avoids
+depending on a human response within the backend ticket's 120-second lifetime
+while preserving approval of the exact content and side effects. Handles and
+tickets are short-lived and single-use; after any backend or adapter restart,
+repeat preflight. Writes are never retried.
+
+An MCP plan handle may be visible in a client's tool invocation display. It is
+not the backend token, is short-lived and single-use, and must not be copied
+into logs or documentation.
 
 ## Diagnostics and removal
 

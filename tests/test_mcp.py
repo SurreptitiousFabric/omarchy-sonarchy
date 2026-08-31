@@ -2,20 +2,28 @@ from __future__ import annotations
 
 import ast
 import copy
+import io
+import json
+import logging
+import os
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
+from sonarchy_backend.local_mcp import BackendOwnership, MultiClientRuntime
+from sonarchy_backend.protocol import ProtocolServer
 from sonarchy_mcp.server import UNAVAILABLE, SonarchyMcp, ToolError, tools
 
 ROOT = Path(__file__).parents[1]
 
 
 class FakeBackend:
-    def __init__(self):
+    def __init__(self, *, expires_at_epoch_ms=None):
         self.instance = "backend-a"
         self.calls = []
+        self.expires_at_epoch_ms = expires_at_epoch_ms
         self.snapshot = {
             "revision": 7,
             "households": [
@@ -38,21 +46,23 @@ class FakeBackend:
         if operation == "playlist_plan.apple.validate":
             return {
                 "planToken": self.token,
-                "expiresAtEpochMs": int(time.time() * 1000) + 60_000,
+                "expiresAtEpochMs": self.expires_at_epoch_ms or int(time.time() * 1000) + 60_000,
                 "tracks": args["tracks"],
                 "queueMutation": False,
                 "playbackMutation": False,
             }
         if operation == "playlists.apple.create":
+            if set(args) != {"planToken", "approved"} or args.get("approved") is not True:
+                raise ValueError("Backend create requires exactly planToken and approved: true")
             return {"playlist": {"id": "SQ:99", "tracks": []}}
         if operation == "content.browse":
             return {"items": [], "total": 0, "next_offset": None}
         return None
 
 
-def _server(write: bool = False):
+def _server(write: bool = False, *, backend=None):
     server = SonarchyMcp()
-    server.backend = FakeBackend()
+    server.backend = backend or FakeBackend()
     server.permissions = {"read", "playlist-create"} if write else {"read"}
     return server
 
@@ -60,7 +70,7 @@ def _server(write: bool = False):
 def _track():
     return {
         "catalogId": "1452806384",
-        "url": "https://music.apple.com/us/song/1452806384",
+        "url": ("https://music.apple.com/ch/album/kiss-me-kiss-me-kiss-me/1452806377?i=1452806384"),
         "title": "Just Like Heaven",
         "artist": "The Cure",
         "album": "Kiss Me, Kiss Me, Kiss Me",
@@ -116,7 +126,10 @@ def test_preflight_hides_token_and_create_claims_once_without_retry():
     assert created["playlist"]["id"] == "SQ:99"
     assert server.backend.calls[-1] == (
         "playlists.apple.create",
-        {"planToken": "backend-secret-ticket"},
+        {
+            "planToken": "backend-secret-ticket",
+            "approved": True,
+        },
     )
     with pytest.raises(ToolError, match="already been used"):
         server.call_tool(
@@ -125,17 +138,248 @@ def test_preflight_hides_token_and_create_claims_once_without_retry():
     assert [call[0] for call in server.backend.calls].count("playlists.apple.create") == 1
 
 
-def test_backend_restart_and_expiry_invalidate_handle():
+@pytest.mark.parametrize(
+    "args",
+    (
+        {"planToken": "backend-secret-ticket"},
+        {"planToken": "backend-secret-ticket"},
+        {"planToken": "backend-secret-ticket", "approved": False},
+        {"planToken": "backend-secret-ticket", "approved": "true"},
+        {
+            "planToken": "backend-secret-ticket",
+            "approved": True,
+            "roomUid": "replacement",
+        },
+    ),
+    ids=(
+        "missing-approved",
+        "token-only-execution",
+        "approved-false",
+        "approved-string",
+        "replacement-field",
+    ),
+)
+def test_strict_fake_backend_rejects_non_authoritative_create_shapes(args):
+    backend = FakeBackend()
+    with pytest.raises(ValueError, match="exactly planToken and approved: true"):
+        backend.call("playlists.apple.create", args)
+
+
+def test_backend_connection_change_consumes_handle_without_create_or_secret_leak():
     server = _server(write=True)
     review = server.call_tool(
         "apple_playlist_preflight",
         {"roomUid": "R1", "name": "Morning", "allowDuplicates": False, "tracks": [_track()]},
     )
+    handle = review["planHandle"]
     server.backend.instance = "backend-b"
-    with pytest.raises(ToolError, match="restarted"):
-        server.call_tool(
-            "apple_playlist_create", {"planHandle": review["planHandle"], "approved": True}
+    with pytest.raises(
+        ToolError,
+        match=r"^Sonarchy’s backend connection changed; run a new preflight$",
+    ) as changed:
+        server.call_tool("apple_playlist_create", {"planHandle": handle, "approved": True})
+    assert changed.value.code == "conflict"
+    assert not any(call[0] == "playlists.apple.create" for call in server.backend.calls)
+    assert handle not in str(changed.value)
+    assert server.backend.token not in str(changed.value)
+
+    with pytest.raises(
+        ToolError, match=r"^This plan handle is invalid or has already been used$"
+    ) as replay:
+        server.call_tool("apple_playlist_create", {"planHandle": handle, "approved": True})
+    assert replay.value.code == "conflict"
+    assert handle not in str(replay.value)
+    assert server.backend.token not in str(replay.value)
+
+
+def test_expired_handle_is_consumed_without_create_or_secret_leak(monkeypatch):
+    now = 1_700_000_000.0
+    backend = FakeBackend(expires_at_epoch_ms=int((now + 1) * 1000))
+    server = _server(write=True, backend=backend)
+    review = server.call_tool(
+        "apple_playlist_preflight",
+        {"roomUid": "R1", "name": "Morning", "allowDuplicates": False, "tracks": [_track()]},
+    )
+    handle = review["planHandle"]
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now + 2)
+
+    with pytest.raises(
+        ToolError,
+        match=r"^The reviewed playlist plan expired; run a new preflight$",
+    ) as expired:
+        server.call_tool("apple_playlist_create", {"planHandle": handle, "approved": True})
+    assert expired.value.code == "conflict"
+    assert not any(call[0] == "playlists.apple.create" for call in backend.calls)
+    assert handle not in str(expired.value)
+    assert backend.token not in str(expired.value)
+
+    with pytest.raises(
+        ToolError, match=r"^This plan handle is invalid or has already been used$"
+    ) as replay:
+        server.call_tool("apple_playlist_create", {"planHandle": handle, "approved": True})
+    assert replay.value.code == "conflict"
+    assert handle not in str(replay.value)
+    assert backend.token not in str(replay.value)
+
+
+class DeviceFreeController:
+    def __init__(self):
+        self.calls = []
+
+    def refresh(self, *, rediscover=True):
+        self.calls.append(("refresh", rediscover))
+        return {
+            "type": "snapshot",
+            "version": 1,
+            "status": {"state": "ready", "message": ""},
+            "households": [],
+            "target": None,
+            "playback": {},
+        }
+
+    def event_services(self):
+        return {}
+
+    def inspect_apple_playlist_target(self, room_uid, playlist_name):
+        self.calls.append(("inspectApplePlaylistTarget", room_uid, playlist_name))
+        return {
+            "room": {
+                "uid": room_uid,
+                "coordinatorUid": room_uid,
+                "householdFingerprint": "sha256:household",
+            },
+            "observedState": {
+                "playlistCount": 0,
+                "playlistInventoryFingerprint": "sha256:playlists",
+                "capabilities": [
+                    "playlist_plan.apple.validate",
+                    "playlists.apple.create",
+                    "direct-apple-saved-queue",
+                ],
+            },
+        }
+
+    def create_preflighted_apple_playlist(self, plan):
+        self.calls.append(("createPreflightedApplePlaylist", copy.deepcopy(plan)))
+        return {"ok": True, "playlist": {"id": "SQ:17", "name": plan["playlistName"]}}
+
+
+class RecordingProtocolServer(ProtocolServer):
+    def __init__(self, controller):
+        super().__init__(controller)
+        self.requests = []
+
+    def handle(self, request, output):
+        self.requests.append(copy.deepcopy(request))
+        super().handle(request, output)
+
+
+def test_device_free_mcp_socket_protocol_create_contract(tmp_path, monkeypatch, caplog):
+    backend_token = "backend_contract_ticket_000000000001"  # noqa: S105
+    plan_handle = "mcp_contract_handle_00000000000000000001"
+    runtime_root = tmp_path / "runtime"
+    controller = DeviceFreeController()
+    protocol = RecordingProtocolServer(controller)
+    ticket_store = next(
+        service.contextual_handlers["playlist_plan.apple.validate"].__self__.tickets
+        for service in protocol.application.services
+        if "playlist_plan.apple.validate" in service.contextual_handlers
+    )
+    ticket_store._token_factory = lambda: backend_token
+    monkeypatch.setattr("sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: plan_handle)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime_root))
+    caplog.set_level(logging.DEBUG)
+
+    read_fd, write_fd = os.pipe()
+    stdin = os.fdopen(read_fd, "rb", buffering=0)
+    stdout = io.BytesIO()
+    mcp = None
+    with BackendOwnership.acquire(str(runtime_root)) as ownership:
+        runtime = MultiClientRuntime(
+            protocol,
+            ownership.open_listener(),
+            frozenset({"read", "playlist-create"}),
         )
+        thread = threading.Thread(target=runtime.serve, args=(stdin, stdout), daemon=True)
+        thread.start()
+        try:
+            mcp = SonarchyMcp()
+            mcp.permissions = {"read", "playlist-create"}
+            review = mcp.call_tool(
+                "apple_playlist_preflight",
+                {
+                    "roomUid": "R1",
+                    "name": "AI Friday",
+                    "allowDuplicates": False,
+                    "tracks": [_track()],
+                },
+            )
+            assert review["planHandle"] == plan_handle
+            assert "planToken" not in review
+            assert backend_token not in json.dumps(review)
+
+            mcp_create_args = {"planHandle": plan_handle, "approved": True}
+            assert set(mcp_create_args) == {"planHandle", "approved"}
+            assert mcp_create_args["approved"] is True
+            created = mcp.call_tool("apple_playlist_create", mcp_create_args)
+            assert created == {
+                "ok": True,
+                "playlist": {"id": "SQ:17", "name": "AI Friday"},
+            }
+
+            create_requests = [
+                request
+                for request in protocol.requests
+                if request.get("op") == "playlists.apple.create"
+            ]
+            assert [request["args"] for request in create_requests] == [
+                {"planToken": backend_token, "approved": True}
+            ]
+            executions = [
+                call for call in controller.calls if call[0] == "createPreflightedApplePlaylist"
+            ]
+            assert len(executions) == 1
+            assert [call[0] for call in controller.calls] == [
+                "refresh",
+                "inspectApplePlaylistTarget",
+                "createPreflightedApplePlaylist",
+            ]
+
+            with pytest.raises(
+                ToolError, match=r"^This plan handle is invalid or has already been used$"
+            ) as replay:
+                mcp.call_tool("apple_playlist_create", mcp_create_args)
+            assert replay.value.code == "conflict"
+            assert (
+                len(
+                    [
+                        request
+                        for request in protocol.requests
+                        if request.get("op") == "playlists.apple.create"
+                    ]
+                )
+                == 1
+            )
+
+            post_review_public_results = json.dumps(
+                {
+                    "create": created,
+                    "replay": {"code": replay.value.code, "message": str(replay.value)},
+                }
+            )
+            assert backend_token not in post_review_public_results
+            assert plan_handle not in post_review_public_results
+            assert backend_token not in caplog.text
+            assert plan_handle not in caplog.text
+            assert backend_token.encode() not in stdout.getvalue()
+            assert plan_handle.encode() not in stdout.getvalue()
+        finally:
+            if mcp is not None:
+                mcp.backend.close()
+            os.close(write_fd)
+            thread.join(timeout=3)
+            stdin.close()
+            assert not thread.is_alive()
 
 
 def test_read_only_mode_has_no_create_and_rejects_replacement_fields():
