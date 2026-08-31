@@ -18,7 +18,10 @@ from sonarchy_backend.domains.browse_bounds import (
     BROWSE_PLAYLIST_ID_BYTES,
     bound_browse_result,
 )
-from sonarchy_backend.domains.errors import PlaylistTransactionError
+from sonarchy_backend.domains.errors import (
+    PlaylistPlayTransactionError,
+    PlaylistTransactionError,
+)
 from sonarchy_backend.protocol import (
     MAX_PROTOCOL_LINE_BYTES,
     PROTOCOL_OPERATIONS,
@@ -672,6 +675,8 @@ def test_protocol_action_cases_cover_every_operation():
         "devices.details.get",
         "playlist_plan.apple.validate",
         "playlists.apple.create",
+        "playlists.play.validate",
+        "playlists.play.execute",
     }
 
 
@@ -1856,6 +1861,161 @@ def test_apple_playlist_failure_returns_bounded_cleanup_evidence_without_raw_det
     serialized = json.dumps(result)
     for forbidden in ("192.168", "token=", "DIDL", "CurrentURI", "service metadata"):
         assert forbidden not in serialized
+
+
+def _playlist_play_target():
+    identity = "sha256:" + ("1" * 64)
+    return {
+        "room": {
+            "uid": "R1",
+            "name": "Office",
+            "householdFingerprint": "sha256:" + ("2" * 64),
+            "coordinatorUid": "R1",
+            "online": True,
+            "volume": 10,
+            "mute": False,
+            "transport": "STOPPED",
+            "source": "QUEUE",
+            "capabilities": ["append-sonos-playlist", "play-from-queue"],
+        },
+        "topology": {
+            "groupUid": "R1",
+            "coordinatorUid": "R1",
+            "memberUids": ["R1"],
+            "standalone": True,
+        },
+        "playlist": {
+            "id": "SQ:9",
+            "title": "Morning",
+            "itemCount": 1,
+            "contentFingerprint": identity,
+            "itemPreview": [{"position": 1, "identity": identity, "title": "Track"}],
+            "firstItem": {"position": 1, "identity": identity, "title": "Track"},
+        },
+        "queue": {
+            "length": 2,
+            "contentFingerprint": "sha256:" + ("3" * 64),
+            "currentPosition": 1,
+            "expectedFirstAppendedPosition": 3,
+        },
+    }
+
+
+class ProtocolPlaylistPlayController(FakeController):
+    def __init__(self):
+        super().__init__()
+        self.failure = False
+
+    def inspect_playlist_play_target(self, room_uid, playlist_id):
+        self.calls.append(("inspectPlaylistPlayTarget", room_uid, playlist_id))
+        return _playlist_play_target()
+
+    def execute_preflighted_playlist_play(self, plan, mutation_started_callback=None):
+        self.calls.append(("executePreflightedPlaylistPlay", plan))
+        if mutation_started_callback:
+            mutation_started_callback()
+        if self.failure:
+            raise PlaylistPlayTransactionError(
+                phase="start_playback",
+                diagnostics={
+                    "queueAppended": True,
+                    "playbackStarted": False,
+                    "queueRollbackAttempted": False,
+                    "appendInvocationCount": 1,
+                    "playbackStartInvocationCount": 1,
+                    "retryCount": 0,
+                    "expectedFirstAppendedPosition": 3,
+                    "observedQueueLength": 3,
+                    "observedQueueFingerprint": "sha256:" + ("4" * 64),
+                    "observedCurrentPosition": 1,
+                    "observedTransport": "PAUSED_PLAYBACK",
+                    "observedSource": "QUEUE",
+                    "rawException": "DIDL at 192.0.2.1 token=secret",
+                    "succeeded": False,
+                },
+            )
+        return {
+            "ok": True,
+            "playlist": {"id": "SQ:9", "title": "Morning"},
+            "mutations": {"appendInvocationCount": 1, "playbackStartInvocationCount": 1},
+        }
+
+
+def _protocol_playlist_play_preflight(server, output):
+    server.handle(
+        {
+            "version": 1,
+            "id": "play-plan",
+            "op": "playlists.play.validate",
+            "args": {"roomUid": "R1", "playlistId": "SQ:9"},
+        },
+        output,
+    )
+    return next(message for message in decoded(output) if message.get("id") == "play-plan")
+
+
+def test_playlist_play_protocol_is_token_only_and_broadcasts_post_write_snapshot():
+    controller = ProtocolPlaylistPlayController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    review = _protocol_playlist_play_preflight(server, output)
+    assert review["ok"] is True
+    assert controller.calls == [("inspectPlaylistPlayTarget", "R1", "SQ:9")]
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "play",
+            "op": "playlists.play.execute",
+            "args": {"planToken": review["value"]["planToken"], "approved": True},
+        },
+        output,
+    )
+    messages = decoded(output)
+    result = next(message for message in messages if message.get("id") == "play")
+    assert result["ok"] is True
+    assert result["value"]["playlist"]["id"] == "SQ:9"
+    assert messages[-1]["type"] == "snapshot"
+    assert controller.calls[-1] == ("refresh", False)
+    execution = next(
+        call for call in controller.calls if call[0] == "executePreflightedPlaylistPlay"
+    )
+    assert set(execution[1]) == {
+        "operation",
+        "roomUid",
+        "playlistId",
+        "targetState",
+        "planFingerprint",
+    }
+
+
+def test_playlist_play_partial_failure_is_bounded_and_still_broadcasts_snapshot():
+    controller = ProtocolPlaylistPlayController()
+    server = ProtocolServer(controller)  # type: ignore[arg-type]
+    output = io.StringIO()
+    review = _protocol_playlist_play_preflight(server, output)
+    controller.failure = True
+
+    server.handle(
+        {
+            "version": 1,
+            "id": "partial-play",
+            "op": "playlists.play.execute",
+            "args": {"planToken": review["value"]["planToken"], "approved": True},
+        },
+        output,
+    )
+    messages = decoded(output)
+    failure = next(message for message in messages if message.get("id") == "partial-play")
+    assert failure["ok"] is False
+    assert failure["error"]["code"] == "speaker_rejected"
+    assert failure["error"]["details"]["phase"] == "start_playback"
+    assert failure["error"]["details"]["queueAppended"] is True
+    assert failure["error"]["details"]["queueRollbackAttempted"] is False
+    assert messages[-1]["type"] == "snapshot"
+    rendered = json.dumps(failure)
+    for forbidden in ("192.0.2.1", "token=", "DIDL", "rawException"):
+        assert forbidden not in rendered
 
 
 @pytest.mark.parametrize(

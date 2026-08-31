@@ -22,8 +22,16 @@ from .protocol import (
     ProtocolServer,
 )
 
-READ_OPERATIONS = frozenset({"state.refresh", "content.browse", "playlist_plan.apple.validate"})
+READ_OPERATIONS = frozenset(
+    {
+        "state.refresh",
+        "content.browse",
+        "playlist_plan.apple.validate",
+        "playlists.play.validate",
+    }
+)
 PLAYLIST_CREATE_OPERATION = "playlists.apple.create"
+PLAYLIST_PLAY_OPERATION = "playlists.play.execute"
 MAX_SOCKET_CLIENTS = 4
 MAX_PENDING_OUTPUT_BYTES = MAX_PROTOCOL_LINE_BYTES * 4
 MAX_MCP_CONFIG_BYTES = 8 * 1024
@@ -164,7 +172,7 @@ def load_mcp_permissions(config_home: str | None = None) -> frozenset[str]:
     if not isinstance(permissions, list) or not all(isinstance(item, str) for item in permissions):
         return frozenset({"read"})
     selected = frozenset(permissions)
-    if not selected <= {"read", "playlist-create"} or "read" not in selected:
+    if not selected <= {"read", "playlist-create", "playlist-play"} or "read" not in selected:
         return frozenset({"read"})
     return selected
 
@@ -274,8 +282,12 @@ class MultiClientRuntime:
         request_id = str(request.get("id", ""))
         operation = str(request.get("op", ""))
         if socket_client is not None:
-            allowed = operation in READ_OPERATIONS or (
-                operation == PLAYLIST_CREATE_OPERATION and "playlist-create" in self.permissions
+            allowed = (
+                operation in READ_OPERATIONS
+                or (
+                    operation == PLAYLIST_CREATE_OPERATION and "playlist-create" in self.permissions
+                )
+                or (operation == PLAYLIST_PLAY_OPERATION and "playlist-play" in self.permissions)
             )
             if "read" not in self.permissions or not allowed:
                 self._queue(

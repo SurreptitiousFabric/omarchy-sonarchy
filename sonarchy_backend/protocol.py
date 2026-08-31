@@ -70,6 +70,8 @@ PROTOCOL_OPERATIONS = frozenset(
         "playlists.mutate",
         "playlist_plan.apple.validate",
         "playlists.apple.create",
+        "playlists.play.validate",
+        "playlists.play.execute",
         "playlists.track.mutate",
         "content.apple.play",
         "content.apple.album.play",
