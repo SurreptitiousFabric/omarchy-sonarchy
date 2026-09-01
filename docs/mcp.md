@@ -59,6 +59,20 @@ The Codex entry is identical for every permission set; the owner-only
 Sonarchy configuration above controls both tool inventory and backend access.
 Do not edit global Codex configuration during plugin installation.
 
+## Stdio protocol boundary
+
+The adapter accepts one individual UTF-8 JSON-RPC 2.0 object per newline-
+delimited physical frame. Embedded physical newlines and top-level arrays or
+JSON-RPC batches are not supported. Input and output frames include their
+terminating newline in the 64 KiB limit.
+
+Input is read and oversized-frame remainders are drained in bounded chunks.
+An oversized input receives one bounded Invalid Request response, and malformed
+JSON or UTF-8 does not terminate the adapter. Valid JSON-RPC notifications
+receive no response; a later valid request is processed normally. Every stdout
+line is one complete bounded JSON-RPC message. Diagnostics, when present, go
+only to stderr and never include the raw input.
+
 ## Tools
 
 - `rooms_list`: exact room UIDs plus bounded household/group facts.
