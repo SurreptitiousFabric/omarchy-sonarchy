@@ -13,6 +13,7 @@ from typing import Any
 
 MAX_LINE = 64 * 1024
 MAX_CONFIG = 8 * 1024
+MAX_REQUEST_ID_BYTES = 256
 UNAVAILABLE = (
     "Sonarchy is unavailable. Ensure the Omarchy Sonarchy plugin is enabled and "
     "Quickshell is running."
@@ -36,6 +37,78 @@ class ToolError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.details = details or {}
+
+
+def _read_frame(reader: Any) -> tuple[bytes | None, bool]:
+    raw = reader.readline(MAX_LINE + 1)
+    if not raw:
+        return None, False
+    if len(raw) <= MAX_LINE:
+        return raw, False
+    while not raw.endswith(b"\n"):
+        raw = reader.readline(MAX_LINE + 1)
+        if not raw:
+            break
+    return b"", True
+
+
+def _error_response(code: int, message: str, request_id: str | int | None = None) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "error": {"code": code, "message": message},
+    }
+
+
+def _validated_envelope(
+    value: Any,
+) -> tuple[str | int | None, str, dict[str, Any] | None, bool] | dict[str, Any] | None:
+    if not isinstance(value, dict) or value.get("jsonrpc") != "2.0":
+        return _error_response(-32600, "Invalid Request")
+    method = value.get("method")
+    if not isinstance(method, str):
+        return _error_response(-32600, "Invalid Request")
+    notification = "id" not in value
+    request_id = value.get("id")
+    if not notification:
+        try:
+            encoded_id = json.dumps(request_id, ensure_ascii=False, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        except TypeError, ValueError, UnicodeEncodeError:
+            return _error_response(-32600, "Invalid Request")
+        if (
+            isinstance(request_id, bool)
+            or not isinstance(request_id, (str, int))
+            or len(encoded_id) > MAX_REQUEST_ID_BYTES
+        ):
+            return _error_response(-32600, "Invalid Request")
+    params = value.get("params")
+    if "params" in value and not isinstance(params, dict):
+        if notification:
+            return None
+        return _error_response(-32602, "Invalid params", request_id)
+    return request_id, method, params, notification
+
+
+def _emit_response(response: dict[str, Any], request_id: str | int | None) -> None:
+    try:
+        encoded = (json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        )
+    except TypeError, ValueError, UnicodeEncodeError, RecursionError:
+        encoded = b""
+    if not encoded or len(encoded) > MAX_LINE:
+        encoded = (
+            json.dumps(
+                _error_response(-32603, "Internal error", request_id),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("utf-8")
+    sys.stdout.buffer.write(encoded)
+    sys.stdout.buffer.flush()
 
 
 class BackendClient:
@@ -510,62 +583,92 @@ class SonarchyMcp:
         )
 
     def run(self) -> None:
-        for raw in sys.stdin.buffer:
+        while True:
+            raw, oversized = _read_frame(sys.stdin.buffer)
+            if raw is None:
+                return
+            if oversized:
+                _emit_response(_error_response(-32600, "Invalid Request"), None)
+                continue
             try:
-                if len(raw) > MAX_LINE:
-                    continue
                 request = json.loads(raw)
-                request_id = request.get("id")
-                method = request.get("method")
+            except UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError:
+                _emit_response(_error_response(-32700, "Parse error"), None)
+                continue
+            envelope = _validated_envelope(request)
+            if envelope is None:
+                continue
+            if isinstance(envelope, dict):
+                _emit_response(envelope, None)
+                continue
+            request_id, method, params, notification = envelope
+            if method == "notifications/initialized" or notification:
+                continue
+            try:
                 if method == "initialize":
-                    result = {
-                        "protocolVersion": "2025-06-18",
-                        "capabilities": {"tools": {"listChanged": False}},
-                        "serverInfo": {"name": "sonarchy", "version": "1.0.0"},
-                    }
-                elif method == "notifications/initialized":
-                    continue
+                    if params is None:
+                        response = _error_response(-32602, "Invalid params", request_id)
+                    else:
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "result": {
+                                "protocolVersion": "2025-06-18",
+                                "capabilities": {"tools": {"listChanged": False}},
+                                "serverInfo": {"name": "sonarchy", "version": "1.0.0"},
+                            },
+                        }
                 elif method == "ping":
-                    result = {}
+                    if params not in (None, {}):
+                        response = _error_response(-32602, "Invalid params", request_id)
+                    else:
+                        response = {"jsonrpc": "2.0", "id": request_id, "result": {}}
                 elif method == "tools/list":
-                    result = {"tools": tools(self.permissions)}
+                    if params not in (None, {}):
+                        response = _error_response(-32602, "Invalid params", request_id)
+                    else:
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "result": {"tools": tools(self.permissions)},
+                        }
                 elif method == "tools/call":
-                    params = request.get("params") or {}
-                    value = self.call_tool(
-                        str(params.get("name", "")), params.get("arguments") or {}
-                    )
-                    result = {
-                        "content": [
-                            {"type": "text", "text": json.dumps(value, ensure_ascii=False)}
-                        ],
-                        "structuredContent": value,
-                        "isError": False,
-                    }
+                    if (
+                        params is None
+                        or not isinstance(params.get("name"), str)
+                        or ("arguments" in params and not isinstance(params["arguments"], dict))
+                    ):
+                        response = _error_response(-32602, "Invalid params", request_id)
+                    else:
+                        arguments = params.get("arguments", {})
+                        try:
+                            value = self.call_tool(params["name"], arguments)
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": json.dumps(value, ensure_ascii=False),
+                                    }
+                                ],
+                                "structuredContent": value,
+                                "isError": False,
+                            }
+                        except ToolError as exc:
+                            result = {
+                                "content": [{"type": "text", "text": str(exc)}],
+                                "structuredContent": {
+                                    "code": exc.code,
+                                    "message": str(exc),
+                                    "details": exc.details,
+                                },
+                                "isError": True,
+                            }
+                        response = {"jsonrpc": "2.0", "id": request_id, "result": result}
                 else:
-                    raise ToolError("method_not_found", "Unsupported MCP method")
-                response = {"jsonrpc": "2.0", "id": request_id, "result": result}
-            except ToolError as exc:
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": request.get("id") if isinstance(request, dict) else None,
-                    "result": {
-                        "content": [{"type": "text", "text": str(exc)}],
-                        "structuredContent": {
-                            "code": exc.code,
-                            "message": str(exc),
-                            "details": exc.details,
-                        },
-                        "isError": True,
-                    },
-                }
-            except OSError, ValueError, TypeError, json.JSONDecodeError:
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "error": {"code": -32603, "message": "Internal MCP error"},
-                }
-            sys.stdout.write(json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n")
-            sys.stdout.flush()
+                    response = _error_response(-32601, "Method not found", request_id)
+            except Exception:  # noqa: BLE001 - keep the stdio boundary alive without leakage
+                response = _error_response(-32603, "Internal error", request_id)
+            _emit_response(response, request_id)
 
 
 def main() -> int:
