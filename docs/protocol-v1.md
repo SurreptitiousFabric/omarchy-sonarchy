@@ -314,11 +314,16 @@ service metadata are not included.
 
 Exact-playback failures instead use phase `preflight_revalidation`,
 `append_playlist`, `start_playback`, `verify_queue`, or `verify_playback` plus
-bounded `queueAppended`, `playbackStarted`, expected/observed positions, queue
+bounded `appendState`, `playbackStarted`, expected/observed positions, queue
 length/fingerprint, transport/source, append/start counts, retry count,
-`queueRollbackAttempted: false`, and `succeeded: false`. Append rejection
-reports both mutation booleans false. A later failure reports the partial
-append accurately and never triggers issue #19 rollback logic.
+`queueRollbackAttempted: false`, and `succeeded: false`. `appendState` is
+`confirmed` only when authoritative recapture proves the exact original queue
+prefix followed by the exact appended playlist segment, `absent` only when it
+proves the queue is unchanged, and `unknown` otherwise. `queueAppended` is
+present as `true` for `confirmed` and `false` for `absent`; it is omitted for
+`unknown` rather than falsely reporting that no append occurred. A later
+failure reports the partial append accurately and never triggers issue #19
+rollback logic.
 
 ## Snapshot
 

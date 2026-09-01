@@ -1918,7 +1918,7 @@ class ProtocolPlaylistPlayController(FakeController):
             raise PlaylistPlayTransactionError(
                 phase="start_playback",
                 diagnostics={
-                    "queueAppended": True,
+                    "appendState": "confirmed",
                     "playbackStarted": False,
                     "queueRollbackAttempted": False,
                     "appendInvocationCount": 1,
@@ -2010,6 +2010,7 @@ def test_playlist_play_partial_failure_is_bounded_and_still_broadcasts_snapshot(
     assert failure["ok"] is False
     assert failure["error"]["code"] == "speaker_rejected"
     assert failure["error"]["details"]["phase"] == "start_playback"
+    assert failure["error"]["details"]["appendState"] == "confirmed"
     assert failure["error"]["details"]["queueAppended"] is True
     assert failure["error"]["details"]["queueRollbackAttempted"] is False
     assert messages[-1]["type"] == "snapshot"

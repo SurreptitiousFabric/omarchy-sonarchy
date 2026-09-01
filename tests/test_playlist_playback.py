@@ -87,6 +87,9 @@ class FakeSpeaker:
         self.playlist_total_override = None
         self.queue_total_override = None
         self.append_failure = False
+        self.append_failure_after_mutation = False
+        self.append_failure_after_ambiguous_mutation = False
+        self.append_failure_with_unreadable_post_state = False
         self.play_failure = False
         self.bad_append_position = False
         self.queue_verification_failure = False
@@ -125,6 +128,8 @@ class FakeSpeaker:
 
     def get_queue(self, *, max_items, full_album_art_uri):
         assert full_album_art_uri is False
+        if self.append_failure_with_unreadable_post_state and self.append_calls:
+            raise RuntimeError("private uncertain queue read failure at 192.0.2.1")
         if self.post_capture_failure and self.play_calls:
             raise RuntimeError("private post-write queue read failure at 192.0.2.1")
         values = copy.deepcopy(self.queue_items)
@@ -138,9 +143,15 @@ class FakeSpeaker:
 
     def add_to_queue(self, playlist):
         self.append_calls.append(playlist.item_id)
-        if self.append_failure:
+        if self.append_failure or self.append_failure_with_unreadable_post_state:
             raise RuntimeError("private append failure at 192.0.2.1")
         position = len(self.queue_items) + 1
+        if self.append_failure_after_mutation:
+            self.queue_items.extend(copy.deepcopy(self.playlist_items))
+            raise RuntimeError("private lost append response at 192.0.2.1")
+        if self.append_failure_after_ambiguous_mutation:
+            self.queue_items.append(copy.deepcopy(self.playlist_items[0]))
+            raise RuntimeError("private partial append response at 192.0.2.1")
         self.queue_items.extend(copy.deepcopy(self.playlist_items))
         return position + 1 if self.bad_append_position else position
 
@@ -502,6 +513,7 @@ def test_append_rejection_is_bounded_and_never_retried():
 
     details = rejected.value.details
     assert details["phase"] == "append_playlist"
+    assert details["appendState"] == "absent"
     assert details["queueAppended"] is False
     assert details["playbackStarted"] is False
     assert details["appendInvocationCount"] == 1
@@ -510,6 +522,55 @@ def test_append_rejection_is_bounded_and_never_retried():
     assert speaker.append_calls == ["SQ:9"]
     assert speaker.play_calls == []
     assert "192.0.2.1" not in str(rejected.value)
+
+
+def test_lost_append_response_reports_exact_authoritative_append_as_confirmed():
+    speaker = FakeSpeaker()
+    application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
+    review = preflight(application)
+    speaker.append_failure_after_mutation = True
+
+    with pytest.raises(PlaylistPlayTransactionError) as rejected:
+        execute(application, review)
+
+    details = rejected.value.details
+    assert details["phase"] == "append_playlist"
+    assert details["appendState"] == "confirmed"
+    assert details["queueAppended"] is True
+    assert details["observedQueueLength"] == 3
+    assert details["appendInvocationCount"] == 1
+    assert details["playbackStartInvocationCount"] == 0
+    assert details["retryCount"] == 0
+    assert "before the queue was appended" not in str(rejected.value)
+    assert speaker.append_calls == ["SQ:9"]
+    assert speaker.play_calls == []
+
+
+@pytest.mark.parametrize(
+    "failure_attribute",
+    ("append_failure_after_ambiguous_mutation", "append_failure_with_unreadable_post_state"),
+)
+def test_lost_append_response_reports_ambiguous_or_unreadable_state_as_unknown(
+    failure_attribute,
+):
+    speaker = FakeSpeaker()
+    application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
+    review = preflight(application)
+    setattr(speaker, failure_attribute, True)
+
+    with pytest.raises(PlaylistPlayTransactionError) as rejected:
+        execute(application, review)
+
+    details = rejected.value.details
+    assert details["phase"] == "append_playlist"
+    assert details["appendState"] == "unknown"
+    assert "queueAppended" not in details
+    assert details["appendInvocationCount"] == 1
+    assert details["playbackStartInvocationCount"] == 0
+    assert details["retryCount"] == 0
+    assert "before the queue was appended" not in str(rejected.value)
+    assert speaker.append_calls == ["SQ:9"]
+    assert speaker.play_calls == []
 
 
 def test_playback_rejection_leaves_append_and_attempts_no_rollback():
@@ -523,6 +584,7 @@ def test_playback_rejection_leaves_append_and_attempts_no_rollback():
 
     details = rejected.value.details
     assert details["phase"] == "start_playback"
+    assert details["appendState"] == "confirmed"
     assert details["queueAppended"] is True
     assert details["playbackStarted"] is False
     assert details["observedQueueLength"] == 3
