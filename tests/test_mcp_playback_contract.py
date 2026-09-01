@@ -329,7 +329,16 @@ def test_mcp_stdio_socket_protocol_playback_contract(tmp_path):
         )
         assert replay["result"]["isError"] is True
         assert replay["result"]["structuredContent"]["code"] == "conflict"
-        assert len(execute_requests) == 1
+        assert (
+            len(
+                [
+                    request
+                    for request in protocol.requests
+                    if request.get("op") == "playlists.play.execute"
+                ]
+            )
+            == 1
+        )
         assert speaker.append_calls == ["SQ:9"]
         assert speaker.play_calls == [1]
         assert client.request(6, "ping", {})["result"] == {}
