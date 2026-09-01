@@ -98,6 +98,20 @@ def _emit_response(response: dict[str, Any], request_id: str | int | None) -> No
         )
     except TypeError, ValueError, UnicodeEncodeError, RecursionError:
         encoded = b""
+    result = response.get("result")
+    if (
+        len(encoded) > MAX_LINE
+        and isinstance(result, dict)
+        and result.get("isError") is False
+        and "structuredContent" in result
+    ):
+        compact_response = {**response, "result": {**result, "content": []}}
+        try:
+            encoded = (
+                json.dumps(compact_response, ensure_ascii=False, separators=(",", ":")) + "\n"
+            ).encode("utf-8")
+        except TypeError, ValueError, UnicodeEncodeError, RecursionError:
+            encoded = b""
     if not encoded or len(encoded) > MAX_LINE:
         encoded = (
             json.dumps(

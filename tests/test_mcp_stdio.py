@@ -398,6 +398,34 @@ def test_oversized_output_is_replaced_before_any_bytes_are_written(monkeypatch):
     }
 
 
+def test_large_valid_tool_result_drops_only_duplicate_text_before_emission(monkeypatch):
+    output = io.BytesIO()
+    monkeypatch.setattr(mcp_server.sys, "stdout", SimpleNamespace(buffer=output))
+    value = {"items": ["x" * 40_000]}
+
+    _emit_response(
+        {
+            "jsonrpc": "2.0",
+            "id": "large-result",
+            "result": {
+                "content": [{"type": "text", "text": json.dumps(value)}],
+                "structuredContent": value,
+                "isError": False,
+            },
+        },
+        "large-result",
+    )
+
+    encoded = output.getvalue()
+    response = json.loads(encoded)
+    assert len(encoded) <= MAX_LINE
+    assert response["result"] == {
+        "content": [],
+        "structuredContent": value,
+        "isError": False,
+    }
+
+
 def test_unserializable_output_is_replaced_before_any_bytes_are_written(monkeypatch):
     output = io.BytesIO()
     monkeypatch.setattr(mcp_server.sys, "stdout", SimpleNamespace(buffer=output))
