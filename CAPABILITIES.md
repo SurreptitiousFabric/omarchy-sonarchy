@@ -29,11 +29,15 @@ When at least one room is authoritatively available, snapshots now advertise:
   playlist-inventory/name, direct saved-playlist capability, and exact Apple
   song preflight; and
 - `playlists.apple.create`: the explicitly approved, token-only create and
-  authoritative verification transaction.
+  authoritative verification transaction;
+- `playlists.play.validate`: read-only exact room, standalone topology,
+  volume/mute, source/transport, native playlist, and queue preflight; and
+- `playlists.play.execute`: the separately approved token-only append-and-play
+  transaction with authoritative post-write verification.
 
 These names describe positive operations in the private application protocol.
 The local MCP adapter exposes only the separately documented bounded subset;
-the create operation has no
+neither write has a
 plain-title, arbitrary URL/URI, generic protocol, raw SoCo, or overwrite form.
 No Apple credential, private-library permission, or native Apple Music
 playlist-write capability is added.
@@ -49,13 +53,20 @@ capability for the root launcher. This is an intentional disclosure, not a
 claim that the plugin can bypass review.
 ## Local MCP capability boundary
 
-The initial MCP inventory is exactly `rooms_list`, `room_state_get`,
-`content_browse`, `apple_playlist_preflight`, and—only with the explicit
-`playlist-create` permission—`apple_playlist_create`. The first four are
-read-only. Create may add one new exact native Sonos Playlist and explicitly
-reports no queue or playback mutation.
+The read inventory is exactly `rooms_list`, `room_state_get`, `content_browse`,
+`apple_playlist_preflight`, and `sonos_playlist_play_preflight`. The explicit
+`playlist-create` permission adds only `apple_playlist_create`; the independent
+`playlist-play` permission adds only `sonos_playlist_play`. Create may add one
+new exact native Sonos Playlist without queue/playback mutation. Exact play may
+append one reviewed existing native playlist to one reviewed standalone-room
+queue and start its first appended item.
 
-MCP does not expose playback, queues, volume/mute, grouping, room selection,
-sources, alarms, settings, rename, general playlist mutation/deletion, private
-Apple libraries, arbitrary URLs, protocol operations, UPnP, or SoCo. Issue #14
-owns a future separately approved room-targeted playback design.
+Exact play requires volume at most 20, stopped/paused transport, a confirmed
+queue or no active source, 1–25 complete playlist items, and at most 100
+combined items. It preserves existing queue entries, never replaces the queue,
+never retries, and leaves a successful append in place if a later start or
+verification step fails. MCP does not expose other playback/transport actions,
+queue editing, volume/mute, grouping, room selection, source switching, alarms,
+settings, rename, general playlist mutation/deletion, private Apple libraries,
+arbitrary URLs, protocol operations, UPnP, or SoCo. Broader issue #14 scope
+remains open.

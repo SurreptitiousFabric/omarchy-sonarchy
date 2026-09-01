@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from .common import DomainService, coordinator_for, number_arg, string_arg
@@ -12,6 +13,59 @@ from .media import (
 )
 from .playlist_rules import validate_playlist_title
 from .ports import PlaylistsPort
+
+
+class PlaylistPlayStepError(RuntimeError):
+    def __init__(
+        self,
+        phase: str,
+        *,
+        queue_appended: bool,
+        playback_started: bool,
+        position: int | None = None,
+    ) -> None:
+        super().__init__("Exact Sonos Playlist playback failed")
+        self.phase = phase
+        self.queue_appended = queue_appended
+        self.playback_started = playback_started
+        self.position = position
+
+
+def append_and_start_playlist(
+    coordinator: Any,
+    playlist: Any,
+    *,
+    expected_first_position: int | None = None,
+    mutation_started_callback: Callable[[], None] | None = None,
+) -> int:
+    if mutation_started_callback is not None:
+        mutation_started_callback()
+    try:
+        raw_position = coordinator.add_to_queue(playlist)
+    except Exception as exc:
+        raise PlaylistPlayStepError(
+            "append_playlist", queue_appended=False, playback_started=False
+        ) from exc
+    position = safe_index(raw_position, -1)
+    if position < 1 or (
+        expected_first_position is not None and position != expected_first_position
+    ):
+        raise PlaylistPlayStepError(
+            "append_playlist",
+            queue_appended=True,
+            playback_started=False,
+            position=position if position >= 1 else None,
+        )
+    try:
+        coordinator.play_from_queue(position - 1)
+    except Exception as exc:
+        raise PlaylistPlayStepError(
+            "start_playback",
+            queue_appended=True,
+            playback_started=False,
+            position=position,
+        ) from exc
+    return position
 
 
 def _optional(target: Any, name: str) -> Any:
@@ -33,8 +87,7 @@ def playlist_action(speaker: Any, action: str, value: str) -> dict[str, Any]:
         message = f"Saved queue as {clean(item_attr(playlist, 'title'))}"
     elif action == "play":
         playlist = coordinator.get_sonos_playlist_by_attr("item_id", validate_playlist_id(value))
-        position = coordinator.add_to_queue(playlist)
-        coordinator.play_from_queue(max(0, int(position) - 1))
+        append_and_start_playlist(coordinator, playlist)
         message = f"Playing {clean(item_attr(playlist, 'title'))}"
     elif action == "delete":
         playlist = coordinator.get_sonos_playlist_by_attr("item_id", validate_playlist_id(value))

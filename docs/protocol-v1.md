@@ -191,8 +191,60 @@ is attempted and verified; no title fallback or second-ID guess is allowed. If
 exact deletion fails, the attributable ID is returned with
 `playlistCleanupRequired: true` and every unrelated playlist remains untouched.
 
-Playback of the new exact `SQ:<id>` is a separate existing action. This token
-does not approve it, and the create transaction never starts playback.
+Playback of the new exact `SQ:<id>` is a separate operation and approval. The
+create token does not approve it, and the create transaction never starts
+playback.
+
+### Exact native Sonos Playlist playback plans
+
+`playlists.play.validate` is read-only and accepts exactly:
+
+```json
+{ "roomUid": "RINCON_…", "playlistId": "SQ:53" }
+```
+
+It resolves the exact UID without room-name fallback and binds supporting room
+name, coordinator, hashed household, complete standalone topology, online
+state, volume/mute, transport/source, relevant capabilities, exact playlist ID
+and title, complete 1–25 item fingerprint, bounded five-item preview, first
+item, complete queue fingerprint/length/current position, and expected first
+append position. Item/resource/provider identities remain private and are
+represented by bounded SHA-256 identities.
+
+Preflight rejects grouped or offline rooms; transport outside `STOPPED` or
+`PAUSED_PLAYBACK`; source other than a confirmed Sonos queue or no active
+source; volume over 20; missing, ambiguous, empty, over-25, or incompletely
+readable playlists; incompletely readable queues; and a combined size over
+100. Its review states that all existing entries remain, the complete playlist
+is appended, playback moves to the first appended item and interrupts the
+stopped/paused context, source becomes the queue, controls/topology/playlist
+contents do not change, no retry occurs, and a successful append may remain
+after a later failure without destructive rollback.
+
+`playlists.play.execute` accepts exactly:
+
+```json
+{ "planToken": "opaque-process-local-token", "approved": true }
+```
+
+The shared ticket store atomically consumes the short-lived single-use token.
+The backend re-resolves the exact room and playlist and re-reads every bound
+fact immediately before the first mutation. It then calls the shared existing
+playlist play path once: append the exact playlist, then start the returned
+first appended queue position. It never substitutes, retries, clears,
+replaces, removes, moves, reconstructs, or rolls back queue entries.
+
+Success re-reads and verifies exact room/playlist identity, unchanged playlist
+fingerprint, queue length increase by the approved count, preserved old prefix,
+exact appended order, current first-appended position/item, `PLAYING` transport,
+`QUEUE` source, and unchanged volume, mute, and topology. Results report one
+append invocation and one start invocation plus zero destructive queue,
+control, topology, source-switch, playlist, retry, or substitution operations.
+
+The MCP adapter exposes the backend token only through a random short-lived
+`planHandle`. Clients must show one review, obtain explicit approval, run a
+fresh identical preflight, compare every fact except handle/expiry, and execute
+only the fresh handle. `approved: true` is not independent human-consent proof.
 
 `alarms.save` carries both the selected anchor `roomUid` and the requested
 `alarmRoomUid`. The backend accepts the target only when it is currently
@@ -260,6 +312,14 @@ site and never inferred by parsing exception text. Exception messages,
 descriptions, XML, arguments, URIs, DIDL, addresses, credentials, and raw
 service metadata are not included.
 
+Exact-playback failures instead use phase `preflight_revalidation`,
+`append_playlist`, `start_playback`, `verify_queue`, or `verify_playback` plus
+bounded `queueAppended`, `playbackStarted`, expected/observed positions, queue
+length/fingerprint, transport/source, append/start counts, retry count,
+`queueRollbackAttempted: false`, and `succeeded: false`. Append rejection
+reports both mutation booleans false. A later failure reports the partial
+append accurately and never triggers issue #19 rollback logic.
+
 ## Snapshot
 
 ```json
@@ -307,9 +367,13 @@ The same version-1 bounded JSON-lines envelopes are used on the owner-only
 an MCP or generic public protocol endpoint. Linux same-UID peer credentials and
 the backend startup permission snapshot constrain socket clients to:
 
-- read: `state.refresh`, `content.browse`, and
-  `playlist_plan.apple.validate`;
-- playlist-create: additionally `playlists.apple.create`.
+- read: `state.refresh`, `content.browse`, `playlist_plan.apple.validate`, and
+  `playlists.play.validate`;
+- playlist-create: additionally `playlists.apple.create`;
+- playlist-play: additionally `playlists.play.execute`.
+
+The two write permissions are independent. Direct socket clients cannot invoke
+playback with `playlist-create` alone or bypass the MCP tool inventory.
 
 `session.panel_open.set` is stdin/QML-only. Results go only to the requesting
 transport even when request IDs collide; snapshots are broadcast. Lines and

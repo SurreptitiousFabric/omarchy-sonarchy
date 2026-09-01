@@ -85,10 +85,32 @@ def test_exact_read_only_inventory_and_write_inventory():
         "room_state_get",
         "content_browse",
         "apple_playlist_preflight",
+        "sonos_playlist_play_preflight",
     ]
     assert [item["name"] for item in tools({"read", "playlist-create"})][-1] == (
         "apple_playlist_create"
     )
+    create_names = [item["name"] for item in tools({"read", "playlist-create"})]
+    assert "sonos_playlist_play" not in create_names
+    play_inventory = tools({"read", "playlist-play"})
+    play_names = [item["name"] for item in play_inventory]
+    assert "apple_playlist_create" not in play_names
+    assert play_names[-1] == "sonos_playlist_play"
+    play_write = play_inventory[-1]
+    assert play_write["inputSchema"] == {
+        "type": "object",
+        "properties": {
+            "planHandle": {"type": "string", "minLength": 32, "maxLength": 128},
+            "approved": {"const": True},
+        },
+        "required": ["planHandle", "approved"],
+        "additionalProperties": False,
+    }
+    assert play_write["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+    }
     assert all(item["inputSchema"]["additionalProperties"] is False for item in tools({"read"}))
 
 
@@ -415,3 +437,156 @@ def test_backend_absent_returns_safe_unavailable_without_starting_it(tmp_path, m
     with pytest.raises(ToolError, match="Quickshell is running") as error:
         server.call_tool("rooms_list", {})
     assert str(error.value) == UNAVAILABLE
+
+
+class PlaybackMcpBackend(FakeBackend):
+    def __init__(self):
+        super().__init__()
+        self.play_tokens = []
+
+    def call(self, operation, args):
+        if operation == "playlists.play.validate":
+            self.calls.append((operation, copy.deepcopy(args)))
+            token = f"backend-play-ticket-{len(self.play_tokens):032d}"
+            self.play_tokens.append(token)
+            return {
+                "ok": True,
+                "operation": "playlists.play.execute",
+                "planToken": token,
+                "planFingerprint": "sha256:" + ("a" * 64),
+                "expiresAtEpochMs": int(time.time() * 1000) + 60_000,
+                "approvalRequired": True,
+                "room": {"uid": args["roomUid"], "coordinatorUid": args["roomUid"]},
+                "topology": {"memberUids": [args["roomUid"]], "standalone": True},
+                "playlist": {"id": args["playlistId"], "title": "Morning", "itemCount": 1},
+                "queue": {"length": 2, "expectedFirstAppendedPosition": 3},
+                "expectedSideEffects": ["Append and play once"],
+            }
+        if operation == "playlists.play.execute":
+            self.calls.append((operation, copy.deepcopy(args)))
+            if set(args) != {"planToken", "approved"} or args.get("approved") is not True:
+                raise ValueError("Backend playback requires exactly planToken and approved: true")
+            return {
+                "ok": True,
+                "playlist": {"id": "SQ:9", "title": "Morning"},
+                "mutations": {"appendInvocationCount": 1, "playbackStartInvocationCount": 1},
+            }
+        return super().call(operation, args)
+
+
+def playback_mcp_server():
+    server = SonarchyMcp()
+    server.backend = PlaybackMcpBackend()
+    server.permissions = {"read", "playlist-play"}
+    return server
+
+
+def test_playlist_play_preflight_hides_backend_token_and_execute_claims_once():
+    server = playback_mcp_server()
+    review = server.call_tool(
+        "sonos_playlist_play_preflight", {"roomUid": "R1", "playlistId": "SQ:9"}
+    )
+    handle = review["planHandle"]
+    token = server.backend.play_tokens[0]
+
+    assert handle
+    assert "planToken" not in review
+    assert token not in json.dumps(review)
+    result = server.call_tool("sonos_playlist_play", {"planHandle": handle, "approved": True})
+    assert result["playlist"] == {"id": "SQ:9", "title": "Morning"}
+    assert server.backend.calls[-1] == (
+        "playlists.play.execute",
+        {"planToken": token, "approved": True},
+    )
+
+    with pytest.raises(ToolError, match="already been used"):
+        server.call_tool("sonos_playlist_play", {"planHandle": handle, "approved": True})
+    assert [call[0] for call in server.backend.calls].count("playlists.play.execute") == 1
+
+
+def test_playlist_play_rejects_replacements_and_wrong_operation_handles():
+    server = playback_mcp_server()
+    review = server.call_tool(
+        "sonos_playlist_play_preflight", {"roomUid": "R1", "playlistId": "SQ:9"}
+    )
+    handle = review["planHandle"]
+    with pytest.raises(ToolError, match="only planHandle"):
+        server.call_tool(
+            "sonos_playlist_play",
+            {
+                "planHandle": handle,
+                "approved": True,
+                "roomUid": "R2",
+                "playlistId": "SQ:10",
+                "uri": "private",
+                "queue": [],
+            },
+        )
+    assert not any(call[0] == "playlists.play.execute" for call in server.backend.calls)
+
+    server.permissions = {"read", "playlist-create", "playlist-play"}
+    with pytest.raises(ToolError, match="another operation"):
+        server.call_tool("apple_playlist_create", {"planHandle": handle, "approved": True})
+    assert not any(call[0] == "playlists.apple.create" for call in server.backend.calls)
+
+
+def test_fresh_second_playback_handle_is_used_and_first_review_handle_is_not():
+    server = playback_mcp_server()
+    first = server.call_tool(
+        "sonos_playlist_play_preflight", {"roomUid": "R1", "playlistId": "SQ:9"}
+    )
+    second = server.call_tool(
+        "sonos_playlist_play_preflight", {"roomUid": "R1", "playlistId": "SQ:9"}
+    )
+    assert first["planFingerprint"] == second["planFingerprint"]
+    assert first["planHandle"] != second["planHandle"]
+
+    server.call_tool("sonos_playlist_play", {"planHandle": second["planHandle"], "approved": True})
+    execute_call = next(
+        call for call in server.backend.calls if call[0] == "playlists.play.execute"
+    )
+    assert execute_call[1]["planToken"] == server.backend.play_tokens[1]
+    assert execute_call[1]["planToken"] != server.backend.play_tokens[0]
+
+
+def test_mcp_restart_and_backend_connection_change_fail_playback_handles_safely():
+    server = playback_mcp_server()
+    review = server.call_tool(
+        "sonos_playlist_play_preflight", {"roomUid": "R1", "playlistId": "SQ:9"}
+    )
+    handle = review["planHandle"]
+
+    restarted = playback_mcp_server()
+    with pytest.raises(ToolError, match="invalid or has already been used"):
+        restarted.call_tool("sonos_playlist_play", {"planHandle": handle, "approved": True})
+
+    server.backend.instance = "backend-b"
+    with pytest.raises(ToolError, match="backend connection changed"):
+        server.call_tool("sonos_playlist_play", {"planHandle": handle, "approved": True})
+    assert not any(call[0] == "playlists.play.execute" for call in server.backend.calls)
+
+
+def test_expired_playback_handle_is_consumed_without_execution(monkeypatch):
+    now = 1_700_000_000.0
+    server = playback_mcp_server()
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now)
+    original_call = server.backend.call
+
+    def expiring_call(operation, args):
+        value = original_call(operation, args)
+        if operation == "playlists.play.validate":
+            value["expiresAtEpochMs"] = int((now + 1) * 1000)
+        return value
+
+    server.backend.call = expiring_call
+    review = server.call_tool(
+        "sonos_playlist_play_preflight", {"roomUid": "R1", "playlistId": "SQ:9"}
+    )
+    handle = review["planHandle"]
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now + 2)
+
+    with pytest.raises(ToolError, match="playback plan expired"):
+        server.call_tool("sonos_playlist_play", {"planHandle": handle, "approved": True})
+    with pytest.raises(ToolError, match="invalid or has already been used"):
+        server.call_tool("sonos_playlist_play", {"planHandle": handle, "approved": True})
+    assert not any(call[0] == "playlists.play.execute" for call in server.backend.calls)

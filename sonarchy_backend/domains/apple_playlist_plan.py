@@ -97,7 +97,7 @@ class ApplePlaylistPlan:
 @dataclass(frozen=True)
 class PlanTicket:
     token: str
-    plan: ApplePlaylistPlan
+    plan: Any
     expires_monotonic: float
     expires_epoch_ms: int
 
@@ -131,7 +131,7 @@ class PlanTicketStore:
         for token in expired:
             self._pending.pop(token, None)
 
-    def issue(self, plan: ApplePlaylistPlan) -> PlanTicket:
+    def issue(self, plan: Any) -> PlanTicket:
         now = self._clock()
         with self._lock:
             self._prune(now)
@@ -158,7 +158,7 @@ class PlanTicketStore:
             self._pending[token] = ticket
             return ticket
 
-    def claim(self, raw_token: Any) -> ApplePlaylistPlan:
+    def claim(self, raw_token: Any) -> Any:
         token = str(raw_token or "")
         if not TOKEN_PATTERN.fullmatch(token):
             raise PlanConflictError("The playlist plan token is invalid or unavailable")

@@ -150,6 +150,7 @@ class PlanHandle:
     token: str
     backend_instance: str
     expires_ms: int
+    operation: str
 
 
 def _permissions() -> frozenset[str]:
@@ -195,7 +196,7 @@ def _permissions() -> frozenset[str]:
     result = frozenset(values)
     return (
         result
-        if "read" in result and result <= {"read", "playlist-create"}
+        if "read" in result and result <= {"read", "playlist-create", "playlist-play"}
         else frozenset({"read"})
     )
 
@@ -289,6 +290,25 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             ),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
+        {
+            "name": "sonos_playlist_play_preflight",
+            "description": (
+                "Validate one exact existing native Sonos Playlist for append-and-play in "
+                "one exact standalone room. Read-only; returns an opaque single-use local handle."
+            ),
+            "inputSchema": _object_schema(
+                {
+                    "roomUid": {"type": "string", "minLength": 1, "maxLength": 256},
+                    "playlistId": {
+                        "type": "string",
+                        "pattern": r"^SQ:\d+$",
+                        "maxLength": 32,
+                    },
+                },
+                ["roomUid", "playlistId"],
+            ),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
     ]
     if "playlist-create" in permissions:
         inventory.append(
@@ -298,6 +318,30 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
                     "Create one new native Sonos Playlist from a current reviewed "
                     "preflight. This is mutating and non-idempotent and requires "
                     "explicit current user approval immediately before the call."
+                ),
+                "inputSchema": _object_schema(
+                    {
+                        "planHandle": {"type": "string", "minLength": 32, "maxLength": 128},
+                        "approved": {"const": True},
+                    },
+                    ["planHandle", "approved"],
+                ),
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": False,
+                },
+            }
+        )
+    if "playlist-play" in permissions:
+        inventory.append(
+            {
+                "name": "sonos_playlist_play",
+                "description": (
+                    "Append one reviewed exact native Sonos Playlist to an unchanged room "
+                    "queue and start the first appended item. This is mutating and "
+                    "non-idempotent and requires explicit current user approval immediately "
+                    "before the call."
                 ),
                 "inputSchema": _object_schema(
                     {
@@ -413,11 +457,27 @@ class SonarchyMcp:
             token = value.pop("planToken")
             expires_ms = int(value.get("expiresAtEpochMs", int(time.time() * 1000)))
             handle = secrets.token_urlsafe(32)
-            self.handles[handle] = PlanHandle(token, self.backend.instance, expires_ms)
+            self.handles[handle] = PlanHandle(
+                token, self.backend.instance, expires_ms, "playlists.apple.create"
+            )
+            return {**value, "planHandle": handle}
+        if name == "sonos_playlist_play_preflight":
+            if set(arguments) != {"roomUid", "playlistId"}:
+                raise ToolError("invalid_argument", "Invalid playlist playback preflight inputs")
+            value = self.backend.call("playlists.play.validate", dict(arguments))
+            if not isinstance(value, dict) or not isinstance(value.get("planToken"), str):
+                raise ToolError("backend_error", "Sonarchy returned an invalid playback preflight")
+            token = value.pop("planToken")
+            expires_ms = int(value.get("expiresAtEpochMs", int(time.time() * 1000)))
+            handle = secrets.token_urlsafe(32)
+            self.handles[handle] = PlanHandle(
+                token, self.backend.instance, expires_ms, "playlists.play.execute"
+            )
             return {**value, "planHandle": handle}
         if set(arguments) != {"planHandle", "approved"} or arguments.get("approved") is not True:
+            action = "Creation" if name == "apple_playlist_create" else "Playback"
             raise ToolError(
-                "invalid_argument", "Creation requires only planHandle and approved: true"
+                "invalid_argument", f"{action} requires only planHandle and approved: true"
             )
         handle = str(arguments["planHandle"])
         plan = self.handles.pop(handle, None)
@@ -428,9 +488,21 @@ class SonarchyMcp:
                 "conflict", "Sonarchy\u2019s backend connection changed; run a new preflight"
             )
         if plan.expires_ms <= int(time.time() * 1000):
-            raise ToolError("conflict", "The reviewed playlist plan expired; run a new preflight")
+            message = (
+                "The reviewed playlist plan expired; run a new preflight"
+                if name == "apple_playlist_create"
+                else "The reviewed playback plan expired; run a new preflight"
+            )
+            raise ToolError("conflict", message)
+        expected_operation = (
+            "playlists.apple.create"
+            if name == "apple_playlist_create"
+            else "playlists.play.execute"
+        )
+        if plan.operation != expected_operation:
+            raise ToolError("conflict", "This plan handle is bound to another operation")
         return self.backend.call(
-            "playlists.apple.create",
+            expected_operation,
             {
                 "planToken": plan.token,
                 "approved": True,
