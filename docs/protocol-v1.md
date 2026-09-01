@@ -173,11 +173,17 @@ that form is accepted only as one complete resource with the Apple service
 identity derived from the pinned service type, bounded saved-resource fields,
 and the exact HLS protocol type. Arbitrary substrings, another provider, and
 catalogue IDs present only in query parameters cannot satisfy verification.
-Sonos's physically observed comma removal plus literal `(Deluxe Edition)`
-album-display qualifier is accepted only after exact catalogue identity, title,
-and artist comparison; unrelated album or edition text is rejected. Success
-returns `queueMutation: false` and `playbackMutation: false`; no queue or
-playback method is invoked.
+Verified items retain `album` as the reviewed Apple-plan value and add
+`albumVerification`: its `kind` is `exact` when the complete observed album
+matches under the existing case/whitespace-only comparison, or
+`evidence_bound` for one explicit complete sanitized physical observation.
+`reviewedAlbum` is the complete bounded plan value and `observedAlbum` is the
+complete bounded Sonos display value. The evidence-bound observation requires
+the exact catalogue identity, title, artist, reviewed album, and observed album;
+it is not a general Deluxe, punctuation, provider, or edition equivalence and
+does not prove byte identity or universal interchangeability between editions.
+Success returns `queueMutation: false` and `playbackMutation: false`; no queue
+or playback method is invoked.
 
 Catalogue validation reports `catalogueIdentityValidated: true` and
 `sonosAcceptance: "unproven_until_create"`. A direct add may still be rejected

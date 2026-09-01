@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,6 +11,12 @@ from typing import Any
 
 from soco.exceptions import SoCoUPnPException
 
+from ..contracts import (
+    MAX_PROTOCOL_LINE_BYTES,
+    MAX_PROTOCOL_REQUEST_ID_BYTES,
+    protocol_line,
+    result_payload,
+)
 from ..infrastructure.apple_saved_queue import (
     DirectAppleSavedQueueAdapter,
     apple_saved_queue_song_identity,
@@ -261,6 +268,55 @@ def _album_verification_kind(
     return None
 
 
+def _ensure_create_result_fits_protocol(
+    tracks: list[dict[str, Any]],
+    *,
+    playlist_name: str,
+    room: dict[str, Any],
+) -> None:
+    worst_observed_album = "\\" * MAX_TRACK_TEXT_LENGTH
+    items = [
+        {
+            "position": position,
+            "catalogId": track["catalogId"],
+            "canonicalIdentity": f"song:{track['catalogId']}",
+            "title": track["title"],
+            "artist": track["artist"],
+            "album": track["album"],
+            "albumVerification": {
+                "kind": "evidence_bound",
+                "reviewedAlbum": track["album"],
+                "observedAlbum": worst_observed_album,
+            },
+        }
+        for position, track in enumerate(tracks, 1)
+    ]
+    projected = {
+        "ok": True,
+        "action": "create-apple-sonos-playlist",
+        "room": room,
+        "playlist": {
+            "id": "SQ:99999999999999999999",
+            "name": playlist_name,
+            "itemCount": len(items),
+            "items": items,
+        },
+        "queueMutation": False,
+        "playbackMutation": False,
+        "verification": {
+            "authoritativeReopen": True,
+            "preExistingPlaylistsUnchanged": True,
+        },
+    }
+    envelope = result_payload(
+        "x" * MAX_PROTOCOL_REQUEST_ID_BYTES,
+        revision=sys.maxsize,
+        value=projected,
+    )
+    if len(protocol_line(envelope).encode("utf-8")) > MAX_PROTOCOL_LINE_BYTES:
+        raise PlanConflictError("The playlist result would exceed the protocol limit")
+
+
 def verify_apple_items(
     items: list[Any] | tuple[Any, ...],
     tracks: list[dict[str, Any]],
@@ -455,6 +511,11 @@ def create_preflighted_apple_playlist(
             "The room, household anchor, playlist inventory, or direct capability changed",
             details={"reason": "preflight_state_changed"},
         )
+    _ensure_create_result_fits_protocol(
+        tracks,
+        playlist_name=playlist_name,
+        room=expected_state["room"],
+    )
 
     coordinator = capture.coordinator
     adapter = adapter_factory(coordinator)

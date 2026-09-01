@@ -85,10 +85,14 @@ the reviewed `song:<catalogId>`, the Apple service identity derived from the
 pinned SoCo service type, bounded saved-resource fields, and the exact HLS
 protocol type. Another provider, a different catalogue ID, arbitrary prefix or
 suffix text, and an ID appearing only in query text all fail. Sonos also
-returned the album with commas omitted and the literal `(Deluxe Edition)`
-display qualifier; that exact bounded display normalization is permitted only
-after canonical identity, title, and artist match. It does not permit a
-different album or another edition label.
+returned the complete album display `Kiss Me Kiss Me Kiss Me (Deluxe Edition)`.
+That sanitized physical observation is accepted only through one explicit
+tuple containing the exact catalogue identity, title, artist, reviewed album,
+and observed album. It is not a general Deluxe, punctuation, provider, or
+edition equivalence. Verified items retain the reviewed `album` and report
+`albumVerification.kind` as `exact` or `evidence_bound`, alongside complete
+bounded `reviewedAlbum` and `observedAlbum` values. Evidence-bound acceptance
+does not prove byte identity or universal interchangeability between editions.
 
 ## Tokens and freshness
 
@@ -172,8 +176,8 @@ the song, while the verifier rejected the queue-local/HLS-static read-back
 representation. A read-only inspection of `SQ:49` established the narrow
 machine-readable Apple identity form used by the fix. The corrected verifier
 was then run read-only against the same retained item and accepted
-`song:1452806384` with the reviewed title, artist, and album. The retained
-playlist remains untouched.
+`song:1452806384` with exact title and artist plus the explicit evidence-bound
+reviewed/observed album mapping. The retained playlist remains untouched.
 
 On 2026-08-30, direct Test C created and retained `SQ:51`, named `Sonarchy
 Direct Test C 2026-08-30`, containing `song:1551800724`, **Don't Start Now — Dua
@@ -185,7 +189,7 @@ Direct Test D then created and retained `SQ:52`, named `Sonarchy Direct Test D
 2026-08-30`, with two authoritatively verified items in exact approved order:
 `song:1452806384` (**Just Like Heaven — The Cure**) followed by
 `song:1551800724` (**Don't Start Now — Dua Lipa**). The first item used only the
-existing bounded Sonos album-display normalization; the second required none.
+explicit evidence-bound album observation; the second was an exact album match.
 Both identities and all supporting title, artist, and album evidence passed.
 Every pre-existing playlist, including `SQ:49` and `SQ:51`, remained unchanged.
 The single create execution reported `queueMutation: false` and

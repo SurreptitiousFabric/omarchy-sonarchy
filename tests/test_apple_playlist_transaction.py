@@ -731,6 +731,23 @@ def test_direct_create_25_songs_preserves_exact_order_and_fits_protocol():
         assert forbidden not in serialized
 
 
+def test_worst_case_expanded_result_is_rejected_before_playlist_mutation():
+    speaker = FakeSpeaker()
+    planned = tracks(25)
+    for track in planned:
+        track["title"] = "\\" * MAX_TRACK_TEXT_LENGTH
+        track["artist"] = "\\" * MAX_TRACK_TEXT_LENGTH
+        track["album"] = "\\" * MAX_TRACK_TEXT_LENGTH
+
+    with pytest.raises(PlanConflictError, match="protocol limit"):
+        execute(speaker, plan_for(speaker, name="AI 25", planned_tracks=planned))
+
+    assert speaker.create_calls == []
+    assert speaker.add_calls == []
+    assert speaker.playlists == {}
+    assert speaker.forbidden_calls == []
+
+
 @pytest.mark.parametrize(
     ("track_count", "failed_position"),
     ((1, 1), (2, 2), (5, 3), (5, 5)),
