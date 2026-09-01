@@ -15,6 +15,7 @@ from sonarchy_backend.contracts import (
     protocol_line,
     result_payload,
 )
+from sonarchy_backend.domains.apple_playlist_plan import MAX_TRACK_TEXT_LENGTH
 from sonarchy_backend.domains.apple_playlist_transaction import (
     apple_song_identity_from_item,
     create_preflighted_apple_playlist,
@@ -423,7 +424,136 @@ def test_physical_sq49_shape_has_strong_identity_and_verified_metadata():
             "title": "Just Like Heaven",
             "artist": "The Cure",
             "album": "Kiss Me, Kiss Me, Kiss Me",
+            "albumVerification": {
+                "kind": "evidence_bound",
+                "reviewedAlbum": "Kiss Me, Kiss Me, Kiss Me",
+                "observedAlbum": "Kiss Me Kiss Me Kiss Me (Deluxe Edition)",
+            },
         }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("reviewed_album", "observed_album"),
+    (
+        ("Unrelated Album", "Unrelated Album (Deluxe Edition)"),
+        ("Alpha, Beta", "Alpha Beta"),
+    ),
+)
+def test_unrelated_album_display_differences_are_rejected(
+    reviewed_album,
+    observed_album,
+):
+    track = copy.deepcopy(TRACK_ONE)
+    track["album"] = reviewed_album
+    item = apple_item(track)
+    item.album = observed_album
+
+    with pytest.raises(ValueError, match="metadata"):
+        verify_apple_items([item], [track], container="saved Sonos Playlist")
+
+
+def test_ordinary_album_match_reports_exact_complete_displays():
+    item = apple_item(TRACK_TWO)
+    item.album = "  The Colour   of Spring  "
+
+    result = verify_apple_items([item], [TRACK_TWO], container="playlist")
+
+    assert result[0]["album"] == "The Colour of Spring"
+    assert result[0]["albumVerification"] == {
+        "kind": "exact",
+        "reviewedAlbum": "The Colour of Spring",
+        "observedAlbum": "The Colour   of Spring",
+    }
+
+
+@pytest.mark.parametrize(
+    ("dimension", "value"),
+    (
+        ("catalogId", "999999"),
+        ("title", "Friday I'm in Love"),
+        ("artist", "Another Artist"),
+        ("reviewedAlbum", "Disintegration"),
+        ("observedAlbum", "Kiss Me Kiss Me Kiss Me (Super Deluxe Edition)"),
+    ),
+)
+def test_physical_album_evidence_requires_every_tuple_dimension(dimension, value):
+    track = copy.deepcopy(TRACK_ONE)
+    item = physical_sq49_item()
+    if dimension == "catalogId":
+        track["catalogId"] = value
+        track["url"] = f"https://music.apple.com/ch/album/reviewed/1?i={value}"
+        item = apple_item(track)
+        item.album = "Kiss Me Kiss Me Kiss Me (Deluxe Edition)"
+    elif dimension == "title":
+        track["title"] = value
+        item.title = value
+    elif dimension == "artist":
+        track["artist"] = value
+        item.creator = value
+    elif dimension == "reviewedAlbum":
+        track["album"] = value
+    else:
+        item.album = value
+
+    with pytest.raises(ValueError, match="metadata"):
+        verify_apple_items([item], [track], container="saved Sonos Playlist")
+
+
+def test_known_album_pair_does_not_override_wrong_anchored_identity():
+    item = physical_sq49_item()
+    item.item_id = "song:999999"
+    item.resources = []
+
+    with pytest.raises(ValueError, match="identity"):
+        verify_apple_items([item], [TRACK_ONE], container="saved Sonos Playlist")
+
+
+@pytest.mark.parametrize(
+    "observed_album",
+    (
+        "Kiss Me Kiss Me Kiss Me (Live Edition)",
+        "Kiss Me Kiss Me Kiss Me (Remix)",
+        "Kiss Me Kiss Me Kiss Me (Super Deluxe Edition)",
+        "Disintegration",
+    ),
+)
+def test_other_album_editions_and_recordings_are_rejected(observed_album):
+    item = physical_sq49_item()
+    item.album = observed_album
+
+    with pytest.raises(ValueError, match="metadata"):
+        verify_apple_items([item], [TRACK_ONE], container="saved Sonos Playlist")
+
+
+@pytest.mark.parametrize(
+    "unsafe_album",
+    ("Private\nAlbum", "é" * (MAX_TRACK_TEXT_LENGTH // 2 + 1)),
+)
+def test_unsafe_observed_album_is_rejected_without_value_leakage(unsafe_album):
+    item = apple_item(TRACK_ONE)
+    item.album = unsafe_album
+
+    with pytest.raises(ValueError, match="safe reviewed metadata") as error:
+        verify_apple_items([item], [TRACK_ONE], container="saved Sonos Playlist")
+
+    assert unsafe_album not in str(error.value)
+
+
+def test_mixed_exact_and_evidence_bound_items_preserve_order_and_policy():
+    result = verify_apple_items(
+        [apple_item(TRACK_TWO), physical_sq49_item()],
+        [TRACK_TWO, TRACK_ONE],
+        container="saved Sonos Playlist",
+    )
+
+    assert [item["canonicalIdentity"] for item in result] == [
+        "song:1443065566",
+        "song:1452806384",
+    ]
+    assert [item["albumVerification"]["kind"] for item in result] == [
+        "exact",
+        "evidence_bound",
     ]
 
 
@@ -503,6 +633,11 @@ def test_direct_create_retains_verified_physical_shape_without_cleanup_or_queue_
     )
 
     assert result["playlist"]["items"][0]["canonicalIdentity"] == "song:1452806384"
+    assert result["playlist"]["items"][0]["albumVerification"] == {
+        "kind": "evidence_bound",
+        "reviewedAlbum": "Kiss Me, Kiss Me, Kiss Me",
+        "observedAlbum": "Kiss Me Kiss Me Kiss Me (Deluxe Edition)",
+    }
     assert result["queueMutation"] is False
     assert result["playbackMutation"] is False
     assert speaker.remove_calls == []
@@ -568,6 +703,14 @@ def test_direct_create_25_songs_preserves_exact_order_and_fits_protocol():
     assert speaker.add_calls == [track["catalogId"] for track in planned]
     assert [item["canonicalIdentity"] for item in result["playlist"]["items"]] == [
         f"song:{track['catalogId']}" for track in planned
+    ]
+    assert [item["albumVerification"] for item in result["playlist"]["items"]] == [
+        {
+            "kind": "exact",
+            "reviewedAlbum": track["album"],
+            "observedAlbum": track["album"],
+        }
+        for track in planned
     ]
     envelope = result_payload(
         "x" * MAX_PROTOCOL_REQUEST_ID_BYTES,
