@@ -428,14 +428,14 @@ def _failure_diagnostics(
     *,
     phase: str,
     expected_position: int,
-    queue_appended: bool,
+    append_state: str,
     playback_started: bool,
     append_count: int,
     playback_start_count: int,
     post: PlaylistPlayCapture | None,
 ) -> PlaylistPlayTransactionError:
     diagnostics: dict[str, Any] = {
-        "queueAppended": queue_appended,
+        "appendState": append_state,
         "playbackStarted": playback_started,
         "queueRollbackAttempted": False,
         "appendInvocationCount": append_count,
@@ -460,6 +460,22 @@ def _failure_diagnostics(
             )
             diagnostics["playbackStarted"] = playback_started
     return PlaylistPlayTransactionError(phase=phase, diagnostics=diagnostics)
+
+
+def _append_state_from_queue_evidence(
+    before: PlaylistPlayCapture,
+    post: PlaylistPlayCapture | None,
+) -> str:
+    if post is None:
+        return "unknown"
+    before_items = tuple(map(_content_key, before.queue_items))
+    post_items = tuple(map(_content_key, post.queue_items))
+    if post_items == before_items:
+        return "absent"
+    playlist_items = tuple(map(_content_key, before.playlist_items))
+    if post_items == before_items + playlist_items:
+        return "confirmed"
+    return "unknown"
 
 
 def _post_capture(speaker: Any, playlist_id: str) -> PlaylistPlayCapture | None:
@@ -495,7 +511,7 @@ def execute_preflighted_playlist_play(
         raise PlaylistPlayTransactionError(
             phase="preflight_revalidation",
             diagnostics={
-                "queueAppended": False,
+                "appendState": "absent",
                 "playbackStarted": False,
                 "queueRollbackAttempted": False,
                 "appendInvocationCount": 0,
@@ -518,7 +534,7 @@ def execute_preflighted_playlist_play(
         raise _failure_diagnostics(
             phase="preflight_revalidation",
             expected_position=max(0, expected_position),
-            queue_appended=False,
+            append_state="absent",
             playback_started=False,
             append_count=0,
             playback_start_count=0,
@@ -528,7 +544,7 @@ def execute_preflighted_playlist_play(
         raise _failure_diagnostics(
             phase="preflight_revalidation",
             expected_position=max(0, expected_position),
-            queue_appended=False,
+            append_state="absent",
             playback_started=False,
             append_count=0,
             playback_start_count=0,
@@ -546,16 +562,20 @@ def execute_preflighted_playlist_play(
         )
         playback_start_count = 1
     except PlaylistPlayStepError as exc:
-        if exc.queue_appended:
+        post = _post_capture(speaker, playlist_id)
+        append_state = exc.append_state
+        if exc.phase == "append_playlist" and append_state == "unknown":
+            append_state = _append_state_from_queue_evidence(before, post)
+        if append_state == "confirmed":
             playback_start_count = 1 if exc.phase == "start_playback" else 0
         raise _failure_diagnostics(
             phase=exc.phase,
             expected_position=expected_position,
-            queue_appended=exc.queue_appended,
+            append_state=append_state,
             playback_started=exc.playback_started,
             append_count=append_count,
             playback_start_count=playback_start_count,
-            post=_post_capture(speaker, playlist_id),
+            post=post,
         ) from exc
 
     post = _post_capture(speaker, playlist_id)
@@ -563,7 +583,7 @@ def execute_preflighted_playlist_play(
         raise _failure_diagnostics(
             phase="verify_queue",
             expected_position=expected_position,
-            queue_appended=True,
+            append_state="confirmed",
             playback_started=True,
             append_count=append_count,
             playback_start_count=playback_start_count,
@@ -595,7 +615,7 @@ def execute_preflighted_playlist_play(
         raise _failure_diagnostics(
             phase="verify_queue",
             expected_position=expected_position,
-            queue_appended=True,
+            append_state="confirmed",
             playback_started=True,
             append_count=append_count,
             playback_start_count=playback_start_count,
@@ -620,7 +640,7 @@ def execute_preflighted_playlist_play(
         raise _failure_diagnostics(
             phase="verify_playback",
             expected_position=expected_position,
-            queue_appended=True,
+            append_state="confirmed",
             playback_started=True,
             append_count=append_count,
             playback_start_count=playback_start_count,

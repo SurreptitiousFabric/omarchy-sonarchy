@@ -151,7 +151,7 @@ class DomainFacadeMixin:
             raise PlaylistPlayTransactionError(
                 phase="preflight_revalidation",
                 diagnostics={
-                    "queueAppended": False,
+                    "appendState": "absent",
                     "playbackStarted": False,
                     "queueRollbackAttempted": False,
                     "appendInvocationCount": 0,

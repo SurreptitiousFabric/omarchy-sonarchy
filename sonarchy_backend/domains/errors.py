@@ -87,15 +87,22 @@ class PlaylistTransactionError(SafeDomainError):
 
 
 def bounded_playlist_play_failure(value: dict[str, Any]) -> dict[str, Any]:
-    details: dict[str, Any] = {
-        key: value.get(key) is True
-        for key in (
-            "queueAppended",
-            "playbackStarted",
-            "queueRollbackAttempted",
-            "succeeded",
-        )
-    }
+    append_state = value.get("appendState")
+    if append_state not in {"confirmed", "absent", "unknown"}:
+        append_state = "unknown"
+    details: dict[str, Any] = {"appendState": append_state}
+    details.update(
+        {
+            key: value.get(key) is True
+            for key in (
+                "playbackStarted",
+                "queueRollbackAttempted",
+                "succeeded",
+            )
+        }
+    )
+    if append_state != "unknown":
+        details["queueAppended"] = append_state == "confirmed"
     for key in ("appendInvocationCount", "playbackStartInvocationCount", "retryCount"):
         count = value.get(key)
         details[key] = count if type(count) is int and 0 <= count <= 1 else 0
@@ -130,7 +137,7 @@ class PlaylistPlayTransactionError(SafeDomainError):
             code = "speaker_rejected"
             message = (
                 "Sonos could not complete exact playlist playback; appended items may remain"
-                if details["queueAppended"]
+                if details["appendState"] != "absent"
                 else "Sonos rejected exact playlist playback before the queue was appended"
             )
         super().__init__(code, message, details=details)
