@@ -315,7 +315,7 @@ def test_preflight_rejects_tv_line_in_airplay_radio_and_unknown_sources(source_u
         inspect_playlist_play_target(speaker, "SQ:9")
 
 
-@pytest.mark.parametrize("source_hint", ("TV", "LINE_IN", "AIRPLAY", "RADIO", "UNKNOWN"))
+@pytest.mark.parametrize("source_hint", ("TV", "LINE_IN", "AIRPLAY", "RADIO"))
 def test_preflight_rejects_explicit_unsafe_source_even_with_contradictory_queue_uri(
     source_hint,
 ):
@@ -325,13 +325,36 @@ def test_preflight_rejects_explicit_unsafe_source_even_with_contradictory_queue_
         inspect_playlist_play_target(speaker, "SQ:9")
 
 
-def test_preflight_accepts_volume_twenty_and_established_no_source():
+def test_preflight_accepts_exact_queue_uri_when_source_hint_is_unknown():
+    speaker = FakeSpeaker()
+    speaker.music_source = "UNKNOWN"
+
+    state = inspect_playlist_play_target(speaker, "SQ:9")
+
+    assert state["room"]["source"] == "QUEUE"
+
+
+@pytest.mark.parametrize("source_hint", ("", "NONE", "NO_SOURCE"))
+def test_preflight_accepts_volume_twenty_and_established_no_source(source_hint):
     speaker = FakeSpeaker()
     speaker.source_uri = ""
-    speaker.music_source = "NONE"
+    speaker.music_source = source_hint
     state = inspect_playlist_play_target(speaker, "SQ:9")
     assert state["room"]["volume"] == 20
     assert state["room"]["source"] == "NONE"
+
+
+@pytest.mark.parametrize(
+    ("source_uri", "source_hint"),
+    (("", "UNKNOWN"), ("https://unknown.invalid/stream", "UNKNOWN")),
+)
+def test_preflight_rejects_unknown_hint_without_exact_queue_evidence(source_uri, source_hint):
+    speaker = FakeSpeaker()
+    speaker.source_uri = source_uri
+    speaker.music_source = source_hint
+
+    with pytest.raises(PlanConflictError, match="source"):
+        inspect_playlist_play_target(speaker, "SQ:9")
 
 
 @pytest.mark.parametrize("playlist_id", ("", "9", "SQ:x", "SQ:9/track"))

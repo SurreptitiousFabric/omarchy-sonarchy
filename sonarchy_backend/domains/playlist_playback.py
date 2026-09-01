@@ -274,7 +274,7 @@ def _source(coordinator: Any) -> str:
     if not isinstance(media, dict) or "CurrentURI" not in media:
         raise PlanConflictError("The current Sonos source could not be established safely")
     current_uri = clean(media.get("CurrentURI"))
-    if hint in {"TV", "LINE_IN", "AIRPLAY", "RADIO", "UNKNOWN"}:
+    if hint in {"TV", "LINE_IN", "AIRPLAY", "RADIO"}:
         return "UNSUPPORTED"
     if current_uri.casefold().startswith("x-rincon-queue:"):
         return "QUEUE"
