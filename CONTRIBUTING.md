@@ -64,6 +64,42 @@ sources, or device settings requires the household owner's explicit approval.
 
 ## Pull requests
 
-Explain user-visible behavior, security/network changes, test evidence, and
-the rollback. Update `CHANGELOG.md`, privacy/capability docs, and the marketplace
-declaration whenever the behavior they describe changes.
+Every PR must complete `.github/pull_request_template.md`. Do not delete
+applicable sections; write `Not applicable` and give a reason where appropriate.
+
+Give the PR one primary user-visible or maintainability objective. List its
+intended files or domains and explicit non-goals. List and justify every
+cross-cutting change. Unrelated browse, pagination, QML, protocol,
+security-boundary, dependency, or infrastructure work requires a separate issue
+and PR; do not hide an unrelated repair inside another feature's acceptance
+story. Deferred work and newly exposed unrelated defects also require linked
+issues rather than being silently absorbed into the active PR.
+
+Settle the issue acceptance criteria and Definition of Done before
+implementation. Do not weaken, delete, or reinterpret them merely because the
+implementation cannot satisfy them. If the acceptance contract is wrong, stop
+and record an explicit owner-approved amendment before continuing.
+
+Map completion evidence to every acceptance criterion. A real defect should
+have failing-before and passing-after evidence. Green CI is necessary but not
+sufficient. Durable documentation must state required gates, not current suite
+totals; exact totals belong only in commit-specific PR evidence or evidence tied
+to an immutable release. A large test count is not a substitute for meaningful
+boundary coverage.
+
+When a defect can occur between adapter, socket, protocol, application, and
+domain layers, a self-authored fake at an upper layer is not sufficient as the
+only evidence. Exercise the production path and fake only the lowest practical
+external boundary. If cross-layer evidence is genuinely not applicable, say
+why.
+
+After exact-head CI, conduct one substantive review round and at most one
+in-scope P1/P2 repair round. File out-of-scope findings as separate issues. If
+the repair exposes another substantive finding, stop and reassess instead of
+entering another review/fix loop.
+
+Preserve the Sonos approval rules above. Fake or device-free evidence must not
+be described as physical acceptance; PR evidence must state exactly what was
+and was not run. Also explain security/network changes, side effects, partial
+failure or rollback, and update `CHANGELOG.md`, privacy/capability docs, and the
+marketplace declaration whenever the behavior they describe changes.
