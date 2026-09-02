@@ -14,6 +14,7 @@ from typing import Any
 MAX_LINE = 64 * 1024
 MAX_CONFIG = 8 * 1024
 MAX_REQUEST_ID_BYTES = 256
+MAX_PENDING_MCP_HANDLES = 256
 UNAVAILABLE = (
     "Sonarchy is unavailable. Ensure the Omarchy Sonarchy plugin is enabled and "
     "Quickshell is running."
@@ -237,6 +238,7 @@ class PlanHandle:
     token: str
     backend_instance: str
     expires_ms: int
+    expires_monotonic: float
     operation: str
 
 
@@ -452,9 +454,52 @@ class SonarchyMcp:
         self.backend = BackendClient()
         self.permissions = _permissions()
         self.handles: dict[str, PlanHandle] = {}
+        self._backend_instance = self.backend.instance
+
+    def _sync_backend_instance(self) -> bool:
+        current = self.backend.instance
+        if current == self._backend_instance:
+            return False
+        self.handles.clear()
+        self._backend_instance = current
+        return True
+
+    def _prune_expired_handles(self) -> None:
+        now = time.monotonic()
+        expired = [handle for handle, plan in self.handles.items() if plan.expires_monotonic <= now]
+        for handle in expired:
+            self.handles.pop(handle, None)
+
+    @staticmethod
+    def _expires_monotonic(expires_ms: int) -> float:
+        remaining_ms = max(0, expires_ms - int(time.time() * 1000))
+        return time.monotonic() + remaining_ms / 1000
+
+    def _prepare_handle_issue(self) -> None:
+        self._sync_backend_instance()
+        self._prune_expired_handles()
+        if len(self.handles) >= MAX_PENDING_MCP_HANDLES:
+            raise ToolError(
+                "conflict",
+                "Too many reviewed plans are awaiting execution; wait for existing plans to expire",
+            )
+
+    def _new_handle(self) -> str:
+        for _attempt in range(3):
+            handle = secrets.token_urlsafe(32)
+            if handle not in self.handles:
+                return handle
+        raise ToolError("conflict", "A unique plan handle could not be issued")
+
+    def _backend_call(self, operation: str, args: dict[str, Any]) -> Any:
+        self._sync_backend_instance()
+        try:
+            return self.backend.call(operation, args)
+        finally:
+            self._sync_backend_instance()
 
     def _refresh(self) -> dict[str, Any]:
-        self.backend.call("state.refresh", {})
+        self._backend_call("state.refresh", {})
         if self.backend.snapshot is None:
             raise ToolError("unavailable", UNAVAILABLE)
         return self.backend.snapshot
@@ -531,34 +576,46 @@ class SonarchyMcp:
             kind = str(arguments["kind"])
             if kind not in READ_KINDS:
                 raise ToolError("invalid_argument", "Unsupported content kind")
-            return self.backend.call("content.browse", dict(arguments))
+            return self._backend_call("content.browse", dict(arguments))
         if name == "apple_playlist_preflight":
             if set(arguments) != {"roomUid", "name", "allowDuplicates", "tracks"}:
                 raise ToolError("invalid_argument", "Invalid preflight inputs")
+            self._prepare_handle_issue()
+            handle = self._new_handle()
             backend_args = dict(arguments)
             backend_args["playlistName"] = backend_args.pop("name")
             backend_args["mode"] = "save-only"
-            value = self.backend.call("playlist_plan.apple.validate", backend_args)
+            value = self._backend_call("playlist_plan.apple.validate", backend_args)
             if not isinstance(value, dict) or not isinstance(value.get("planToken"), str):
                 raise ToolError("backend_error", "Sonarchy returned an invalid preflight")
             token = value.pop("planToken")
             expires_ms = int(value.get("expiresAtEpochMs", int(time.time() * 1000)))
-            handle = secrets.token_urlsafe(32)
+            self._prepare_handle_issue()
             self.handles[handle] = PlanHandle(
-                token, self.backend.instance, expires_ms, "playlists.apple.create"
+                token,
+                self.backend.instance,
+                expires_ms,
+                self._expires_monotonic(expires_ms),
+                "playlists.apple.create",
             )
             return {**value, "planHandle": handle}
         if name == "sonos_playlist_play_preflight":
             if set(arguments) != {"roomUid", "playlistId"}:
                 raise ToolError("invalid_argument", "Invalid playlist playback preflight inputs")
-            value = self.backend.call("playlists.play.validate", dict(arguments))
+            self._prepare_handle_issue()
+            handle = self._new_handle()
+            value = self._backend_call("playlists.play.validate", dict(arguments))
             if not isinstance(value, dict) or not isinstance(value.get("planToken"), str):
                 raise ToolError("backend_error", "Sonarchy returned an invalid playback preflight")
             token = value.pop("planToken")
             expires_ms = int(value.get("expiresAtEpochMs", int(time.time() * 1000)))
-            handle = secrets.token_urlsafe(32)
+            self._prepare_handle_issue()
             self.handles[handle] = PlanHandle(
-                token, self.backend.instance, expires_ms, "playlists.play.execute"
+                token,
+                self.backend.instance,
+                expires_ms,
+                self._expires_monotonic(expires_ms),
+                "playlists.play.execute",
             )
             return {**value, "planHandle": handle}
         if set(arguments) != {"planHandle", "approved"} or arguments.get("approved") is not True:
@@ -567,14 +624,16 @@ class SonarchyMcp:
                 "invalid_argument", f"{action} requires only planHandle and approved: true"
             )
         handle = str(arguments["planHandle"])
-        plan = self.handles.pop(handle, None)
-        if plan is None:
-            raise ToolError("conflict", "This plan handle is invalid or has already been used")
-        if plan.backend_instance != self.backend.instance:
+        known_handle = handle in self.handles
+        if self._sync_backend_instance() and known_handle:
             raise ToolError(
                 "conflict", "Sonarchy\u2019s backend connection changed; run a new preflight"
             )
-        if plan.expires_ms <= int(time.time() * 1000):
+        plan = self.handles.pop(handle, None)
+        if plan is None:
+            raise ToolError("conflict", "This plan handle is invalid or has already been used")
+        self._prune_expired_handles()
+        if plan.expires_monotonic <= time.monotonic():
             message = (
                 "The reviewed playlist plan expired; run a new preflight"
                 if name == "apple_playlist_create"
@@ -588,7 +647,7 @@ class SonarchyMcp:
         )
         if plan.operation != expected_operation:
             raise ToolError("conflict", "This plan handle is bound to another operation")
-        return self.backend.call(
+        return self._backend_call(
             expected_operation,
             {
                 "planToken": plan.token,

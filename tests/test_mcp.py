@@ -12,9 +12,16 @@ from pathlib import Path
 
 import pytest
 
+from sonarchy_backend.domains.apple_playlist_plan import MAX_PENDING_PLAN_TICKETS
 from sonarchy_backend.local_mcp import BackendOwnership, MultiClientRuntime
 from sonarchy_backend.protocol import ProtocolServer
-from sonarchy_mcp.server import UNAVAILABLE, SonarchyMcp, ToolError, tools
+from sonarchy_mcp.server import (
+    MAX_PENDING_MCP_HANDLES,
+    UNAVAILABLE,
+    SonarchyMcp,
+    ToolError,
+    tools,
+)
 
 ROOT = Path(__file__).parents[1]
 
@@ -76,6 +83,418 @@ def _track():
         "album": "Kiss Me, Kiss Me, Kiss Me",
         "durationMs": 212000,
     }
+
+
+class RetentionBackend:
+    def __init__(self, expires_at_epoch_ms, *, fail_operation=None):
+        self.instance = "backend-a"
+        self.expires_at_epoch_ms = expires_at_epoch_ms
+        self.fail_operation = fail_operation
+        self.calls = []
+        self.issued_tokens = []
+
+    def call(self, operation, args):
+        self.calls.append((operation, copy.deepcopy(args)))
+        if operation == self.fail_operation:
+            self.instance = ""
+            raise ToolError("unavailable", "Bounded backend failure")
+        if operation in {"playlist_plan.apple.validate", "playlists.play.validate"}:
+            token = f"backend-retention-token-{len(self.issued_tokens):06d}"
+            self.issued_tokens.append(token)
+            value = {
+                "planToken": token,
+                "expiresAtEpochMs": self.expires_at_epoch_ms,
+            }
+            if operation == "playlist_plan.apple.validate":
+                value["tracks"] = args["tracks"]
+            return value
+        if operation in {"playlists.apple.create", "playlists.play.execute"}:
+            return {"ok": True}
+        return None
+
+
+def _retention_server(backend):
+    server = SonarchyMcp()
+    server.backend = backend
+    server.permissions = {"read", "playlist-create", "playlist-play"}
+    return server
+
+
+def _retention_preflight(server, index):
+    if index % 2 == 0:
+        return server.call_tool(
+            "apple_playlist_preflight",
+            {
+                "roomUid": "R1",
+                "name": f"Review {index}",
+                "allowDuplicates": False,
+                "tracks": [_track()],
+            },
+        )
+    return server.call_tool(
+        "sonos_playlist_play_preflight",
+        {"roomUid": "R1", "playlistId": f"SQ:{index}"},
+    )
+
+
+def test_ten_thousand_unused_preflights_share_one_bounded_handle_capacity(monkeypatch):
+    expected_capacity = MAX_PENDING_MCP_HANDLES
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 120_000)
+    server = _retention_server(backend)
+    next_handle = iter(f"mcp-retention-handle-{index:010d}" for index in range(10_000))
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: next(next_handle)
+    )
+
+    accepted_handles = []
+    capacity_errors = []
+    for index in range(10_000):
+        try:
+            accepted_handles.append(_retention_preflight(server, index)["planHandle"])
+        except ToolError as error:
+            capacity_errors.append(error)
+
+    retained_tokens = [plan.token for plan in server.handles.values()]
+    apple_count = sum(
+        plan.operation == "playlists.apple.create" for plan in server.handles.values()
+    )
+    playback_count = sum(
+        plan.operation == "playlists.play.execute" for plan in server.handles.values()
+    )
+    validation_count = sum(call[0].endswith(".validate") for call in backend.calls)
+    evidence = {
+        "accepted": len(accepted_handles),
+        "capacity_errors": len(capacity_errors),
+        "retained_handles": len(server.handles),
+        "retained_token_objects": len(retained_tokens),
+        "apple_handles": apple_count,
+        "playback_handles": playback_count,
+        "backend_validations": validation_count,
+    }
+
+    assert evidence == {
+        "accepted": expected_capacity,
+        "capacity_errors": 10_000 - expected_capacity,
+        "retained_handles": expected_capacity,
+        "retained_token_objects": expected_capacity,
+        "apple_handles": expected_capacity // 2,
+        "playback_handles": expected_capacity // 2,
+        "backend_validations": expected_capacity,
+    }
+    assert list(server.handles) == accepted_handles
+    assert retained_tokens == backend.issued_tokens
+    assert all(error.code == "conflict" for error in capacity_errors)
+    assert {str(error) for error in capacity_errors} == {
+        "Too many reviewed plans are awaiting execution; wait for existing plans to expire"
+    }
+    capacity_message = str(capacity_errors[0])
+    assert "restart" not in capacity_message.casefold()
+    assert not any(handle in capacity_message for handle in accepted_handles)
+    assert not any(token in capacity_message for token in retained_tokens)
+    assert "backend-a" not in capacity_message
+    assert str(expected_capacity) not in capacity_message
+
+
+def test_expired_handles_and_tokens_are_pruned_before_new_preflight(monkeypatch):
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 1_000)
+    server = _retention_server(backend)
+    next_handle = iter(f"mcp-expiry-handle-{index:016d}" for index in range(4))
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_000.0)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: next(next_handle)
+    )
+
+    expired_handles = [_retention_preflight(server, index)["planHandle"] for index in range(3)]
+    expired_tokens = {plan.token for plan in server.handles.values()}
+    backend.expires_at_epoch_ms = now_ms + 120_000
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: (now_ms + 2_000) / 1000)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_002.0)
+    fresh_handle = _retention_preflight(server, 3)["planHandle"]
+
+    assert list(server.handles) == [fresh_handle]
+    assert len(server.handles) == 1
+    assert server.handles[fresh_handle].token == backend.issued_tokens[-1]
+    assert not expired_tokens & {plan.token for plan in server.handles.values()}
+    assert not set(expired_handles) & server.handles.keys()
+    assert not any(call[0].endswith(".execute") for call in backend.calls)
+
+
+def test_new_preflight_after_backend_change_clears_all_old_handles(monkeypatch):
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 120_000)
+    server = _retention_server(backend)
+    next_handle = iter(f"mcp-reconnect-handle-{index:013d}" for index in range(3))
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: next(next_handle)
+    )
+
+    old_handles = [_retention_preflight(server, index)["planHandle"] for index in range(2)]
+    old_tokens = {plan.token for plan in server.handles.values()}
+    backend.instance = "backend-b"
+    fresh_handle = _retention_preflight(server, 2)["planHandle"]
+
+    assert list(server.handles) == [fresh_handle]
+    assert server.handles[fresh_handle].backend_instance == "backend-b"
+    assert not set(old_handles) & server.handles.keys()
+    assert not old_tokens & {plan.token for plan in server.handles.values()}
+
+
+def test_stale_claim_after_backend_change_clears_all_sibling_handles(monkeypatch):
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 120_000)
+    server = _retention_server(backend)
+    next_handle = iter(f"mcp-stale-handle-{index:017d}" for index in range(2))
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: next(next_handle)
+    )
+
+    stale_handles = [_retention_preflight(server, index)["planHandle"] for index in range(2)]
+    old_tokens = {plan.token for plan in server.handles.values()}
+    backend.instance = "backend-b"
+
+    with pytest.raises(
+        ToolError,
+        match=r"^Sonarchy’s backend connection changed; run a new preflight$",
+    ) as changed:
+        server.call_tool(
+            "apple_playlist_create", {"planHandle": stale_handles[0], "approved": True}
+        )
+
+    assert changed.value.code == "conflict"
+    assert not any(handle in str(changed.value) for handle in stale_handles)
+    assert not any(token in str(changed.value) for token in old_tokens)
+    assert server.handles == {}
+    assert not old_tokens & {plan.token for plan in server.handles.values()}
+    assert not any(call[0].endswith(".execute") for call in backend.calls)
+
+
+def test_mcp_handle_capacity_does_not_exceed_backend_ticket_capacity():
+    assert MAX_PENDING_MCP_HANDLES <= MAX_PENDING_PLAN_TICKETS
+
+
+def test_full_store_prunes_by_monotonic_deadline_after_wall_clock_rollback(monkeypatch):
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 1_000)
+    server = _retention_server(backend)
+    next_handle = iter(
+        f"mcp-clock-rollback-handle-{index:08d}" for index in range(MAX_PENDING_MCP_HANDLES + 1)
+    )
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_000.0)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: next(next_handle)
+    )
+
+    old_handles = [
+        _retention_preflight(server, index)["planHandle"]
+        for index in range(MAX_PENDING_MCP_HANDLES)
+    ]
+    old_tokens = {plan.token for plan in server.handles.values()}
+    backend.expires_at_epoch_ms = now_ms + 60_000
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: (now_ms - 60_000) / 1000)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_002.0)
+    fresh_handle = _retention_preflight(server, MAX_PENDING_MCP_HANDLES)["planHandle"]
+
+    assert list(server.handles) == [fresh_handle]
+    assert not set(old_handles) & server.handles.keys()
+    assert not old_tokens & {plan.token for plan in server.handles.values()}
+    assert len(backend.issued_tokens) == MAX_PENDING_MCP_HANDLES + 1
+
+
+@pytest.mark.parametrize(
+    ("preflight_index", "tool_name", "expiry_message"),
+    (
+        (0, "apple_playlist_create", "The reviewed playlist plan expired; run a new preflight"),
+        (1, "sonos_playlist_play", "The reviewed playback plan expired; run a new preflight"),
+    ),
+    ids=("apple-create", "playlist-playback"),
+)
+def test_expired_claim_consumes_presented_handle_and_prunes_expired_siblings(
+    monkeypatch, preflight_index, tool_name, expiry_message
+):
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 1_000)
+    server = _retention_server(backend)
+    next_handle = iter(f"mcp-claim-expiry-handle-{index:011d}" for index in range(2))
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_000.0)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: next(next_handle)
+    )
+
+    handles = [_retention_preflight(server, index)["planHandle"] for index in range(2)]
+    tokens = {plan.token for plan in server.handles.values()}
+    target = handles[preflight_index]
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: (now_ms + 2_000) / 1000)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_002.0)
+
+    with pytest.raises(ToolError, match=f"^{expiry_message}$") as expired:
+        server.call_tool(tool_name, {"planHandle": target, "approved": True})
+
+    assert expired.value.code == "conflict"
+    assert not any(handle in str(expired.value) for handle in handles)
+    assert not any(token in str(expired.value) for token in tokens)
+    assert server.handles == {}
+    assert not any(call[0].endswith(".execute") for call in backend.calls)
+    assert not any(call[0] == "playlists.apple.create" for call in backend.calls)
+
+    with pytest.raises(
+        ToolError, match=r"^This plan handle is invalid or has already been used$"
+    ) as replay:
+        server.call_tool(tool_name, {"planHandle": target, "approved": True})
+    assert target not in str(replay.value)
+    assert not any(token in str(replay.value) for token in tokens)
+
+
+def test_pruning_preserves_live_handles_on_same_backend_connection(monkeypatch):
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 1_000)
+    server = _retention_server(backend)
+    next_handle = iter(f"mcp-live-handle-{index:019d}" for index in range(3))
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_000.0)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: next(next_handle)
+    )
+
+    expired_handle = _retention_preflight(server, 0)["planHandle"]
+    backend.expires_at_epoch_ms = now_ms + 120_000
+    live_handle = _retention_preflight(server, 1)["planHandle"]
+    live_token = server.handles[live_handle].token
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: (now_ms + 2_000) / 1000)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_002.0)
+    fresh_handle = _retention_preflight(server, 2)["planHandle"]
+
+    assert list(server.handles) == [live_handle, fresh_handle]
+    assert expired_handle not in server.handles
+    assert server.handles[live_handle].token == live_token
+    assert server.call_tool(
+        "sonos_playlist_play", {"planHandle": live_handle, "approved": True}
+    ) == {"ok": True}
+    assert list(server.handles) == [fresh_handle]
+
+
+def test_claim_releases_one_capacity_slot_without_making_handle_reusable(monkeypatch):
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 120_000)
+    server = _retention_server(backend)
+    next_handle = iter(
+        f"mcp-slot-release-handle-{index:010d}" for index in range(MAX_PENDING_MCP_HANDLES + 1)
+    )
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: next(next_handle)
+    )
+
+    handles = [
+        _retention_preflight(server, index)["planHandle"]
+        for index in range(MAX_PENDING_MCP_HANDLES)
+    ]
+    claimed = handles[0]
+    assert server.call_tool("apple_playlist_create", {"planHandle": claimed, "approved": True}) == {
+        "ok": True
+    }
+    replacement = _retention_preflight(server, MAX_PENDING_MCP_HANDLES)["planHandle"]
+
+    assert len(server.handles) == MAX_PENDING_MCP_HANDLES
+    assert claimed not in server.handles
+    assert replacement in server.handles
+    with pytest.raises(ToolError, match="invalid or has already been used"):
+        server.call_tool("apple_playlist_create", {"planHandle": claimed, "approved": True})
+    assert sum(call[0] == "playlists.apple.create" for call in backend.calls) == 1
+
+
+def test_backend_call_failure_clears_old_handles_without_retry_or_secret_leak(monkeypatch):
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 120_000)
+    server = _retention_server(backend)
+    next_handle = iter(f"mcp-failure-handle-{index:016d}" for index in range(2))
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: next(next_handle)
+    )
+
+    handles = [_retention_preflight(server, index)["planHandle"] for index in range(2)]
+    tokens = {plan.token for plan in server.handles.values()}
+    backend.fail_operation = "playlists.apple.create"
+
+    with pytest.raises(ToolError, match=r"^Bounded backend failure$") as failure:
+        server.call_tool("apple_playlist_create", {"planHandle": handles[0], "approved": True})
+
+    assert backend.instance == ""
+    assert server.handles == {}
+    assert sum(call[0] == "playlists.apple.create" for call in backend.calls) == 1
+    assert not any(handle in str(failure.value) for handle in handles)
+    assert not any(token in str(failure.value) for token in tokens)
+    with pytest.raises(ToolError, match="invalid or has already been used"):
+        server.call_tool("apple_playlist_create", {"planHandle": handles[0], "approved": True})
+    assert sum(call[0] == "playlists.apple.create" for call in backend.calls) == 1
+
+
+def test_adapter_restart_has_no_handle_persistence_or_old_execution(tmp_path, monkeypatch):
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 120_000)
+    server = _retention_server(backend)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe",
+        lambda _size: "mcp-restart-handle-0000000000000",
+    )
+    old_handle = _retention_preflight(server, 0)["planHandle"]
+
+    restarted_backend = RetentionBackend(now_ms + 120_000)
+    restarted = _retention_server(restarted_backend)
+    with pytest.raises(ToolError, match="invalid or has already been used"):
+        restarted.call_tool("apple_playlist_create", {"planHandle": old_handle, "approved": True})
+
+    assert restarted.handles == {}
+    assert not any(call[0] == "playlists.apple.create" for call in restarted_backend.calls)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_handles_and_backend_tokens_do_not_leak_beyond_issuing_preflight(monkeypatch, caplog):
+    now_ms = 1_700_000_000_000
+    backend = RetentionBackend(now_ms + 120_000)
+    server = _retention_server(backend)
+    next_handle = iter(f"mcp-leakage-handle-{index:016d}" for index in range(2))
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now_ms / 1000)
+    monkeypatch.setattr(
+        "sonarchy_mcp.server.secrets.token_urlsafe", lambda _size: next(next_handle)
+    )
+    caplog.set_level(logging.DEBUG)
+
+    apple_review = _retention_preflight(server, 0)
+    apple_handle = apple_review["planHandle"]
+    apple_token = server.handles[apple_handle].token
+    assert apple_review["planHandle"] == apple_handle
+    assert apple_token not in json.dumps(apple_review)
+    execution = server.call_tool(
+        "apple_playlist_create", {"planHandle": apple_handle, "approved": True}
+    )
+    with pytest.raises(ToolError, match="invalid or has already been used") as replay:
+        server.call_tool("apple_playlist_create", {"planHandle": apple_handle, "approved": True})
+
+    playback_review = _retention_preflight(server, 1)
+    playback_handle = playback_review["planHandle"]
+    playback_token = server.handles[playback_handle].token
+    with pytest.raises(ToolError, match="bound to another operation") as mismatch:
+        server.call_tool("apple_playlist_create", {"planHandle": playback_handle, "approved": True})
+
+    post_preflight_public_values = [execution, replay.value, mismatch.value]
+    sensitive_values = [apple_handle, apple_token, playback_handle, playback_token]
+    for public_value in post_preflight_public_values:
+        rendered = str(public_value)
+        assert not any(secret in rendered for secret in sensitive_values)
+    assert apple_handle not in json.dumps(playback_review)
+    assert playback_token not in json.dumps(playback_review)
+    assert not any(secret in caplog.text for secret in sensitive_values)
 
 
 def test_exact_read_only_inventory_and_write_inventory():
@@ -218,12 +637,15 @@ def test_expired_handle_is_consumed_without_create_or_secret_leak(monkeypatch):
     now = 1_700_000_000.0
     backend = FakeBackend(expires_at_epoch_ms=int((now + 1) * 1000))
     server = _server(write=True, backend=backend)
+    monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_000.0)
     review = server.call_tool(
         "apple_playlist_preflight",
         {"roomUid": "R1", "name": "Morning", "allowDuplicates": False, "tracks": [_track()]},
     )
     handle = review["planHandle"]
     monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now + 2)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_002.0)
 
     with pytest.raises(
         ToolError,
@@ -570,6 +992,7 @@ def test_expired_playback_handle_is_consumed_without_execution(monkeypatch):
     now = 1_700_000_000.0
     server = playback_mcp_server()
     monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_000.0)
     original_call = server.backend.call
 
     def expiring_call(operation, args):
@@ -584,6 +1007,7 @@ def test_expired_playback_handle_is_consumed_without_execution(monkeypatch):
     )
     handle = review["planHandle"]
     monkeypatch.setattr("sonarchy_mcp.server.time.time", lambda: now + 2)
+    monkeypatch.setattr("sonarchy_mcp.server.time.monotonic", lambda: 5_002.0)
 
     with pytest.raises(ToolError, match="playback plan expired"):
         server.call_tool("sonos_playlist_play", {"planHandle": handle, "approved": True})
