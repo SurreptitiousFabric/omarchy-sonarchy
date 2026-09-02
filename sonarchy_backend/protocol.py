@@ -9,6 +9,11 @@ import time
 from typing import Any, TextIO
 
 from sonarchy_errors import user_facing_error
+from sonarchy_mcp_contract import (
+    MCP_DOMAIN_OPERATIONS,
+    MCP_OPERATION_CONTENT_BROWSE,
+    MCP_OPERATION_STATE_REFRESH,
+)
 
 from .contracts import (
     MAX_PROTOCOL_LINE_BYTES,
@@ -32,55 +37,53 @@ EVENT_PANEL_POLL_SEC = 5.0
 EVENT_BACKGROUND_POLL_SEC = 15.0
 FALLBACK_PANEL_POLL_SEC = 2.0
 FALLBACK_BACKGROUND_POLL_SEC = 5.0
-PROTOCOL_OPERATIONS = frozenset(
-    {
-        "alarms.list",
-        "artwork.radio.resolve",
-        "playback.toggle",
-        "playback.play",
-        "playback.pause",
-        "playback.next",
-        "playback.previous",
-        "playback.seek",
-        "content.favorite.play",
-        "content.favorites.refresh",
-        "content.browse",
-        "playback.room.move",
-        "selection.group.set",
-        "selection.room.set",
-        "volume.group.set",
-        "volume.group.adjust",
-        "mute.group.set",
-        "volume.room.set",
-        "volume.room.adjust",
-        "mute.room.set",
-        "topology.members.set",
-        "devices.details.get",
-        "playback.stop",
-        "devices.rename",
-        "playback.option.set",
-        "sound.setting.set",
-        "devices.setting.set",
-        "sources.switch",
-        "queue.item.play",
-        "queue.item.move",
-        "queue.item.remove",
-        "queue.clear",
-        "queue.content.enqueue",
-        "playlists.mutate",
-        "playlist_plan.apple.validate",
-        "playlists.apple.create",
-        "playlists.play.validate",
-        "playlists.play.execute",
-        "playlists.track.mutate",
-        "content.apple.play",
-        "content.apple.album.play",
-        "content.global.play",
-        "library.update.start",
-        "alarms.save",
-        "alarms.toggle",
-        "alarms.delete",
-    }
+PROTOCOL_OPERATIONS = (
+    frozenset(
+        {
+            "alarms.list",
+            "artwork.radio.resolve",
+            "playback.toggle",
+            "playback.play",
+            "playback.pause",
+            "playback.next",
+            "playback.previous",
+            "playback.seek",
+            "content.favorite.play",
+            "content.favorites.refresh",
+            "playback.room.move",
+            "selection.group.set",
+            "selection.room.set",
+            "volume.group.set",
+            "volume.group.adjust",
+            "mute.group.set",
+            "volume.room.set",
+            "volume.room.adjust",
+            "mute.room.set",
+            "topology.members.set",
+            "devices.details.get",
+            "playback.stop",
+            "devices.rename",
+            "playback.option.set",
+            "sound.setting.set",
+            "devices.setting.set",
+            "sources.switch",
+            "queue.item.play",
+            "queue.item.move",
+            "queue.item.remove",
+            "queue.clear",
+            "queue.content.enqueue",
+            "playlists.mutate",
+            "playlists.track.mutate",
+            "content.apple.play",
+            "content.apple.album.play",
+            "content.global.play",
+            "library.update.start",
+            "alarms.save",
+            "alarms.toggle",
+            "alarms.delete",
+        }
+    )
+    | MCP_DOMAIN_OPERATIONS
 )
 
 
@@ -158,7 +161,7 @@ class ProtocolServer:
             refresh_error = error_payload(
                 "network_error" if isinstance(exc, OSError) else "internal_error",
                 "Sonos state is temporarily unavailable. Try refreshing in a moment.",
-                operation="state.refresh",
+                operation=MCP_OPERATION_STATE_REFRESH,
                 retryable=True,
             )
             if self.last_snapshot is not None:
@@ -183,7 +186,7 @@ class ProtocolServer:
             oversized_error = error_payload(
                 "internal_error",
                 "Sonos state is too large to display safely. Reduce Sonos Favorites and refresh.",
-                operation="state.refresh",
+                operation=MCP_OPERATION_STATE_REFRESH,
                 retryable=True,
             )
             snapshot = _unavailable_snapshot(oversized_error, degraded=True)
@@ -216,7 +219,7 @@ class ProtocolServer:
             self._emit(result_payload(request_id, revision=self.revision), output)
             return
 
-        if op == "state.refresh":
+        if op == MCP_OPERATION_STATE_REFRESH:
             self._emit(result_payload(request_id, revision=self.revision), output)
             self.emit_snapshot(output)
             return
@@ -249,7 +252,7 @@ class ProtocolServer:
                 backend_revision=self.revision,
                 mutation_started_callback=mark_mutation_started,
             )
-            if op == "content.browse":
+            if op == MCP_OPERATION_CONTENT_BROWSE:
                 value = bound_browse_result(
                     value,
                     revision=self.revision,

@@ -11,6 +11,8 @@ from typing import Any
 
 from soco.exceptions import SoCoUPnPException
 
+from sonarchy_mcp_contract import MCP_OPERATION_APPLE_CREATE, MCP_OPERATION_APPLE_VALIDATE
+
 from ..contracts import (
     MAX_PROTOCOL_LINE_BYTES,
     MAX_PROTOCOL_REQUEST_ID_BYTES,
@@ -188,8 +190,8 @@ def _capture_target(speaker: Any, playlist_name: str) -> TargetCapture:
         "playlistCount": len(playlists.items),
         "playlistInventoryFingerprint": f"sha256:{playlists.fingerprint}",
         "capabilities": [
-            "playlist_plan.apple.validate",
-            "playlists.apple.create",
+            MCP_OPERATION_APPLE_VALIDATE,
+            MCP_OPERATION_APPLE_CREATE,
             "direct-apple-saved-queue",
         ],
     }
@@ -493,7 +495,7 @@ def create_preflighted_apple_playlist(
         playlist_name = validate_playlist_title(plan["playlistName"])
     except (KeyError, ValueError) as exc:
         raise PlanConflictError("The playlist plan name is no longer valid") from exc
-    if plan.get("operation") != "playlists.apple.create" or plan.get("mode") != "save-only":
+    if plan.get("operation") != MCP_OPERATION_APPLE_CREATE or plan.get("mode") != "save-only":
         raise PlanConflictError("The playlist plan no longer matches create-only execution")
     allow_duplicates = plan.get("allowDuplicates") is True
     validated_tracks = validate_apple_song_items(
