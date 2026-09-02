@@ -7,6 +7,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from sonarchy_mcp_contract import MCP_OPERATION_PLAY_EXECUTE
+
 from .common import clean, safe_index
 from .errors import PlanConflictError, PlaylistPlayTransactionError
 from .media import item_attr, validate_playlist_id
@@ -499,7 +501,7 @@ def execute_preflighted_playlist_play(
     *,
     mutation_started_callback: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
-    if plan.get("operation") != "playlists.play.execute":
+    if plan.get("operation") != MCP_OPERATION_PLAY_EXECUTE:
         raise PlanConflictError("The playlist plan is not bound to exact playback")
     room_uid = str(plan.get("roomUid", ""))
     try:

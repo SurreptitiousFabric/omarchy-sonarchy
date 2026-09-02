@@ -250,6 +250,56 @@ def test_adapter_denies_disabled_write_before_backend_dispatch():
         server.call_tool("sonos_playlist_play", {"planHandle": "x" * 40, "approved": True})
 
 
+def test_backend_operation_literals_have_one_production_declaration():
+    expected_operations = {
+        "state.refresh",
+        "content.browse",
+        "playlist_plan.apple.validate",
+        "playlists.apple.create",
+        "playlists.play.validate",
+        "playlists.play.execute",
+    }
+    root = Path(__file__).parents[1]
+    production_files = sorted(
+        [
+            *root.glob("*.py"),
+            *(root / "sonarchy_backend").rglob("*.py"),
+            *(root / "sonarchy_mcp").rglob("*.py"),
+        ]
+    )
+    occurrences = {operation: [] for operation in expected_operations}
+    for path in production_files:
+        relative_path = path.relative_to(root).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative_path)
+        docstrings = {
+            owner.body[0].value
+            for owner in ast.walk(tree)
+            if isinstance(owner, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and owner.body
+            and isinstance(owner.body[0], ast.Expr)
+            and isinstance(owner.body[0].value, ast.Constant)
+            and isinstance(owner.body[0].value.value, str)
+        }
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and node not in docstrings
+                and node.value in expected_operations
+            ):
+                occurrences[node.value].append((relative_path, node.lineno, node.value))
+
+    violations = {
+        operation: {
+            "occurrence_count": len(operation_occurrences),
+            "locations": operation_occurrences,
+        }
+        for operation, operation_occurrences in sorted(occurrences.items())
+        if len(operation_occurrences) != 1
+        or operation_occurrences[0][0] != "sonarchy_mcp_contract.py"
+    }
+    assert violations == {}, f"non-canonical MCP operation literals: {violations!r}"
+
+
 def test_neutral_contract_import_boundary_is_standard_library_only():
     source = Path(contract.__file__).read_text()
     tree = ast.parse(source)
