@@ -55,7 +55,8 @@
 - Split the QML service into a 76-line public facade, cohesive store, protocol
   router, artwork owner, and the single process-owning live protocol client.
 - Added exact operation inventory tests, correlated result handling, stable
-  capabilities/errors, destructive identity checks, and an 80% coverage gate.
+  capabilities/errors, destructive identity checks, and an overall 80%
+  branch-coverage target alongside the checked-in automated gate.
 - Gated controls at both page and Store boundaries, projected line-in support
   through bounded, quiet AudioIn probes, and removed model-name-based TV
   visibility.

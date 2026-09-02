@@ -10,10 +10,10 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 638 automated Python tests pass with 85% branch coverage, alongside
-  36 headless QML runtime checks.
+- [x] The complete automated Python suite passes under the checked-in branch
+  coverage gate, and the complete headless QML component suite passes.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
-  Omarchy manifest, and standalone QML lint gates pass.
+  protocol, security, Omarchy plugin, and standalone QML lint gates pass.
 - [x] Headless real-event QML tests load Omarchy's installed `PanelSlider`,
   prove wheel input scrolls without a slider mutation, preserve intentional
   dragging, enforce request-owned error clearing, and cover content root,
