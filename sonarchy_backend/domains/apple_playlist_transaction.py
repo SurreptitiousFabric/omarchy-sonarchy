@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,14 +11,20 @@ from typing import Any
 
 from soco.exceptions import SoCoUPnPException
 
+from ..contracts import (
+    MAX_PROTOCOL_LINE_BYTES,
+    MAX_PROTOCOL_REQUEST_ID_BYTES,
+    protocol_line,
+    result_payload,
+)
 from ..infrastructure.apple_saved_queue import (
     DirectAppleSavedQueueAdapter,
     apple_saved_queue_song_identity,
 )
-from .apple_playlist_plan import validate_apple_song_items
+from .apple_playlist_plan import MAX_TRACK_TEXT_LENGTH, validate_apple_song_items
 from .common import clean, safe_index
 from .errors import PlanConflictError, PlaylistTransactionError
-from .media import item_attr, validate_playlist_id
+from .media import MAX_PLAYLIST_ID_LENGTH, item_attr, validate_playlist_id
 from .playlist_rules import suggested_playlist_title, validate_playlist_title
 
 MAX_SONOS_PLAYLISTS = 100
@@ -35,7 +42,15 @@ APPLE_SONOS_RESOURCE_URI = re.compile(
     re.IGNORECASE,
 )
 SONOS_ERROR_CODE = re.compile(r"(?:\d{1,6}|[A-Z][A-Z0-9_]{0,31})")
-SONOS_DELUXE_ALBUM_SUFFIX = re.compile(r"\s*\(deluxe edition\)\s*$", re.IGNORECASE)
+
+# One sanitized, physically observed display mapping; this is not a provider-wide rule.
+APPLE_ALBUM_DISPLAY_EVIDENCE = (
+    "1452806384",
+    "Just Like Heaven",
+    "The Cure",
+    "Kiss Me, Kiss Me, Kiss Me",
+    "Kiss Me Kiss Me Kiss Me (Deluxe Edition)",
+)
 
 
 @dataclass(frozen=True)
@@ -216,22 +231,91 @@ def _metadata_matches(actual: str, expected: str) -> bool:
     return normalize(actual) == normalize(expected)
 
 
-def _album_metadata_matches(actual: str, expected: str) -> bool:
-    """Accept the one bounded Sonos album-display normalization seen on SQ:49.
+def _observed_album(value: Any, container: str) -> str:
+    album = clean(value)
+    if not album:
+        raise ValueError(f"The {container} did not provide complete reviewed metadata")
+    if (
+        any(ord(character) < 32 for character in album)
+        or len(album.encode("utf-8")) > MAX_TRACK_TEXT_LENGTH
+    ):
+        raise ValueError(f"The {container} did not provide safe reviewed metadata")
+    return album
 
-    Exact Apple catalogue identity remains mandatory. This comparison only
-    permits Sonos to omit commas and append its literal ``(Deluxe Edition)``
-    display qualifier; it does not accept other album names or edition labels.
-    """
 
-    if _metadata_matches(actual, expected):
-        return True
+def _album_verification_kind(
+    catalog_id: str,
+    title: str,
+    artist: str,
+    observed_album: str,
+    track: dict[str, Any],
+) -> str | None:
+    if _metadata_matches(observed_album, track["album"]):
+        return "exact"
+    evidence_id, evidence_title, evidence_artist, reviewed_album, evidence_album = (
+        APPLE_ALBUM_DISPLAY_EVIDENCE
+    )
+    if (
+        catalog_id == evidence_id
+        and _metadata_matches(title, evidence_title)
+        and _metadata_matches(track["title"], evidence_title)
+        and _metadata_matches(artist, evidence_artist)
+        and _metadata_matches(track["artist"], evidence_artist)
+        and _metadata_matches(track["album"], reviewed_album)
+        and _metadata_matches(observed_album, evidence_album)
+    ):
+        return "evidence_bound"
+    return None
 
-    def normalize(value: str) -> str:
-        without_qualifier = SONOS_DELUXE_ALBUM_SUFFIX.sub("", value)
-        return " ".join(without_qualifier.replace(",", " ").split()).casefold()
 
-    return normalize(actual) == normalize(expected)
+def _ensure_create_result_fits_protocol(
+    tracks: list[dict[str, Any]],
+    *,
+    playlist_name: str,
+    room: dict[str, Any],
+) -> None:
+    worst_observed_album = "\\" * MAX_TRACK_TEXT_LENGTH
+    worst_playlist_id = "SQ:" + ("9" * (MAX_PLAYLIST_ID_LENGTH - len("SQ:")))
+    items = [
+        {
+            "position": position,
+            "catalogId": track["catalogId"],
+            "canonicalIdentity": f"song:{track['catalogId']}",
+            "title": track["title"],
+            "artist": track["artist"],
+            "album": track["album"],
+            "albumVerification": {
+                "kind": "evidence_bound",
+                "reviewedAlbum": track["album"],
+                "observedAlbum": worst_observed_album,
+            },
+        }
+        for position, track in enumerate(tracks, 1)
+    ]
+    projected = {
+        "ok": True,
+        "action": "create-apple-sonos-playlist",
+        "room": room,
+        "playlist": {
+            "id": worst_playlist_id,
+            "name": playlist_name,
+            "itemCount": len(items),
+            "items": items,
+        },
+        "queueMutation": False,
+        "playbackMutation": False,
+        "verification": {
+            "authoritativeReopen": True,
+            "preExistingPlaylistsUnchanged": True,
+        },
+    }
+    envelope = result_payload(
+        "\\" * MAX_PROTOCOL_REQUEST_ID_BYTES,
+        revision=sys.maxsize,
+        value=projected,
+    )
+    if len(protocol_line(envelope).encode("utf-8")) > MAX_PROTOCOL_LINE_BYTES:
+        raise PlanConflictError("The playlist result would exceed the protocol limit")
 
 
 def verify_apple_items(
@@ -249,14 +333,15 @@ def verify_apple_items(
             raise ValueError(f"The {container} contains an unexpected Apple song identity")
         title = clean(item_attr(item, "title"))
         artist = clean(item_attr(item, "creator")) or clean(item_attr(item, "artist"))
-        album = clean(item_attr(item, "album"))
-        if not title or not artist or not album:
+        album = _observed_album(item_attr(item, "album"), container)
+        if not title or not artist:
             raise ValueError(f"The {container} did not provide complete reviewed metadata")
-        if (
-            not _metadata_matches(title, track["title"])
-            or not _metadata_matches(artist, track["artist"])
-            or not _album_metadata_matches(album, track["album"])
+        if not _metadata_matches(title, track["title"]) or not _metadata_matches(
+            artist, track["artist"]
         ):
+            raise ValueError(f"The {container} metadata does not match the reviewed song")
+        album_kind = _album_verification_kind(catalog_id, title, artist, album, track)
+        if album_kind is None:
             raise ValueError(f"The {container} metadata does not match the reviewed song")
         verified.append(
             {
@@ -266,6 +351,11 @@ def verify_apple_items(
                 "title": track["title"],
                 "artist": track["artist"],
                 "album": track["album"],
+                "albumVerification": {
+                    "kind": album_kind,
+                    "reviewedAlbum": track["album"],
+                    "observedAlbum": album,
+                },
             }
         )
     return verified
@@ -422,6 +512,11 @@ def create_preflighted_apple_playlist(
             "The room, household anchor, playlist inventory, or direct capability changed",
             details={"reason": "preflight_state_changed"},
         )
+    _ensure_create_result_fits_protocol(
+        tracks,
+        playlist_name=playlist_name,
+        room=expected_state["room"],
+    )
 
     coordinator = capture.coordinator
     adapter = adapter_factory(coordinator)
