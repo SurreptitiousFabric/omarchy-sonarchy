@@ -13,6 +13,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from sonarchy_mcp_contract import (
+    MAX_MCP_CONFIG_BYTES,
+    MCP_CONFIG_DIRECTORY,
+    MCP_CONFIG_FILENAME,
+    MCP_DEFAULT_PERMISSIONS,
+    MCP_OPERATION_PERMISSIONS,
+    MCP_PERMISSION_READ,
+    parse_mcp_permissions,
+)
+
 from .contracts import MAX_PROTOCOL_LINE_BYTES, PROTOCOL_VERSION, protocol_line, result_payload
 from .protocol import (
     EVENT_BACKGROUND_POLL_SEC,
@@ -22,19 +32,8 @@ from .protocol import (
     ProtocolServer,
 )
 
-READ_OPERATIONS = frozenset(
-    {
-        "state.refresh",
-        "content.browse",
-        "playlist_plan.apple.validate",
-        "playlists.play.validate",
-    }
-)
-PLAYLIST_CREATE_OPERATION = "playlists.apple.create"
-PLAYLIST_PLAY_OPERATION = "playlists.play.execute"
 MAX_SOCKET_CLIENTS = 4
 MAX_PENDING_OUTPUT_BYTES = MAX_PROTOCOL_LINE_BYTES * 4
-MAX_MCP_CONFIG_BYTES = 8 * 1024
 
 
 class OwnershipError(RuntimeError):
@@ -133,48 +132,39 @@ class BackendOwnership:
 
 def load_mcp_permissions(config_home: str | None = None) -> frozenset[str]:
     root = config_home or os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    directory = Path(root) / "sonarchy"
+    directory = Path(root) / MCP_CONFIG_DIRECTORY
     try:
         directory_fd = os.open(
             directory, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
         )
     except OSError:
-        return frozenset({"read"})
+        return MCP_DEFAULT_PERMISSIONS
     try:
         directory_info = os.fstat(directory_fd)
         if not stat.S_ISDIR(directory_info.st_mode) or directory_info.st_uid != os.getuid():
-            return frozenset({"read"})
+            return MCP_DEFAULT_PERMISSIONS
         try:
             config_fd = os.open(
-                "mcp.toml", os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=directory_fd
+                MCP_CONFIG_FILENAME,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                dir_fd=directory_fd,
             )
         except OSError:
-            return frozenset({"read"})
+            return MCP_DEFAULT_PERMISSIONS
         try:
             info = os.fstat(config_fd)
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
-                return frozenset({"read"})
+                return MCP_DEFAULT_PERMISSIONS
             raw = os.read(config_fd, MAX_MCP_CONFIG_BYTES + 1)
             if len(raw) > MAX_MCP_CONFIG_BYTES:
-                return frozenset({"read"})
+                return MCP_DEFAULT_PERMISSIONS
         finally:
             os.close(config_fd)
-        import tomllib
-
-        value = tomllib.loads(raw.decode("utf-8"))
-    except OSError, UnicodeDecodeError, ValueError:
-        return frozenset({"read"})
+    except OSError:
+        return MCP_DEFAULT_PERMISSIONS
     finally:
         os.close(directory_fd)
-    if value.get("enabled") is not True:
-        return frozenset()
-    permissions = value.get("permissions")
-    if not isinstance(permissions, list) or not all(isinstance(item, str) for item in permissions):
-        return frozenset({"read"})
-    selected = frozenset(permissions)
-    if not selected <= {"read", "playlist-create", "playlist-play"} or "read" not in selected:
-        return frozenset({"read"})
-    return selected
+    return parse_mcp_permissions(raw)
 
 
 @dataclass
@@ -282,14 +272,12 @@ class MultiClientRuntime:
         request_id = str(request.get("id", ""))
         operation = str(request.get("op", ""))
         if socket_client is not None:
-            allowed = (
-                operation in READ_OPERATIONS
-                or (
-                    operation == PLAYLIST_CREATE_OPERATION and "playlist-create" in self.permissions
-                )
-                or (operation == PLAYLIST_PLAY_OPERATION and "playlist-play" in self.permissions)
-            )
-            if "read" not in self.permissions or not allowed:
+            required_permission = MCP_OPERATION_PERMISSIONS.get(operation)
+            if (
+                MCP_PERMISSION_READ not in self.permissions
+                or required_permission is None
+                or required_permission not in self.permissions
+            ):
                 self._queue(
                     socket_client,
                     result_payload(
@@ -335,7 +323,7 @@ class MultiClientRuntime:
                         if (
                             len(self.clients) >= MAX_SOCKET_CLIENTS
                             or not self._peer_is_current_user(sock)
-                            or ("read" not in self.permissions)
+                            or (MCP_PERMISSION_READ not in self.permissions)
                         ):
                             sock.close()
                             continue

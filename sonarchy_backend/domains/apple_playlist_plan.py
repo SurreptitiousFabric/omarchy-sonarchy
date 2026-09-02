@@ -11,6 +11,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from sonarchy_mcp_contract import (
+    MCP_BACKEND_FIELDS,
+    MCP_OPERATION_APPLE_CREATE,
+    MCP_OPERATION_APPLE_VALIDATE,
+)
+
 from ..apple_catalog import canonical_apple_song
 from ..contracts import (
     MAX_PROTOCOL_LINE_BYTES,
@@ -246,7 +252,7 @@ def _plan_fingerprint(
     target_state: dict[str, Any],
 ) -> str:
     binding = {
-        "operation": "playlists.apple.create",
+        "operation": MCP_OPERATION_APPLE_CREATE,
         "roomUid": room_uid,
         "playlistName": playlist_name,
         "mode": mode,
@@ -272,19 +278,18 @@ class ApplePlaylistPlanService:
         validate = DomainService(
             {},
             mutates=False,
-            contextual_handlers={"playlist_plan.apple.validate": self.validate},
+            contextual_handlers={MCP_OPERATION_APPLE_VALIDATE: self.validate},
         )
         create = DomainService(
             {},
             conditional_mutation=True,
             refresh_after_mutation=False,
-            contextual_handlers={"playlists.apple.create": self.create},
+            contextual_handlers={MCP_OPERATION_APPLE_CREATE: self.create},
         )
         return validate, create
 
     def validate(self, args: dict[str, Any], context: RequestContext) -> dict[str, Any]:
-        allowed = {"roomUid", "playlistName", "mode", "tracks", "allowDuplicates"}
-        if set(args) - allowed:
+        if not MCP_BACKEND_FIELDS[MCP_OPERATION_APPLE_VALIDATE].accepts(args):
             raise ValueError("Playlist plan contains unsupported arguments")
         room_uid = string_arg(args, "roomUid").strip()
         playlist_name = validate_playlist_title(args.get("playlistName"))
@@ -303,7 +308,7 @@ class ApplePlaylistPlanService:
             target_state=target_state,
         )
         plan = ApplePlaylistPlan(
-            operation="playlists.apple.create",
+            operation=MCP_OPERATION_APPLE_CREATE,
             room_uid=room_uid,
             playlist_name=playlist_name,
             mode=mode,
@@ -354,12 +359,12 @@ class ApplePlaylistPlanService:
         return review
 
     def create(self, args: dict[str, Any], context: RequestContext) -> dict[str, Any]:
-        if set(args) != {"planToken", "approved"}:
+        if not MCP_BACKEND_FIELDS[MCP_OPERATION_APPLE_CREATE].accepts(args):
             raise ValueError("Execution accepts only planToken and approved")
         if args.get("approved") is not True:
             raise ValueError("Explicit approval is required immediately before execution")
         plan = self.tickets.claim(args.get("planToken"))
-        if plan.operation != "playlists.apple.create":
+        if plan.operation != MCP_OPERATION_APPLE_CREATE:
             raise PlanConflictError("The plan token is bound to another operation")
         # The ticket is now spent and backend execution may mutate or partially fail.
         context.mark_mutation_started()

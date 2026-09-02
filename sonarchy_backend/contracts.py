@@ -4,60 +4,60 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from sonarchy_mcp_contract import MCP_DOMAIN_OPERATIONS, MCP_OPERATION_CONTENT_BROWSE
+
 PROTOCOL_VERSION = 1
 MAX_PROTOCOL_LINE_BYTES = 64 * 1024
 MAX_PROTOCOL_REQUEST_ID_BYTES = 256
 MAX_PROTOCOL_OPERATION_BYTES = 128
 
-CAPABILITY_NAMES = frozenset(
-    {
-        "alarms.list",
-        "alarms.delete",
-        "alarms.save",
-        "alarms.toggle",
-        "artwork.radio.resolve",
-        "content.apple.album.play",
-        "content.apple.play",
-        "content.browse",
-        "content.favorite.play",
-        "content.favorites.refresh",
-        "content.global.play",
-        "devices.details.get",
-        "devices.rename",
-        "devices.setting.set",
-        "library.update.start",
-        "mute.group.set",
-        "mute.room.set",
-        "playback.next",
-        "playback.option.set",
-        "playback.pause",
-        "playback.play",
-        "playback.previous",
-        "playback.room.move",
-        "playback.seek",
-        "playback.stop",
-        "playback.toggle",
-        "playlists.mutate",
-        "playlist_plan.apple.validate",
-        "playlists.apple.create",
-        "playlists.play.validate",
-        "playlists.play.execute",
-        "playlists.track.mutate",
-        "queue.clear",
-        "queue.content.enqueue",
-        "queue.item.play",
-        "queue.item.move",
-        "queue.item.remove",
-        "selection.group.set",
-        "selection.room.set",
-        "sound.setting.set",
-        "sources.switch",
-        "topology.members.set",
-        "volume.group.adjust",
-        "volume.group.set",
-        "volume.room.adjust",
-        "volume.room.set",
-    }
+CAPABILITY_NAMES = (
+    frozenset(
+        {
+            "alarms.list",
+            "alarms.delete",
+            "alarms.save",
+            "alarms.toggle",
+            "artwork.radio.resolve",
+            "content.apple.album.play",
+            "content.apple.play",
+            "content.favorite.play",
+            "content.favorites.refresh",
+            "content.global.play",
+            "devices.details.get",
+            "devices.rename",
+            "devices.setting.set",
+            "library.update.start",
+            "mute.group.set",
+            "mute.room.set",
+            "playback.next",
+            "playback.option.set",
+            "playback.pause",
+            "playback.play",
+            "playback.previous",
+            "playback.room.move",
+            "playback.seek",
+            "playback.stop",
+            "playback.toggle",
+            "playlists.mutate",
+            "playlists.track.mutate",
+            "queue.clear",
+            "queue.content.enqueue",
+            "queue.item.play",
+            "queue.item.move",
+            "queue.item.remove",
+            "selection.group.set",
+            "selection.room.set",
+            "sound.setting.set",
+            "sources.switch",
+            "topology.members.set",
+            "volume.group.adjust",
+            "volume.group.set",
+            "volume.room.adjust",
+            "volume.room.set",
+        }
+    )
+    | MCP_DOMAIN_OPERATIONS
 )
 
 
@@ -189,7 +189,7 @@ def snapshot_capabilities(snapshot: dict[str, Any]) -> list[str]:
 
     capabilities = {
         "artwork.radio.resolve",
-        "content.browse",
+        MCP_OPERATION_CONTENT_BROWSE,
         "content.favorites.refresh",
     }
     if rooms:
@@ -214,10 +214,6 @@ def snapshot_capabilities(snapshot: dict[str, Any]) -> list[str]:
                 "queue.clear",
                 "queue.content.enqueue",
                 "playlists.mutate",
-                "playlist_plan.apple.validate",
-                "playlists.apple.create",
-                "playlists.play.validate",
-                "playlists.play.execute",
                 "playlists.track.mutate",
                 "content.apple.play",
                 "content.apple.album.play",
@@ -227,6 +223,7 @@ def snapshot_capabilities(snapshot: dict[str, Any]) -> list[str]:
                 "volume.room.set",
             }
         )
+        capabilities.update(MCP_DOMAIN_OPERATIONS - {MCP_OPERATION_CONTENT_BROWSE})
     if len(rooms) > 1:
         capabilities.update({"playback.room.move", "topology.members.set"})
     if groups:

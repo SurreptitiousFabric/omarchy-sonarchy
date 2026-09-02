@@ -11,8 +11,34 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from sonarchy_mcp_contract import (
+    MAX_MCP_CONFIG_BYTES,
+    MAX_SONOS_PLAYLIST_ID_LENGTH,
+    MCP_CONFIG_DIRECTORY,
+    MCP_CONFIG_FILENAME,
+    MCP_DEFAULT_PERMISSIONS,
+    MCP_OPERATION_APPLE_CREATE,
+    MCP_OPERATION_APPLE_VALIDATE,
+    MCP_OPERATION_CONTENT_BROWSE,
+    MCP_OPERATION_PERMISSIONS,
+    MCP_OPERATION_PLAY_EXECUTE,
+    MCP_OPERATION_PLAY_VALIDATE,
+    MCP_OPERATION_STATE_REFRESH,
+    MCP_PERMISSION_READ,
+    MCP_PUBLIC_FIELDS,
+    MCP_TOOL_APPLE_CREATE,
+    MCP_TOOL_APPLE_PREFLIGHT,
+    MCP_TOOL_CONTENT_BROWSE,
+    MCP_TOOL_OPERATIONS,
+    MCP_TOOL_ORDER,
+    MCP_TOOL_PLAY,
+    MCP_TOOL_PLAY_PREFLIGHT,
+    MCP_TOOL_ROOM_STATE_GET,
+    MCP_TOOL_ROOMS_LIST,
+    parse_mcp_permissions,
+)
+
 MAX_LINE = 64 * 1024
-MAX_CONFIG = 8 * 1024
 MAX_REQUEST_ID_BYTES = 256
 MAX_PENDING_MCP_HANDLES = 256
 UNAVAILABLE = (
@@ -222,7 +248,7 @@ class BackendClient:
                         error.get("details") if isinstance(error.get("details"), dict) else {},
                     )
                 matched_value = payload.get("value")
-                if operation == "state.refresh":
+                if operation == MCP_OPERATION_STATE_REFRESH:
                     refresh_revision = int(payload.get("revision", 0))
                     continue
                 return matched_value
@@ -244,50 +270,39 @@ class PlanHandle:
 
 def _permissions() -> frozenset[str]:
     root = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    directory = Path(root) / "sonarchy"
+    directory = Path(root) / MCP_CONFIG_DIRECTORY
     try:
         directory_fd = os.open(
             directory, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
         )
     except OSError:
-        return frozenset({"read"})
+        return MCP_DEFAULT_PERMISSIONS
     try:
         directory_info = os.fstat(directory_fd)
         if not stat.S_ISDIR(directory_info.st_mode) or directory_info.st_uid != os.getuid():
-            return frozenset({"read"})
+            return MCP_DEFAULT_PERMISSIONS
         try:
             config_fd = os.open(
-                "mcp.toml", os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=directory_fd
+                MCP_CONFIG_FILENAME,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                dir_fd=directory_fd,
             )
         except OSError:
-            return frozenset({"read"})
+            return MCP_DEFAULT_PERMISSIONS
         try:
             info = os.fstat(config_fd)
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
-                return frozenset({"read"})
-            raw = os.read(config_fd, MAX_CONFIG + 1)
-            if len(raw) > MAX_CONFIG:
-                return frozenset({"read"})
+                return MCP_DEFAULT_PERMISSIONS
+            raw = os.read(config_fd, MAX_MCP_CONFIG_BYTES + 1)
+            if len(raw) > MAX_MCP_CONFIG_BYTES:
+                return MCP_DEFAULT_PERMISSIONS
         finally:
             os.close(config_fd)
-        import tomllib
-
-        data = tomllib.loads(raw.decode("utf-8"))
-    except OSError, UnicodeDecodeError, ValueError:
-        return frozenset({"read"})
+    except OSError:
+        return MCP_DEFAULT_PERMISSIONS
     finally:
         os.close(directory_fd)
-    if data.get("enabled") is not True:
-        return frozenset()
-    values = data.get("permissions")
-    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
-        return frozenset({"read"})
-    result = frozenset(values)
-    return (
-        result
-        if "read" in result and result <= {"read", "playlist-create", "playlist-play"}
-        else frozenset({"read"})
-    )
+    return parse_mcp_permissions(raw)
 
 
 def _object_schema(
@@ -315,11 +330,11 @@ TRACK_SCHEMA = _object_schema(
 
 
 def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
-    if "read" not in permissions:
+    if MCP_PERMISSION_READ not in permissions:
         return []
-    inventory = [
-        {
-            "name": "rooms_list",
+    inventory = {
+        MCP_TOOL_ROOMS_LIST: {
+            "name": MCP_TOOL_ROOMS_LIST,
             "description": (
                 "List authoritative Sonos households, groups, and visible rooms "
                 "with exact room UIDs. Read-only."
@@ -327,8 +342,8 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             "inputSchema": _object_schema({}, []),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
-        {
-            "name": "room_state_get",
+        MCP_TOOL_ROOM_STATE_GET: {
+            "name": MCP_TOOL_ROOM_STATE_GET,
             "description": (
                 "Get bounded authoritative state for one exact room UID without "
                 "changing QML selection. Read-only."
@@ -338,8 +353,8 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             ),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
-        {
-            "name": "content_browse",
+        MCP_TOOL_CONTENT_BROWSE: {
+            "name": MCP_TOOL_CONTENT_BROWSE,
             "description": (
                 "Browse one explicitly allowed Sonarchy content kind using normalized "
                 "provider-neutral items. Read-only."
@@ -356,8 +371,8 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             ),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
-        {
-            "name": "apple_playlist_preflight",
+        MCP_TOOL_APPLE_PREFLIGHT: {
+            "name": MCP_TOOL_APPLE_PREFLIGHT,
             "description": (
                 "Validate a reviewed ordered list of exact public Apple catalogue songs "
                 "for one new native Sonos Playlist. Read-only; returns an opaque "
@@ -379,8 +394,8 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             ),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
-        {
-            "name": "sonos_playlist_play_preflight",
+        MCP_TOOL_PLAY_PREFLIGHT: {
+            "name": MCP_TOOL_PLAY_PREFLIGHT,
             "description": (
                 "Validate one exact existing native Sonos Playlist for append-and-play in "
                 "one exact standalone room. Read-only; returns an opaque single-use local handle."
@@ -391,62 +406,60 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
                     "playlistId": {
                         "type": "string",
                         "pattern": r"^SQ:\d+$",
-                        "maxLength": 32,
+                        "maxLength": MAX_SONOS_PLAYLIST_ID_LENGTH,
                     },
                 },
                 ["roomUid", "playlistId"],
             ),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
+        MCP_TOOL_APPLE_CREATE: {
+            "name": MCP_TOOL_APPLE_CREATE,
+            "description": (
+                "Create one new native Sonos Playlist from a current reviewed "
+                "preflight. This is mutating and non-idempotent and requires "
+                "explicit current user approval immediately before the call."
+            ),
+            "inputSchema": _object_schema(
+                {
+                    "planHandle": {"type": "string", "minLength": 32, "maxLength": 128},
+                    "approved": {"const": True},
+                },
+                ["planHandle", "approved"],
+            ),
+            "annotations": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": False,
+            },
+        },
+        MCP_TOOL_PLAY: {
+            "name": MCP_TOOL_PLAY,
+            "description": (
+                "Append one reviewed exact native Sonos Playlist to an unchanged room "
+                "queue and start the first appended item. This is mutating and "
+                "non-idempotent and requires explicit current user approval immediately "
+                "before the call."
+            ),
+            "inputSchema": _object_schema(
+                {
+                    "planHandle": {"type": "string", "minLength": 32, "maxLength": 128},
+                    "approved": {"const": True},
+                },
+                ["planHandle", "approved"],
+            ),
+            "annotations": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": False,
+            },
+        },
+    }
+    return [
+        inventory[name]
+        for name in MCP_TOOL_ORDER
+        if MCP_OPERATION_PERMISSIONS[MCP_TOOL_OPERATIONS[name]] in permissions
     ]
-    if "playlist-create" in permissions:
-        inventory.append(
-            {
-                "name": "apple_playlist_create",
-                "description": (
-                    "Create one new native Sonos Playlist from a current reviewed "
-                    "preflight. This is mutating and non-idempotent and requires "
-                    "explicit current user approval immediately before the call."
-                ),
-                "inputSchema": _object_schema(
-                    {
-                        "planHandle": {"type": "string", "minLength": 32, "maxLength": 128},
-                        "approved": {"const": True},
-                    },
-                    ["planHandle", "approved"],
-                ),
-                "annotations": {
-                    "readOnlyHint": False,
-                    "destructiveHint": False,
-                    "idempotentHint": False,
-                },
-            }
-        )
-    if "playlist-play" in permissions:
-        inventory.append(
-            {
-                "name": "sonos_playlist_play",
-                "description": (
-                    "Append one reviewed exact native Sonos Playlist to an unchanged room "
-                    "queue and start the first appended item. This is mutating and "
-                    "non-idempotent and requires explicit current user approval immediately "
-                    "before the call."
-                ),
-                "inputSchema": _object_schema(
-                    {
-                        "planHandle": {"type": "string", "minLength": 32, "maxLength": 128},
-                        "approved": {"const": True},
-                    },
-                    ["planHandle", "approved"],
-                ),
-                "annotations": {
-                    "readOnlyHint": False,
-                    "destructiveHint": False,
-                    "idempotentHint": False,
-                },
-            }
-        )
-    return inventory
 
 
 class SonarchyMcp:
@@ -499,7 +512,7 @@ class SonarchyMcp:
             self._sync_backend_instance()
 
     def _refresh(self) -> dict[str, Any]:
-        self._backend_call("state.refresh", {})
+        self._backend_call(MCP_OPERATION_STATE_REFRESH, {})
         if self.backend.snapshot is None:
             raise ToolError("unavailable", UNAVAILABLE)
         return self.backend.snapshot
@@ -548,13 +561,16 @@ class SonarchyMcp:
         allowed_names = {tool["name"] for tool in tools(self.permissions)}
         if name not in allowed_names:
             raise ToolError("not_found", "Unknown or disabled Sonarchy tool")
-        if name == "rooms_list":
-            if arguments:
-                raise ToolError("invalid_argument", "rooms_list accepts no inputs")
+        if not MCP_PUBLIC_FIELDS[name].accepts(arguments):
+            if name in {MCP_TOOL_APPLE_CREATE, MCP_TOOL_PLAY}:
+                action = "Creation" if name == MCP_TOOL_APPLE_CREATE else "Playback"
+                raise ToolError(
+                    "invalid_argument", f"{action} requires only planHandle and approved: true"
+                )
+            raise ToolError("invalid_argument", f"Invalid {name} inputs")
+        if name == MCP_TOOL_ROOMS_LIST:
             return self._project_rooms(self._refresh())
-        if name == "room_state_get":
-            if set(arguments) != {"roomUid"}:
-                raise ToolError("invalid_argument", "room_state_get accepts only roomUid")
+        if name == MCP_TOOL_ROOM_STATE_GET:
             room_uid = str(arguments["roomUid"])
             projected = self._project_rooms(self._refresh())
             matches = [
@@ -569,23 +585,18 @@ class SonarchyMcp:
                     "The exact Sonos room is no longer available",
                 )
             return {"revision": projected["revision"], "room": matches[0]}
-        if name == "content_browse":
-            expected = {"kind", "term", "limit", "context"}
-            if not set(arguments) <= expected | {"roomUid"} or not expected <= set(arguments):
-                raise ToolError("invalid_argument", "Invalid content_browse inputs")
+        if name == MCP_TOOL_CONTENT_BROWSE:
             kind = str(arguments["kind"])
             if kind not in READ_KINDS:
                 raise ToolError("invalid_argument", "Unsupported content kind")
-            return self._backend_call("content.browse", dict(arguments))
-        if name == "apple_playlist_preflight":
-            if set(arguments) != {"roomUid", "name", "allowDuplicates", "tracks"}:
-                raise ToolError("invalid_argument", "Invalid preflight inputs")
+            return self._backend_call(MCP_OPERATION_CONTENT_BROWSE, dict(arguments))
+        if name == MCP_TOOL_APPLE_PREFLIGHT:
             self._prepare_handle_issue()
             handle = self._new_handle()
             backend_args = dict(arguments)
             backend_args["playlistName"] = backend_args.pop("name")
             backend_args["mode"] = "save-only"
-            value = self._backend_call("playlist_plan.apple.validate", backend_args)
+            value = self._backend_call(MCP_OPERATION_APPLE_VALIDATE, backend_args)
             if not isinstance(value, dict) or not isinstance(value.get("planToken"), str):
                 raise ToolError("backend_error", "Sonarchy returned an invalid preflight")
             token = value.pop("planToken")
@@ -596,15 +607,13 @@ class SonarchyMcp:
                 self.backend.instance,
                 expires_ms,
                 self._expires_monotonic(expires_ms),
-                "playlists.apple.create",
+                MCP_OPERATION_APPLE_CREATE,
             )
             return {**value, "planHandle": handle}
-        if name == "sonos_playlist_play_preflight":
-            if set(arguments) != {"roomUid", "playlistId"}:
-                raise ToolError("invalid_argument", "Invalid playlist playback preflight inputs")
+        if name == MCP_TOOL_PLAY_PREFLIGHT:
             self._prepare_handle_issue()
             handle = self._new_handle()
-            value = self._backend_call("playlists.play.validate", dict(arguments))
+            value = self._backend_call(MCP_OPERATION_PLAY_VALIDATE, dict(arguments))
             if not isinstance(value, dict) or not isinstance(value.get("planToken"), str):
                 raise ToolError("backend_error", "Sonarchy returned an invalid playback preflight")
             token = value.pop("planToken")
@@ -615,11 +624,11 @@ class SonarchyMcp:
                 self.backend.instance,
                 expires_ms,
                 self._expires_monotonic(expires_ms),
-                "playlists.play.execute",
+                MCP_OPERATION_PLAY_EXECUTE,
             )
             return {**value, "planHandle": handle}
         if set(arguments) != {"planHandle", "approved"} or arguments.get("approved") is not True:
-            action = "Creation" if name == "apple_playlist_create" else "Playback"
+            action = "Creation" if name == MCP_TOOL_APPLE_CREATE else "Playback"
             raise ToolError(
                 "invalid_argument", f"{action} requires only planHandle and approved: true"
             )
@@ -636,14 +645,14 @@ class SonarchyMcp:
         if plan.expires_monotonic <= time.monotonic():
             message = (
                 "The reviewed playlist plan expired; run a new preflight"
-                if name == "apple_playlist_create"
+                if name == MCP_TOOL_APPLE_CREATE
                 else "The reviewed playback plan expired; run a new preflight"
             )
             raise ToolError("conflict", message)
         expected_operation = (
-            "playlists.apple.create"
-            if name == "apple_playlist_create"
-            else "playlists.play.execute"
+            MCP_OPERATION_APPLE_CREATE
+            if name == MCP_TOOL_APPLE_CREATE
+            else MCP_OPERATION_PLAY_EXECUTE
         )
         if plan.operation != expected_operation:
             raise ToolError("conflict", "This plan handle is bound to another operation")
