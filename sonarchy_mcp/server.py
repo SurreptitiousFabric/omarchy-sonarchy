@@ -238,6 +238,7 @@ class PlanHandle:
     token: str
     backend_instance: str
     expires_ms: int
+    expires_monotonic: float
     operation: str
 
 
@@ -464,10 +465,15 @@ class SonarchyMcp:
         return True
 
     def _prune_expired_handles(self) -> None:
-        now_ms = int(time.time() * 1000)
-        expired = [handle for handle, plan in self.handles.items() if plan.expires_ms <= now_ms]
+        now = time.monotonic()
+        expired = [handle for handle, plan in self.handles.items() if plan.expires_monotonic <= now]
         for handle in expired:
             self.handles.pop(handle, None)
+
+    @staticmethod
+    def _expires_monotonic(expires_ms: int) -> float:
+        remaining_ms = max(0, expires_ms - int(time.time() * 1000))
+        return time.monotonic() + remaining_ms / 1000
 
     def _prepare_handle_issue(self) -> None:
         self._sync_backend_instance()
@@ -587,7 +593,11 @@ class SonarchyMcp:
             expires_ms = int(value.get("expiresAtEpochMs", int(time.time() * 1000)))
             self._prepare_handle_issue()
             self.handles[handle] = PlanHandle(
-                token, self.backend.instance, expires_ms, "playlists.apple.create"
+                token,
+                self.backend.instance,
+                expires_ms,
+                self._expires_monotonic(expires_ms),
+                "playlists.apple.create",
             )
             return {**value, "planHandle": handle}
         if name == "sonos_playlist_play_preflight":
@@ -602,7 +612,11 @@ class SonarchyMcp:
             expires_ms = int(value.get("expiresAtEpochMs", int(time.time() * 1000)))
             self._prepare_handle_issue()
             self.handles[handle] = PlanHandle(
-                token, self.backend.instance, expires_ms, "playlists.play.execute"
+                token,
+                self.backend.instance,
+                expires_ms,
+                self._expires_monotonic(expires_ms),
+                "playlists.play.execute",
             )
             return {**value, "planHandle": handle}
         if set(arguments) != {"planHandle", "approved"} or arguments.get("approved") is not True:
@@ -620,7 +634,7 @@ class SonarchyMcp:
         if plan is None:
             raise ToolError("conflict", "This plan handle is invalid or has already been used")
         self._prune_expired_handles()
-        if plan.expires_ms <= int(time.time() * 1000):
+        if plan.expires_monotonic <= time.monotonic():
             message = (
                 "The reviewed playlist plan expired; run a new preflight"
                 if name == "apple_playlist_create"
