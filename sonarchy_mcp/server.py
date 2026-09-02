@@ -481,8 +481,7 @@ class SonarchyMcp:
         if len(self.handles) >= MAX_PENDING_MCP_HANDLES:
             raise ToolError(
                 "conflict",
-                "Too many reviewed plans are awaiting execution; wait for them to expire or "
-                "restart the MCP adapter",
+                "Too many reviewed plans are awaiting execution; wait for existing plans to expire",
             )
 
     def _new_handle(self) -> str:

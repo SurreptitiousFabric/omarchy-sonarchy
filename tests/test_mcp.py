@@ -187,10 +187,10 @@ def test_ten_thousand_unused_preflights_share_one_bounded_handle_capacity(monkey
     assert retained_tokens == backend.issued_tokens
     assert all(error.code == "conflict" for error in capacity_errors)
     assert {str(error) for error in capacity_errors} == {
-        "Too many reviewed plans are awaiting execution; wait for them to expire or restart "
-        "the MCP adapter"
+        "Too many reviewed plans are awaiting execution; wait for existing plans to expire"
     }
     capacity_message = str(capacity_errors[0])
+    assert "restart" not in capacity_message.casefold()
     assert not any(handle in capacity_message for handle in accepted_handles)
     assert not any(token in capacity_message for token in retained_tokens)
     assert "backend-a" not in capacity_message
