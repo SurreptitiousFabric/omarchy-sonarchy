@@ -11,6 +11,7 @@ from .common import safe_call as safe_call
 from .common import safe_index as safe_index
 
 PLAYLIST_ID_PATTERN = re.compile(r"SQ:\d+")
+MAX_PLAYLIST_ID_LENGTH = 32
 
 
 def item_attr(item: Any, name: str, fallback: Any = "") -> Any:
@@ -35,7 +36,7 @@ def validate_identifier(raw: Any, label: str, maximum: int = 512) -> str:
 
 
 def validate_playlist_id(raw: Any) -> str:
-    value = validate_identifier(raw, "Sonos playlist identifier", 32)
+    value = validate_identifier(raw, "Sonos playlist identifier", MAX_PLAYLIST_ID_LENGTH)
     if not PLAYLIST_ID_PATTERN.fullmatch(value):
         raise ValueError("Invalid Sonos playlist identifier")
     return value

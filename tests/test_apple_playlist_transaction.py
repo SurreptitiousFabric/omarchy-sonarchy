@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 from types import SimpleNamespace
 
@@ -9,6 +10,8 @@ import soco
 from soco.data_structures_entry import from_didl_string
 from soco.exceptions import SoCoUPnPException
 
+import sonarchy_backend.domains.apple_playlist_transaction as apple_transaction
+import sonarchy_mcp.server as mcp_server
 from sonarchy_backend.contracts import (
     MAX_PROTOCOL_LINE_BYTES,
     MAX_PROTOCOL_REQUEST_ID_BYTES,
@@ -23,6 +26,7 @@ from sonarchy_backend.domains.apple_playlist_transaction import (
     verify_apple_items,
 )
 from sonarchy_backend.domains.errors import PlanConflictError, PlaylistTransactionError
+from sonarchy_backend.domains.media import MAX_PLAYLIST_ID_LENGTH, validate_playlist_id
 from sonarchy_backend.infrastructure.apple_saved_queue import (
     APPEND_INDEX,
     APPLE_SAVED_RESOURCE_PROTOCOL_INFO,
@@ -746,6 +750,100 @@ def test_worst_case_expanded_result_is_rejected_before_playlist_mutation():
     assert speaker.add_calls == []
     assert speaker.playlists == {}
     assert speaker.forbidden_calls == []
+
+
+def test_escaped_request_and_max_playlist_id_reject_before_mutation(monkeypatch):
+    speaker = FakeSpeaker()
+    speaker.create_return_id = "SQ:" + ("9" * 29)
+    planned = tracks(25)
+    for position, track in enumerate(planned):
+        track["title"] = "\\" * 238
+        track["artist"] = "\\" * (239 if position < 13 else 240)
+        track["album"] = "\\" * MAX_TRACK_TEXT_LENGTH
+
+    estimated_sizes = []
+    original_protocol_line = apple_transaction.protocol_line
+
+    def record_estimate(payload):
+        line = original_protocol_line(payload)
+        estimated_sizes.append(len(line.encode("utf-8")))
+        return line
+
+    monkeypatch.setattr(apple_transaction, "protocol_line", record_estimate)
+    with pytest.raises(PlanConflictError, match="protocol limit"):
+        execute(speaker, plan_for(speaker, name="AI 25", planned_tracks=planned))
+
+    assert estimated_sizes[-1] > MAX_PROTOCOL_LINE_BYTES
+    print(f"corrected_estimate={estimated_sizes[-1]}")
+    assert speaker.create_calls == []
+    assert speaker.add_calls == []
+    assert speaker.playlists == {}
+    assert speaker.forbidden_calls == []
+
+
+def test_near_boundary_25_track_result_fits_backend_and_compact_mcp(monkeypatch):
+    speaker = FakeSpeaker()
+    longest_playlist_id = "SQ:" + ("9" * (MAX_PLAYLIST_ID_LENGTH - len("SQ:")))
+    speaker.create_return_id = longest_playlist_id
+    planned = tracks(25)
+    for track in planned:
+        track["title"] = "\\" * 236
+        track["artist"] = "\\" * 236
+        track["album"] = "\\" * MAX_TRACK_TEXT_LENGTH
+
+    result = execute(speaker, plan_for(speaker, name="AI 25", planned_tracks=planned))
+    backend_encoded = protocol_line(
+        result_payload(
+            "\\" * MAX_PROTOCOL_REQUEST_ID_BYTES,
+            revision=(1 << 63) - 1,
+            value=result,
+        )
+    ).encode("utf-8")
+    mcp_request_id = "\\" * ((mcp_server.MAX_REQUEST_ID_BYTES - 2) // 2)
+    mcp_output = io.BytesIO()
+    monkeypatch.setattr(mcp_server.sys, "stdout", SimpleNamespace(buffer=mcp_output))
+    mcp_server._emit_response(
+        {
+            "jsonrpc": "2.0",
+            "id": mcp_request_id,
+            "result": {
+                "content": [{"type": "text", "text": json.dumps(result)}],
+                "structuredContent": result,
+                "isError": False,
+            },
+        },
+        mcp_request_id,
+    )
+    mcp_encoded = mcp_output.getvalue()
+
+    assert validate_playlist_id(longest_playlist_id) == longest_playlist_id
+    with pytest.raises(ValueError):
+        validate_playlist_id(longest_playlist_id + "9")
+    assert [item["canonicalIdentity"] for item in result["playlist"]["items"]] == [
+        f"song:{track['catalogId']}" for track in planned
+    ]
+    assert all(
+        item["albumVerification"]
+        == {
+            "kind": "exact",
+            "reviewedAlbum": "\\" * MAX_TRACK_TEXT_LENGTH,
+            "observedAlbum": "\\" * MAX_TRACK_TEXT_LENGTH,
+        }
+        for item in result["playlist"]["items"]
+    )
+    assert len(backend_encoded) <= MAX_PROTOCOL_LINE_BYTES
+    assert len(mcp_encoded) <= mcp_server.MAX_LINE
+    assert json.loads(mcp_encoded)["result"] == {
+        "content": [],
+        "structuredContent": result,
+        "isError": False,
+    }
+    assert result["queueMutation"] is False
+    assert result["playbackMutation"] is False
+    assert speaker.create_calls == ["AI 25"]
+    assert speaker.add_calls == [track["catalogId"] for track in planned]
+    monkeypatch.undo()
+    print(f"backend_bytes={len(backend_encoded)} compact_mcp_bytes={len(mcp_encoded)}")
 
 
 @pytest.mark.parametrize(

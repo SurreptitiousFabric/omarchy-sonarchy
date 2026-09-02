@@ -24,7 +24,7 @@ from ..infrastructure.apple_saved_queue import (
 from .apple_playlist_plan import MAX_TRACK_TEXT_LENGTH, validate_apple_song_items
 from .common import clean, safe_index
 from .errors import PlanConflictError, PlaylistTransactionError
-from .media import item_attr, validate_playlist_id
+from .media import MAX_PLAYLIST_ID_LENGTH, item_attr, validate_playlist_id
 from .playlist_rules import suggested_playlist_title, validate_playlist_title
 
 MAX_SONOS_PLAYLISTS = 100
@@ -275,6 +275,7 @@ def _ensure_create_result_fits_protocol(
     room: dict[str, Any],
 ) -> None:
     worst_observed_album = "\\" * MAX_TRACK_TEXT_LENGTH
+    worst_playlist_id = "SQ:" + ("9" * (MAX_PLAYLIST_ID_LENGTH - len("SQ:")))
     items = [
         {
             "position": position,
@@ -296,7 +297,7 @@ def _ensure_create_result_fits_protocol(
         "action": "create-apple-sonos-playlist",
         "room": room,
         "playlist": {
-            "id": "SQ:99999999999999999999",
+            "id": worst_playlist_id,
             "name": playlist_name,
             "itemCount": len(items),
             "items": items,
@@ -309,7 +310,7 @@ def _ensure_create_result_fits_protocol(
         },
     }
     envelope = result_payload(
-        "x" * MAX_PROTOCOL_REQUEST_ID_BYTES,
+        "\\" * MAX_PROTOCOL_REQUEST_ID_BYTES,
         revision=sys.maxsize,
         value=projected,
     )
