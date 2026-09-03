@@ -11,7 +11,11 @@ from typing import Any
 from sonarchy_mcp_contract import MCP_OPERATION_PLAY_EXECUTE
 
 from .common import clean, safe_index
-from .errors import PlanConflictError, PlaylistPlayTransactionError
+from .errors import (
+    PlanConflictError,
+    PlaylistPlayTransactionError,
+    authoritative_playlist_play_result,
+)
 from .media import item_attr, validate_playlist_id
 from .playlist_rules import validate_playlist_title
 from .playlists import PlaylistPlayStepError, append_and_start_playlist
@@ -24,7 +28,7 @@ MAX_ITEM_RESOURCES = 8
 MAX_ITEM_TEXT_BYTES = 512
 MAX_RESOURCE_TEXT_BYTES = 2048
 MAX_POST_CAPTURE_ATTEMPTS = 2
-MAX_POST_CAPTURE_SECONDS = 0.25
+POST_CAPTURE_RETRY_START_WINDOW_SECONDS = 0.25
 
 PLAYLIST_PLAY_SIDE_EFFECTS = (
     "Keep every existing room queue entry",
@@ -434,14 +438,18 @@ def _failure_diagnostics(
     phase: str,
     expected_position: int,
     append_state: str,
-    playback_started: bool,
+    playback_state: str,
+    append_invocation_returned: bool,
+    playback_start_invocation_returned: bool,
     append_count: int,
     playback_start_count: int,
     post: PlaylistPlayCapture | None,
 ) -> PlaylistPlayTransactionError:
     diagnostics: dict[str, Any] = {
         "appendState": append_state,
-        "playbackStarted": playback_started,
+        "playbackState": playback_state,
+        "appendInvocationReturned": append_invocation_returned,
+        "playbackStartInvocationReturned": playback_start_invocation_returned,
         "queueRollbackAttempted": False,
         "appendInvocationCount": append_count,
         "playbackStartInvocationCount": playback_start_count,
@@ -449,6 +457,8 @@ def _failure_diagnostics(
         "expectedFirstAppendedPosition": expected_position,
         "succeeded": False,
     }
+    if playback_state != "unknown":
+        diagnostics["playbackStarted"] = playback_state == "confirmed"
     if post is not None:
         diagnostics.update(
             observedQueueLength=post.state["queue"]["length"],
@@ -457,29 +467,27 @@ def _failure_diagnostics(
             observedTransport=post.state["room"]["transport"],
             observedSource=post.state["room"]["source"],
         )
-        if playback_start_count == 1:
-            playback_started = (
-                post.state["room"]["transport"] == "PLAYING"
-                and post.state["room"]["source"] == "QUEUE"
-                and post.state["queue"]["currentPosition"] == expected_position
-            )
-            diagnostics["playbackStarted"] = playback_started
     return PlaylistPlayTransactionError(phase=phase, diagnostics=diagnostics)
 
 
 def _append_state_from_queue_evidence(
     before: PlaylistPlayCapture,
     post: PlaylistPlayCapture | None,
+    capture_status: dict[str, int],
 ) -> str:
     if post is None:
         return "unknown"
     before_items = tuple(map(_content_key, before.queue_items))
     post_items = tuple(map(_content_key, post.queue_items))
-    if post_items == before_items:
-        return "absent"
     playlist_items = tuple(map(_content_key, before.playlist_items))
     if post_items == before_items + playlist_items:
         return "confirmed"
+    if (
+        post_items == before_items
+        and capture_status["attemptCount"] == MAX_POST_CAPTURE_ATTEMPTS
+        and capture_status["completedCount"] == MAX_POST_CAPTURE_ATTEMPTS
+    ):
+        return "absent"
     return "unknown"
 
 
@@ -488,24 +496,30 @@ def _post_capture(
     playlist_id: str,
     *,
     acceptable: Callable[[PlaylistPlayCapture], bool] | None = None,
+    capture_status: dict[str, int] | None = None,
 ) -> PlaylistPlayCapture | None:
-    deadline = time.monotonic() + MAX_POST_CAPTURE_SECONDS
+    deadline = time.monotonic() + POST_CAPTURE_RETRY_START_WINDOW_SECONDS
     latest: PlaylistPlayCapture | None = None
-    for _attempt in range(MAX_POST_CAPTURE_ATTEMPTS):
-        if time.monotonic() > deadline:
+    status = capture_status if capture_status is not None else {}
+    status.update(attemptCount=0, completedCount=0, failedCount=0)
+    for attempt in range(MAX_POST_CAPTURE_ATTEMPTS):
+        if attempt > 0 and time.monotonic() >= deadline:
             break
+        status["attemptCount"] += 1
         try:
             candidate = capture_playlist_play_target(
                 speaker,
                 playlist_id,
                 enforce_preflight_policy=False,
             )
+            status["completedCount"] += 1
             latest = candidate
             if acceptable is None or acceptable(candidate):
                 return candidate
             if time.monotonic() >= deadline:
                 break
         except Exception:  # noqa: BLE001 - partial or incomplete reads are bounded
+            status["failedCount"] += 1
             if time.monotonic() >= deadline:
                 break
     return latest
@@ -569,6 +583,22 @@ def _post_state_matches_playback(
     )
 
 
+def _post_state_matches_approved(
+    before: PlaylistPlayCapture,
+    post: PlaylistPlayCapture,
+    expected_state: dict[str, Any],
+    expected_position: int,
+    position: int,
+) -> bool:
+    return _post_state_matches_queue(
+        before,
+        post,
+        expected_state,
+        expected_position,
+        position,
+    ) and _post_state_matches_playback(before, post, expected_position)
+
+
 def execute_preflighted_playlist_play(
     speaker: Any,
     plan: dict[str, Any],
@@ -588,6 +618,9 @@ def execute_preflighted_playlist_play(
             phase="preflight_revalidation",
             diagnostics={
                 "appendState": "absent",
+                "playbackState": "absent",
+                "appendInvocationReturned": False,
+                "playbackStartInvocationReturned": False,
                 "playbackStarted": False,
                 "queueRollbackAttempted": False,
                 "appendInvocationCount": 0,
@@ -611,7 +644,9 @@ def execute_preflighted_playlist_play(
             phase="preflight_revalidation",
             expected_position=max(0, expected_position),
             append_state="absent",
-            playback_started=False,
+            playback_state="absent",
+            append_invocation_returned=False,
+            playback_start_invocation_returned=False,
             append_count=0,
             playback_start_count=0,
             post=None,
@@ -621,7 +656,9 @@ def execute_preflighted_playlist_play(
             phase="preflight_revalidation",
             expected_position=max(0, expected_position),
             append_state="absent",
-            playback_started=False,
+            playback_state="absent",
+            append_invocation_returned=False,
+            playback_start_invocation_returned=False,
             append_count=0,
             playback_start_count=0,
             post=before,
@@ -629,6 +666,9 @@ def execute_preflighted_playlist_play(
 
     append_count = 1
     playback_start_count = 0
+    append_invocation_returned = True
+    playback_start_invocation_returned = True
+    lost_playback_error: PlaylistPlayStepError | None = None
     try:
         position = append_and_start_playlist(
             before.coordinator,
@@ -638,21 +678,41 @@ def execute_preflighted_playlist_play(
         )
         playback_start_count = 1
     except PlaylistPlayStepError as exc:
-        post = _post_capture(speaker, playlist_id)
-        append_state = exc.append_state
-        if exc.phase == "append_playlist" and append_state == "unknown":
-            append_state = _append_state_from_queue_evidence(before, post)
-        if append_state == "confirmed":
-            playback_start_count = 1 if exc.phase == "start_playback" else 0
-        raise _failure_diagnostics(
-            phase=exc.phase,
-            expected_position=expected_position,
-            append_state=append_state,
-            playback_started=exc.playback_started,
-            append_count=append_count,
-            playback_start_count=playback_start_count,
-            post=post,
-        ) from exc
+        if exc.phase == "append_playlist":
+            append_invocation_returned = exc.invocation_returned
+            capture_status: dict[str, int] = {}
+            post = _post_capture(
+                speaker,
+                playlist_id,
+                acceptable=lambda candidate: (
+                    _append_state_from_queue_evidence(before, candidate, capture_status)
+                    == "confirmed"
+                ),
+                capture_status=capture_status,
+            )
+            append_state = exc.append_state
+            if append_state == "unknown":
+                append_state = _append_state_from_queue_evidence(
+                    before,
+                    post,
+                    capture_status,
+                )
+            raise _failure_diagnostics(
+                phase=exc.phase,
+                expected_position=expected_position,
+                append_state=append_state,
+                playback_state="absent",
+                append_invocation_returned=append_invocation_returned,
+                playback_start_invocation_returned=False,
+                append_count=append_count,
+                playback_start_count=playback_start_count,
+                post=post,
+            ) from exc
+
+        playback_start_count = 1
+        playback_start_invocation_returned = False
+        lost_playback_error = exc
+        position = exc.position or expected_position
 
     post = _post_capture(
         speaker,
@@ -670,17 +730,16 @@ def execute_preflighted_playlist_play(
     )
     if post is None:
         raise _failure_diagnostics(
-            phase="verify_queue",
+            phase=lost_playback_error.phase if lost_playback_error else "verify_queue",
             expected_position=expected_position,
             append_state="confirmed",
-            playback_started=True,
+            playback_state="unknown",
+            append_invocation_returned=append_invocation_returned,
+            playback_start_invocation_returned=playback_start_invocation_returned,
             append_count=append_count,
             playback_start_count=playback_start_count,
             post=None,
         )
-    approved_playlist = expected_state["playlist"]
-    approved_queue = expected_state["queue"]
-    appended_items = post.queue_items[approved_queue["length"] :]
     queue_matches = _post_state_matches_queue(
         before,
         post,
@@ -690,73 +749,45 @@ def execute_preflighted_playlist_play(
     )
     if not queue_matches:
         raise _failure_diagnostics(
-            phase="verify_queue",
+            phase=lost_playback_error.phase if lost_playback_error else "verify_queue",
             expected_position=expected_position,
             append_state="confirmed",
-            playback_started=True,
+            playback_state="unknown",
+            append_invocation_returned=append_invocation_returned,
+            playback_start_invocation_returned=playback_start_invocation_returned,
             append_count=append_count,
             playback_start_count=playback_start_count,
             post=post,
         )
 
-    first_item = before.playlist_items[0]
     playback_matches = _post_state_matches_playback(before, post, expected_position)
     if not playback_matches:
         raise _failure_diagnostics(
-            phase="verify_playback",
+            phase=lost_playback_error.phase if lost_playback_error else "verify_playback",
             expected_position=expected_position,
             append_state="confirmed",
-            playback_started=True,
+            playback_state="unknown",
+            append_invocation_returned=append_invocation_returned,
+            playback_start_invocation_returned=playback_start_invocation_returned,
             append_count=append_count,
             playback_start_count=playback_start_count,
             post=post,
         )
 
-    return {
-        "ok": True,
-        "action": "play-exact-sonos-playlist",
-        "room": copy.deepcopy(post.state["room"]),
-        "topology": copy.deepcopy(post.state["topology"]),
-        "playlist": copy.deepcopy(post.state["playlist"]),
-        "queue": {
-            "beforeLength": approved_queue["length"],
-            "afterLength": post.state["queue"]["length"],
-            "expectedFirstAppendedPosition": expected_position,
-            "currentPosition": post.state["queue"]["currentPosition"],
-            "appendedItemCount": approved_playlist["itemCount"],
-            "appendedSegmentFingerprint": _content_fingerprint(appended_items),
-            "existingEntriesPreserved": True,
-        },
-        "playback": {
-            "transport": "PLAYING",
-            "source": "QUEUE",
-            "currentItem": copy.deepcopy(first_item),
-        },
-        "verification": {
-            "authoritative": True,
-            "playlistContentUnchanged": True,
-            "queueLengthIncreasedByPlaylistCount": True,
-            "appendedSegmentMatchesPlaylist": True,
-            "currentPositionIsFirstAppended": True,
-            "currentItemMatchesPlaylistFirstItem": True,
-            "volumeUnchanged": True,
-            "muteUnchanged": True,
-            "topologyUnchanged": True,
-        },
-        "mutations": {
-            "appendInvocationCount": 1,
-            "playbackStartInvocationCount": 1,
-            "queueClearCount": 0,
-            "queueReplaceCount": 0,
-            "queueRemoveCount": 0,
-            "queueMoveCount": 0,
-            "queueRollbackAttempted": False,
-            "volumeMutation": False,
-            "muteMutation": False,
-            "topologyMutation": False,
-            "sourceSwitchMutation": False,
-            "playlistMutation": False,
-        },
-        "retryCount": 0,
-        "substitutionCount": 0,
-    }
+    approved_playlist = expected_state["playlist"]
+    approved_queue = expected_state["queue"]
+    appended_items = post.queue_items[approved_queue["length"] :]
+    return authoritative_playlist_play_result(
+        room=post.state["room"],
+        topology=post.state["topology"],
+        playlist=post.state["playlist"],
+        before_length=approved_queue["length"],
+        after_length=post.state["queue"]["length"],
+        expected_position=expected_position,
+        current_position=post.state["queue"]["currentPosition"],
+        appended_item_count=approved_playlist["itemCount"],
+        appended_segment_fingerprint=_content_fingerprint(appended_items),
+        current_item=before.playlist_items[0],
+        append_invocation_returned=append_invocation_returned,
+        playback_start_invocation_returned=playback_start_invocation_returned,
+    )
