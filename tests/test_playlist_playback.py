@@ -97,6 +97,7 @@ class FakeSpeaker:
         self.post_capture_failure = False
         self.append_calls = []
         self.play_calls = []
+        self.queue_reads = 0
         self.get_playlist_calls = []
         self.avTransport = Transport(self)
         self.music_library = MusicLibrary(self)
@@ -128,6 +129,7 @@ class FakeSpeaker:
 
     def get_queue(self, *, max_items, full_album_art_uri):
         assert full_album_art_uri is False
+        self.queue_reads += 1
         if self.append_failure_with_unreadable_post_state and self.append_calls:
             raise RuntimeError("private uncertain queue read failure at 192.0.2.1")
         if self.post_capture_failure and self.play_calls:
@@ -616,6 +618,7 @@ def test_post_capture_runtime_failure_preserves_bounded_partial_state():
     assert "observedQueueLength" not in details
     assert speaker.append_calls == ["SQ:9"]
     assert speaker.play_calls == [1]
+    assert speaker.queue_reads == 4
     assert "192.0.2.1" not in str(rejected.value)
 
 

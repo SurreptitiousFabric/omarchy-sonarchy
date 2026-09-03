@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +23,8 @@ MAX_PLAYLIST_ITEM_PREVIEW = 5
 MAX_ITEM_RESOURCES = 8
 MAX_ITEM_TEXT_BYTES = 512
 MAX_RESOURCE_TEXT_BYTES = 2048
+MAX_POST_CAPTURE_ATTEMPTS = 2
+MAX_POST_CAPTURE_SECONDS = 0.25
 
 PLAYLIST_PLAY_SIDE_EFFECTS = (
     "Keep every existing room queue entry",
@@ -480,19 +483,86 @@ def _append_state_from_queue_evidence(
     return "unknown"
 
 
-def _post_capture(speaker: Any, playlist_id: str) -> PlaylistPlayCapture | None:
-    try:
-        return capture_playlist_play_target(
-            speaker,
-            playlist_id,
-            enforce_preflight_policy=False,
-        )
-    except Exception:  # noqa: BLE001 - partial-state reporting must stay bounded
-        return None
+def _post_capture(
+    speaker: Any,
+    playlist_id: str,
+    *,
+    acceptable: Callable[[PlaylistPlayCapture], bool] | None = None,
+) -> PlaylistPlayCapture | None:
+    deadline = time.monotonic() + MAX_POST_CAPTURE_SECONDS
+    latest: PlaylistPlayCapture | None = None
+    for _attempt in range(MAX_POST_CAPTURE_ATTEMPTS):
+        if time.monotonic() > deadline:
+            break
+        try:
+            latest = capture_playlist_play_target(
+                speaker,
+                playlist_id,
+                enforce_preflight_policy=False,
+            )
+            if acceptable is None or acceptable(latest):
+                return latest
+        except Exception:  # noqa: BLE001 - partial or incomplete reads are bounded
+            latest = None
+    return latest
 
 
 def _stable_room(room: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in room.items() if key not in {"transport", "source"}}
+
+
+def _post_state_matches_queue(
+    before: PlaylistPlayCapture,
+    post: PlaylistPlayCapture,
+    expected_state: dict[str, Any],
+    expected_position: int,
+    position: int,
+) -> bool:
+    approved_playlist = expected_state["playlist"]
+    approved_queue = expected_state["queue"]
+    stable_state_matches = (
+        _stable_room(post.state["room"]) == _stable_room(expected_state["room"])
+        and post.state["topology"] == expected_state["topology"]
+        and post.state["playlist"] == approved_playlist
+    )
+    expected_after_length = approved_queue["length"] + approved_playlist["itemCount"]
+    prefix_matches = tuple(
+        map(_content_key, post.queue_items[: approved_queue["length"]])
+    ) == tuple(map(_content_key, before.queue_items))
+    appended_items = post.queue_items[approved_queue["length"] :]
+    appended_matches = tuple(map(_content_key, appended_items)) == tuple(
+        map(_content_key, before.playlist_items)
+    )
+    return (
+        stable_state_matches
+        and post.state["queue"]["length"] == expected_after_length
+        and prefix_matches
+        and appended_matches
+        and position == expected_position
+    )
+
+
+def _post_state_matches_playback(
+    before: PlaylistPlayCapture,
+    post: PlaylistPlayCapture,
+    expected_position: int,
+) -> bool:
+    if not 1 <= expected_position <= len(post.queue_items):
+        return False
+    first_item = before.playlist_items[0]
+    current_queue_item = post.queue_items[expected_position - 1]
+    return (
+        post.state["room"]["transport"] == "PLAYING"
+        and post.state["room"]["source"] == "QUEUE"
+        and post.state["queue"]["currentPosition"] == expected_position
+        and _content_key(current_queue_item) == _content_key(first_item)
+        and post.current_track
+        == {
+            "title": first_item["title"],
+            "artist": first_item["artist"],
+            "album": first_item["album"],
+        }
+    )
 
 
 def execute_preflighted_playlist_play(
@@ -580,7 +650,20 @@ def execute_preflighted_playlist_play(
             post=post,
         ) from exc
 
-    post = _post_capture(speaker, playlist_id)
+    post = _post_capture(
+        speaker,
+        playlist_id,
+        acceptable=lambda candidate: (
+            _post_state_matches_queue(
+                before,
+                candidate,
+                expected_state,
+                expected_position,
+                position,
+            )
+            and _post_state_matches_playback(before, candidate, expected_position)
+        ),
+    )
     if post is None:
         raise _failure_diagnostics(
             phase="verify_queue",
@@ -593,25 +676,13 @@ def execute_preflighted_playlist_play(
         )
     approved_playlist = expected_state["playlist"]
     approved_queue = expected_state["queue"]
-    stable_state_matches = (
-        _stable_room(post.state["room"]) == _stable_room(expected_state["room"])
-        and post.state["topology"] == expected_state["topology"]
-        and post.state["playlist"] == approved_playlist
-    )
-    expected_after_length = approved_queue["length"] + approved_playlist["itemCount"]
-    prefix_matches = tuple(
-        map(_content_key, post.queue_items[: approved_queue["length"]])
-    ) == tuple(map(_content_key, before.queue_items))
     appended_items = post.queue_items[approved_queue["length"] :]
-    appended_matches = tuple(map(_content_key, appended_items)) == tuple(
-        map(_content_key, before.playlist_items)
-    )
-    queue_matches = (
-        stable_state_matches
-        and post.state["queue"]["length"] == expected_after_length
-        and prefix_matches
-        and appended_matches
-        and position == expected_position
+    queue_matches = _post_state_matches_queue(
+        before,
+        post,
+        expected_state,
+        expected_position,
+        position,
     )
     if not queue_matches:
         raise _failure_diagnostics(
@@ -625,19 +696,7 @@ def execute_preflighted_playlist_play(
         )
 
     first_item = before.playlist_items[0]
-    current_queue_item = post.queue_items[expected_position - 1]
-    current_metadata_matches = post.current_track == {
-        "title": first_item["title"],
-        "artist": first_item["artist"],
-        "album": first_item["album"],
-    }
-    playback_matches = (
-        post.state["room"]["transport"] == "PLAYING"
-        and post.state["room"]["source"] == "QUEUE"
-        and post.state["queue"]["currentPosition"] == expected_position
-        and _content_key(current_queue_item) == _content_key(first_item)
-        and current_metadata_matches
-    )
+    playback_matches = _post_state_matches_playback(before, post, expected_position)
     if not playback_matches:
         raise _failure_diagnostics(
             phase="verify_playback",

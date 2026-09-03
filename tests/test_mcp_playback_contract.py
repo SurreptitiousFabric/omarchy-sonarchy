@@ -83,10 +83,15 @@ class FakeSonosSpeaker:
         self.playlist_lookups = []
         self.append_calls = []
         self.play_calls = []
+        self.post_capture_failures_remaining = 0
+        self.post_capture_stale_remaining = 0
         self.avTransport = _Transport(self)
         self.music_library = _MusicLibrary(self)
 
     def get_current_transport_info(self):
+        if self.play_calls and self.post_capture_stale_remaining:
+            self.post_capture_stale_remaining -= 1
+            return {"current_transport_state": "STOPPED"}
         return {"current_transport_state": self.transport}
 
     def get_current_track_info(self):
@@ -109,6 +114,9 @@ class FakeSonosSpeaker:
 
     def get_queue(self, *, max_items, full_album_art_uri):
         assert full_album_art_uri is False
+        if self.play_calls and self.post_capture_failures_remaining:
+            self.post_capture_failures_remaining -= 1
+            raise RuntimeError("transient post-write queue read failure")
         return Result(copy.deepcopy(self.queue_items[:max_items]))
 
     def add_to_queue(self, playlist):
@@ -352,6 +360,60 @@ def test_mcp_stdio_socket_protocol_playback_contract(tmp_path):
     for private_value in ("x-private-provider:", "x-private-protocol", "192.0.2.1"):
         assert private_value not in public
         assert private_value not in client.stderr
+
+
+def test_mcp_full_path_recaptures_after_transient_post_write_read_failure(tmp_path):
+    with playback_contract(tmp_path, {"read", "playlist-play"}) as harness:
+        client, _protocol, speaker, runtime_output = harness
+        _initialize(client)
+        handle = _preflight(client)
+        speaker.post_capture_failures_remaining = 1
+
+        response = client.request(
+            4,
+            "tools/call",
+            {
+                "name": "sonos_playlist_play",
+                "arguments": {"planHandle": handle, "approved": True},
+            },
+        )
+
+        result = response["result"]
+        value = result["structuredContent"]
+        assert result["isError"] is False
+        assert value["verification"]["authoritative"] is True
+        assert value["queue"]["afterLength"] == 3
+        assert value["queue"]["currentPosition"] == 2
+        assert speaker.append_calls == ["SQ:9"]
+        assert speaker.play_calls == [1]
+        assert client.request(5, "ping", {})["result"] == {}
+
+    public = json.dumps(client.public_results)
+    assert BACKEND_TOKEN not in public
+    assert BACKEND_TOKEN.encode() not in runtime_output.getvalue()
+    assert "transient post-write queue read failure" not in public
+
+
+def test_mcp_full_path_recaptures_stale_state_within_bound(tmp_path):
+    with playback_contract(tmp_path, {"read", "playlist-play"}) as harness:
+        client, _protocol, speaker, _runtime_output = harness
+        _initialize(client)
+        handle = _preflight(client)
+        speaker.post_capture_stale_remaining = 1
+
+        response = client.request(
+            4,
+            "tools/call",
+            {
+                "name": "sonos_playlist_play",
+                "arguments": {"planHandle": handle, "approved": True},
+            },
+        )
+
+        assert response["result"]["isError"] is False
+        assert response["result"]["structuredContent"]["verification"]["authoritative"] is True
+        assert speaker.append_calls == ["SQ:9"]
+        assert speaker.play_calls == [1]
 
 
 def test_mcp_socket_playlist_play_permission_is_independently_enforced(tmp_path):
