@@ -23,12 +23,14 @@ class PlaylistPlayStepError(RuntimeError):
         append_state: str,
         playback_started: bool,
         position: int | None = None,
+        invocation_returned: bool = False,
     ) -> None:
         super().__init__("Exact Sonos Playlist playback failed")
         self.phase = phase
         self.append_state = append_state
         self.playback_started = playback_started
         self.position = position
+        self.invocation_returned = invocation_returned
 
 
 def append_and_start_playlist(
@@ -44,7 +46,10 @@ def append_and_start_playlist(
         raw_position = coordinator.add_to_queue(playlist)
     except Exception as exc:
         raise PlaylistPlayStepError(
-            "append_playlist", append_state="unknown", playback_started=False
+            "append_playlist",
+            append_state="unknown",
+            playback_started=False,
+            invocation_returned=False,
         ) from exc
     position = safe_index(raw_position, -1)
     if position < 1 or (
@@ -55,6 +60,7 @@ def append_and_start_playlist(
             append_state="confirmed",
             playback_started=False,
             position=position if position >= 1 else None,
+            invocation_returned=True,
         )
     try:
         coordinator.play_from_queue(position - 1)
@@ -64,6 +70,7 @@ def append_and_start_playlist(
             append_state="confirmed",
             playback_started=False,
             position=position,
+            invocation_returned=False,
         ) from exc
     return position
 

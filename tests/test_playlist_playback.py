@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import copy
 import json
+from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
+import sonarchy_backend.domains.playlist_playback as playlist_playback
 from sonarchy_backend.controller_common import ControllerError
 from sonarchy_backend.controller_facade import DomainFacadeMixin
 from sonarchy_backend.domains.apple_playlist_plan import PlanTicketStore
@@ -91,17 +93,34 @@ class FakeSpeaker:
         self.append_failure_after_ambiguous_mutation = False
         self.append_failure_with_unreadable_post_state = False
         self.play_failure = False
+        self.play_failure_after_mutation = False
+        self.playback_wrong_position = False
         self.bad_append_position = False
         self.queue_verification_failure = False
         self.playback_verification_failure = False
         self.post_capture_failure = False
+        self.post_capture_stale_remaining = 0
+        self.post_capture_failure_after_stale = False
+        self.post_capture_capture_count = 0
         self.append_calls = []
         self.play_calls = []
+        self.queue_reads = 0
         self.get_playlist_calls = []
         self.avTransport = Transport(self)
         self.music_library = MusicLibrary(self)
 
     def get_current_transport_info(self):
+        if self.play_calls:
+            self.post_capture_capture_count += 1
+        if self.play_calls and self.post_capture_stale_remaining:
+            self.post_capture_stale_remaining -= 1
+            return {"current_transport_state": "STOPPED"}
+        if (
+            self.play_calls
+            and self.post_capture_failure_after_stale
+            and self.post_capture_capture_count > 1
+        ):
+            raise RuntimeError("private post-write transport read failure after stale read")
         return {"current_transport_state": self.transport}
 
     def get_current_track_info(self):
@@ -128,6 +147,7 @@ class FakeSpeaker:
 
     def get_queue(self, *, max_items, full_album_art_uri):
         assert full_album_art_uri is False
+        self.queue_reads += 1
         if self.append_failure_with_unreadable_post_state and self.append_calls:
             raise RuntimeError("private uncertain queue read failure at 192.0.2.1")
         if self.post_capture_failure and self.play_calls:
@@ -160,8 +180,12 @@ class FakeSpeaker:
         if self.play_failure:
             raise RuntimeError("private playback failure with DIDL")
         self.current_position = index + 1
+        if self.playback_wrong_position:
+            self.current_position = 1
         self.transport = "PAUSED_PLAYBACK" if self.playback_verification_failure else "PLAYING"
         self.source_uri = "x-rincon-queue:R1#0"
+        if self.play_failure_after_mutation:
+            raise RuntimeError("private lost playback response after mutation")
 
 
 class PlaybackBackend:
@@ -586,13 +610,78 @@ def test_playback_rejection_leaves_append_and_attempts_no_rollback():
     assert details["phase"] == "start_playback"
     assert details["appendState"] == "confirmed"
     assert details["queueAppended"] is True
-    assert details["playbackStarted"] is False
+    assert details["playbackState"] == "unknown"
+    assert "playbackStarted" not in details
+    assert details["appendInvocationReturned"] is True
+    assert details["playbackStartInvocationReturned"] is False
     assert details["observedQueueLength"] == 3
     assert details["expectedFirstAppendedPosition"] == 2
     assert details["appendInvocationCount"] == 1
     assert details["playbackStartInvocationCount"] == 1
     assert details["queueRollbackAttempted"] is False
     assert len(speaker.queue_items) == 3
+    assert speaker.append_calls == ["SQ:9"]
+    assert speaker.play_calls == [1]
+
+
+def test_lost_playback_response_is_verified_as_authoritative_success():
+    speaker = FakeSpeaker()
+    application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
+    review = preflight(application)
+    speaker.play_failure_after_mutation = True
+
+    result = execute(application, review)
+
+    assert result["appendState"] == "confirmed"
+    assert result["playbackState"] == "confirmed"
+    assert result["verification"]["authoritative"] is True
+    assert result["mutations"]["appendInvocationCount"] == 1
+    assert result["mutations"]["playbackStartInvocationCount"] == 1
+    assert result["mutations"]["appendInvocationReturned"] is True
+    assert result["mutations"]["playbackStartInvocationReturned"] is False
+    assert result["retryCount"] == 0
+    assert speaker.append_calls == ["SQ:9"]
+    assert speaker.play_calls == [1]
+
+
+def test_lost_playback_response_with_unproven_state_is_unknown():
+    speaker = FakeSpeaker()
+    application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
+    review = preflight(application)
+    speaker.play_failure_after_mutation = True
+    speaker.playback_verification_failure = True
+
+    with pytest.raises(PlaylistPlayTransactionError) as rejected:
+        execute(application, review)
+
+    details = rejected.value.details
+    assert details["playbackState"] == "unknown"
+    assert "playbackStarted" not in details
+    assert details["appendInvocationReturned"] is True
+    assert details["playbackStartInvocationReturned"] is False
+    assert details["observedTransport"] == "PAUSED_PLAYBACK"
+    assert details["appendInvocationCount"] == 1
+    assert details["playbackStartInvocationCount"] == 1
+    assert speaker.append_calls == ["SQ:9"]
+    assert speaker.play_calls == [1]
+
+
+def test_duplicate_visible_metadata_does_not_prove_the_active_position():
+    speaker = FakeSpeaker()
+    for field in ("title", "creator", "album"):
+        setattr(speaker.queue_items[0], field, getattr(speaker.playlist_items[0], field))
+    application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
+    review = preflight(application)
+    speaker.playback_wrong_position = True
+
+    with pytest.raises(PlaylistPlayTransactionError) as rejected:
+        execute(application, review)
+
+    details = rejected.value.details
+    assert details["phase"] == "verify_playback"
+    assert details["playbackState"] == "unknown"
+    assert details["observedCurrentPosition"] == 1
+    assert details["observedTransport"] == "PLAYING"
     assert speaker.append_calls == ["SQ:9"]
     assert speaker.play_calls == [1]
 
@@ -609,14 +698,107 @@ def test_post_capture_runtime_failure_preserves_bounded_partial_state():
     details = rejected.value.details
     assert details["phase"] == "verify_queue"
     assert details["queueAppended"] is True
-    assert details["playbackStarted"] is True
+    assert details["playbackState"] == "unknown"
+    assert "playbackStarted" not in details
+    assert details["appendInvocationReturned"] is True
+    assert details["playbackStartInvocationReturned"] is True
     assert details["appendInvocationCount"] == 1
     assert details["playbackStartInvocationCount"] == 1
     assert details["queueRollbackAttempted"] is False
     assert "observedQueueLength" not in details
     assert speaker.append_calls == ["SQ:9"]
     assert speaker.play_calls == [1]
+    assert speaker.queue_reads == 4
     assert "192.0.2.1" not in str(rejected.value)
+
+
+def test_post_capture_keeps_last_successful_partial_state_when_later_read_fails():
+    speaker = FakeSpeaker()
+    application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
+    review = preflight(application)
+    speaker.post_capture_stale_remaining = 1
+    speaker.post_capture_failure_after_stale = True
+
+    with pytest.raises(PlaylistPlayTransactionError) as rejected:
+        execute(application, review)
+
+    details = rejected.value.details
+    assert details["phase"] == "verify_playback"
+    assert details["queueAppended"] is True
+    assert details["playbackState"] == "unknown"
+    assert "playbackStarted" not in details
+    assert details["appendInvocationReturned"] is True
+    assert details["playbackStartInvocationReturned"] is True
+    assert details["observedQueueLength"] == 3
+    assert details["observedTransport"] == "STOPPED"
+    assert details["appendInvocationCount"] == 1
+    assert details["playbackStartInvocationCount"] == 1
+    assert speaker.append_calls == ["SQ:9"]
+    assert speaker.play_calls == [1]
+
+
+def test_post_capture_does_not_start_another_read_after_budget_expires(monkeypatch):
+    clock = iter((0.0, 0.0, 0.3))
+    capture = object()
+    calls = []
+
+    monkeypatch.setattr(playlist_playback.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(
+        playlist_playback,
+        "capture_playlist_play_target",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or capture,
+    )
+
+    result = playlist_playback._post_capture(
+        object(),
+        "SQ:9",
+        acceptable=lambda candidate: False,
+    )
+
+    assert result is capture
+    assert len(calls) == 1
+
+
+def test_post_capture_does_not_start_second_after_blocking_first_exceeds_window(monkeypatch):
+    started = Event()
+    release = Event()
+    finished = Event()
+    clock = [0.0]
+    result = []
+    capture_calls = []
+
+    def blocking_capture(*args, **kwargs):
+        capture_calls.append((args, kwargs))
+        started.set()
+        release.wait()
+        return object()
+
+    def run_capture():
+        result.append(
+            playlist_playback._post_capture(
+                object(),
+                "SQ:9",
+                acceptable=lambda candidate: False,
+            )
+        )
+        finished.set()
+
+    monkeypatch.setattr(playlist_playback.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(playlist_playback, "capture_playlist_play_target", blocking_capture)
+    worker = Thread(target=run_capture)
+    worker.start()
+    try:
+        assert started.wait(timeout=1)
+        clock[0] = playlist_playback.POST_CAPTURE_RETRY_START_WINDOW_SECONDS + 0.001
+        assert not finished.is_set()
+        release.set()
+        assert finished.wait(timeout=1)
+    finally:
+        release.set()
+        worker.join(timeout=1)
+    assert not worker.is_alive()
+    assert result
+    assert len(capture_calls) == 1
 
 
 def test_unexpected_append_position_reports_partial_append_without_starting_playback():
@@ -637,15 +819,13 @@ def test_unexpected_append_position_reports_partial_append_without_starting_play
 
 
 @pytest.mark.parametrize(
-    ("attribute", "phase", "playback_started"),
+    ("attribute", "phase"),
     (
-        ("queue_verification_failure", "verify_queue", True),
-        ("playback_verification_failure", "verify_playback", False),
+        ("queue_verification_failure", "verify_queue"),
+        ("playback_verification_failure", "verify_playback"),
     ),
 )
-def test_post_write_verification_failures_report_partial_state_without_rollback(
-    attribute, phase, playback_started
-):
+def test_post_write_verification_failures_report_partial_state_without_rollback(attribute, phase):
     speaker = FakeSpeaker()
     application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
     review = preflight(application)
@@ -656,7 +836,8 @@ def test_post_write_verification_failures_report_partial_state_without_rollback(
 
     assert rejected.value.details["phase"] == phase
     assert rejected.value.details["queueAppended"] is True
-    assert rejected.value.details["playbackStarted"] is playback_started
+    assert rejected.value.details["playbackState"] == "unknown"
+    assert "playbackStarted" not in rejected.value.details
     assert rejected.value.details["queueRollbackAttempted"] is False
     assert speaker.append_calls == ["SQ:9"]
     assert speaker.play_calls == [1]

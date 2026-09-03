@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import re
 from typing import Any
 
@@ -90,17 +91,25 @@ def bounded_playlist_play_failure(value: dict[str, Any]) -> dict[str, Any]:
     append_state = value.get("appendState")
     if append_state not in {"confirmed", "absent", "unknown"}:
         append_state = "unknown"
-    details: dict[str, Any] = {"appendState": append_state}
-    details.update(
-        {
-            key: value.get(key) is True
-            for key in (
-                "playbackStarted",
-                "queueRollbackAttempted",
-                "succeeded",
-            )
-        }
-    )
+    playback_state = value.get("playbackState")
+    if playback_state not in {"confirmed", "absent", "unknown"}:
+        playback_state = (
+            "confirmed"
+            if value.get("playbackStarted") is True
+            else "absent"
+            if "playbackStarted" in value
+            else "unknown"
+        )
+    details: dict[str, Any] = {
+        "appendState": append_state,
+        "playbackState": playback_state,
+        "appendInvocationReturned": value.get("appendInvocationReturned") is True,
+        "playbackStartInvocationReturned": value.get("playbackStartInvocationReturned") is True,
+        "queueRollbackAttempted": value.get("queueRollbackAttempted") is True,
+        "succeeded": value.get("succeeded") is True,
+    }
+    if playback_state != "unknown":
+        details["playbackStarted"] = playback_state == "confirmed"
     if append_state != "unknown":
         details["queueAppended"] = append_state == "confirmed"
     for key in ("appendInvocationCount", "playbackStartInvocationCount", "retryCount"):
@@ -124,6 +133,76 @@ def bounded_playlist_play_failure(value: dict[str, Any]) -> dict[str, Any]:
     if source in {"QUEUE", "NONE", "UNSUPPORTED", "UNKNOWN"}:
         details["observedSource"] = source
     return details
+
+
+def authoritative_playlist_play_result(
+    *,
+    room: dict[str, Any],
+    topology: dict[str, Any],
+    playlist: dict[str, Any],
+    before_length: int,
+    after_length: int,
+    expected_position: int,
+    current_position: int | None,
+    appended_item_count: int,
+    appended_segment_fingerprint: str,
+    current_item: dict[str, Any],
+    append_invocation_returned: bool,
+    playback_start_invocation_returned: bool,
+) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "action": "play-exact-sonos-playlist",
+        "room": copy.deepcopy(room),
+        "topology": copy.deepcopy(topology),
+        "playlist": copy.deepcopy(playlist),
+        "queue": {
+            "beforeLength": before_length,
+            "afterLength": after_length,
+            "expectedFirstAppendedPosition": expected_position,
+            "currentPosition": current_position,
+            "appendedItemCount": appended_item_count,
+            "appendedSegmentFingerprint": appended_segment_fingerprint,
+            "existingEntriesPreserved": True,
+        },
+        "playback": {
+            "transport": "PLAYING",
+            "source": "QUEUE",
+            "currentItem": copy.deepcopy(current_item),
+        },
+        "verification": {
+            "authoritative": True,
+            "playlistContentUnchanged": True,
+            "queueLengthIncreasedByPlaylistCount": True,
+            "appendedSegmentMatchesPlaylist": True,
+            "currentPositionIsFirstAppended": True,
+            "currentItemMatchesPlaylistFirstItem": True,
+            "volumeUnchanged": True,
+            "muteUnchanged": True,
+            "topologyUnchanged": True,
+        },
+        "mutations": {
+            "appendInvocationCount": 1,
+            "playbackStartInvocationCount": 1,
+            "appendInvocationReturned": append_invocation_returned,
+            "playbackStartInvocationReturned": playback_start_invocation_returned,
+            "queueClearCount": 0,
+            "queueReplaceCount": 0,
+            "queueRemoveCount": 0,
+            "queueMoveCount": 0,
+            "queueRollbackAttempted": False,
+            "volumeMutation": False,
+            "muteMutation": False,
+            "topologyMutation": False,
+            "sourceSwitchMutation": False,
+            "playlistMutation": False,
+        },
+        "appendState": "confirmed",
+        "playbackState": "confirmed",
+        "playbackStarted": True,
+        "retryCount": 0,
+        "substitutionCount": 0,
+    }
 
 
 class PlaylistPlayTransactionError(SafeDomainError):
