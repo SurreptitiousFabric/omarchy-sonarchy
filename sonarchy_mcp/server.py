@@ -118,6 +118,16 @@ def _validated_envelope(
     return request_id, method, params, notification
 
 
+def _functional_params(
+    params: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, bool]:
+    if params is None or "_meta" not in params:
+        return params, True
+    if not isinstance(params["_meta"], dict):
+        return None, False
+    return {key: value for key, value in params.items() if key != "_meta"}, True
+
+
 def _emit_response(response: dict[str, Any], request_id: str | int | None) -> None:
     try:
         encoded = (json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
@@ -685,6 +695,10 @@ class SonarchyMcp:
                 continue
             request_id, method, params, notification = envelope
             if method == "notifications/initialized" or notification:
+                continue
+            params, valid_metadata = _functional_params(params)
+            if not valid_metadata:
+                _emit_response(_error_response(-32602, "Invalid params", request_id), request_id)
                 continue
             try:
                 if method == "initialize":
