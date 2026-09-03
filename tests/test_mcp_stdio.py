@@ -380,6 +380,192 @@ def test_initialize_inventory_and_stdout_are_jsonrpc_only(tmp_path: Path):
     assert list((tmp_path / "runtime").iterdir()) == []
 
 
+def test_exact_codex_startup_accepts_request_metadata(tmp_path: Path):
+    frames = b"".join(
+        map(
+            _frame,
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 0,
+                    "method": "initialize",
+                    "params": {
+                        "capabilities": {"elicitation": {"form": {}, "url": {}}},
+                        "clientInfo": {
+                            "name": "codex-mcp-client",
+                            "title": "Codex",
+                            "version": "0.151.0",
+                        },
+                        "protocolVersion": "2025-06-18",
+                    },
+                },
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/list",
+                    "params": {"_meta": {"progressToken": 0}},
+                },
+                {"jsonrpc": "2.0", "id": 2, "method": "ping"},
+            ],
+        )
+    )
+
+    completed = _run_stdio(tmp_path, frames)
+
+    assert completed.returncode == 0
+    messages = _messages(completed)
+    assert messages[0]["id"] == 0
+    assert messages[0]["result"]["protocolVersion"] == "2025-06-18"
+    assert "result" in messages[1], messages[1]
+    assert [tool["name"] for tool in messages[1]["result"]["tools"]] == [
+        "rooms_list",
+        "room_state_get",
+        "content_browse",
+        "apple_playlist_preflight",
+        "sonos_playlist_play_preflight",
+    ]
+    assert messages[2] == {"jsonrpc": "2.0", "id": 2, "result": {}}
+    assert all(message["jsonrpc"] == "2.0" for message in messages)
+    assert b"progressToken" not in completed.stdout + completed.stderr
+    assert b'"_meta"' not in completed.stdout + completed.stderr
+    assert completed.stderr == b""
+    assert list((tmp_path / "runtime").iterdir()) == []
+
+
+def test_tools_list_ignores_unknown_request_metadata(tmp_path: Path):
+    metadata = {
+        "progressToken": 0,
+        "vendor.example/trace": "opaque",
+        "unknown": {"nested": True},
+    }
+    completed = _run_stdio(
+        tmp_path,
+        _frame(
+            {
+                "jsonrpc": "2.0",
+                "id": "tools",
+                "method": "tools/list",
+                "params": {"_meta": metadata},
+            }
+        ),
+    )
+
+    response = _messages(completed)[0]
+    assert [tool["name"] for tool in response["result"]["tools"]] == [
+        "rooms_list",
+        "room_state_get",
+        "content_browse",
+        "apple_playlist_preflight",
+        "sonos_playlist_play_preflight",
+    ]
+    assert b"progressToken" not in completed.stdout + completed.stderr
+    assert b"vendor.example/trace" not in completed.stdout + completed.stderr
+    assert b'"_meta"' not in completed.stdout + completed.stderr
+
+
+def test_ping_accepts_request_metadata(tmp_path: Path):
+    completed = _run_stdio(
+        tmp_path,
+        _frame(
+            {
+                "jsonrpc": "2.0",
+                "id": "ping",
+                "method": "ping",
+                "params": {"_meta": {"unknown": True}},
+            }
+        ),
+    )
+
+    assert _messages(completed) == [{"jsonrpc": "2.0", "id": "ping", "result": {}}]
+    assert b'"_meta"' not in completed.stdout + completed.stderr
+
+
+@pytest.mark.parametrize("metadata", [None, "bad", 7, False, []])
+def test_invalid_request_metadata_is_bounded_and_later_ping_survives(
+    tmp_path: Path, metadata: object
+):
+    malformed = _frame(
+        {
+            "jsonrpc": "2.0",
+            "id": "bad-meta",
+            "method": "tools/list",
+            "params": {"_meta": metadata},
+        }
+    )
+    completed = _run_stdio(tmp_path, malformed + _ping())
+
+    assert completed.returncode == 0
+    assert _messages(completed) == [
+        {
+            "jsonrpc": "2.0",
+            "id": "bad-meta",
+            "error": {"code": -32602, "message": "Invalid params"},
+        },
+        {"jsonrpc": "2.0", "id": "after", "result": {}},
+    ]
+    assert b'"_meta"' not in completed.stdout + completed.stderr
+    assert completed.stderr == b""
+
+
+@pytest.mark.parametrize("method", ["tools/list", "ping"])
+def test_metadata_does_not_hide_unexpected_functional_params(tmp_path: Path, method: str):
+    completed = _run_stdio(
+        tmp_path,
+        _frame(
+            {
+                "jsonrpc": "2.0",
+                "id": "strict",
+                "method": method,
+                "params": {"_meta": {}, "unexpected": True},
+            }
+        ),
+    )
+
+    assert _messages(completed) == [
+        {
+            "jsonrpc": "2.0",
+            "id": "strict",
+            "error": {"code": -32602, "message": "Invalid params"},
+        }
+    ]
+    assert b"unexpected" not in completed.stdout + completed.stderr
+    assert b'"_meta"' not in completed.stdout + completed.stderr
+
+
+def test_tool_call_request_metadata_is_not_forwarded(monkeypatch):
+    frames = _frame(
+        {
+            "jsonrpc": "2.0",
+            "id": "tool",
+            "method": "tools/call",
+            "params": {
+                "_meta": {"progressToken": 0, "private": "marker"},
+                "name": "rooms_list",
+                "arguments": {"functional": "value"},
+            },
+        }
+    )
+    output = io.BytesIO()
+    received: list[tuple[str, dict[str, object]]] = []
+    server = mcp_server.SonarchyMcp()
+    monkeypatch.setattr(mcp_server.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(frames)))
+    monkeypatch.setattr(mcp_server.sys, "stdout", SimpleNamespace(buffer=output))
+    monkeypatch.setattr(
+        server,
+        "call_tool",
+        lambda name, arguments: received.append((name, arguments)) or {"ok": True},
+    )
+
+    server.run()
+
+    assert received == [("rooms_list", {"functional": "value"})]
+    assert json.loads(output.getvalue())["result"]["structuredContent"] == {"ok": True}
+    assert b"progressToken" not in output.getvalue()
+    assert b'"_meta"' not in output.getvalue()
+    assert b"private" not in output.getvalue()
+
+
 def test_oversized_output_is_replaced_before_any_bytes_are_written(monkeypatch):
     output = io.BytesIO()
     monkeypatch.setattr(mcp_server.sys, "stdout", SimpleNamespace(buffer=output))
