@@ -495,15 +495,19 @@ def _post_capture(
         if time.monotonic() > deadline:
             break
         try:
-            latest = capture_playlist_play_target(
+            candidate = capture_playlist_play_target(
                 speaker,
                 playlist_id,
                 enforce_preflight_policy=False,
             )
-            if acceptable is None or acceptable(latest):
-                return latest
+            latest = candidate
+            if acceptable is None or acceptable(candidate):
+                return candidate
+            if time.monotonic() >= deadline:
+                break
         except Exception:  # noqa: BLE001 - partial or incomplete reads are bounded
-            latest = None
+            if time.monotonic() >= deadline:
+                break
     return latest
 
 

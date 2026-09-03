@@ -7,6 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
+import sonarchy_backend.domains.playlist_playback as playlist_playback
 from sonarchy_backend.controller_common import ControllerError
 from sonarchy_backend.controller_facade import DomainFacadeMixin
 from sonarchy_backend.domains.apple_playlist_plan import PlanTicketStore
@@ -95,6 +96,9 @@ class FakeSpeaker:
         self.queue_verification_failure = False
         self.playback_verification_failure = False
         self.post_capture_failure = False
+        self.post_capture_stale_remaining = 0
+        self.post_capture_failure_after_stale = False
+        self.post_capture_capture_count = 0
         self.append_calls = []
         self.play_calls = []
         self.queue_reads = 0
@@ -103,6 +107,17 @@ class FakeSpeaker:
         self.music_library = MusicLibrary(self)
 
     def get_current_transport_info(self):
+        if self.play_calls:
+            self.post_capture_capture_count += 1
+        if self.play_calls and self.post_capture_stale_remaining:
+            self.post_capture_stale_remaining -= 1
+            return {"current_transport_state": "STOPPED"}
+        if (
+            self.play_calls
+            and self.post_capture_failure_after_stale
+            and self.post_capture_capture_count > 1
+        ):
+            raise RuntimeError("private post-write transport read failure after stale read")
         return {"current_transport_state": self.transport}
 
     def get_current_track_info(self):
@@ -620,6 +635,50 @@ def test_post_capture_runtime_failure_preserves_bounded_partial_state():
     assert speaker.play_calls == [1]
     assert speaker.queue_reads == 4
     assert "192.0.2.1" not in str(rejected.value)
+
+
+def test_post_capture_keeps_last_successful_partial_state_when_later_read_fails():
+    speaker = FakeSpeaker()
+    application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
+    review = preflight(application)
+    speaker.post_capture_stale_remaining = 1
+    speaker.post_capture_failure_after_stale = True
+
+    with pytest.raises(PlaylistPlayTransactionError) as rejected:
+        execute(application, review)
+
+    details = rejected.value.details
+    assert details["phase"] == "verify_playback"
+    assert details["queueAppended"] is True
+    assert details["playbackStarted"] is False
+    assert details["observedQueueLength"] == 3
+    assert details["observedTransport"] == "STOPPED"
+    assert details["appendInvocationCount"] == 1
+    assert details["playbackStartInvocationCount"] == 1
+    assert speaker.append_calls == ["SQ:9"]
+    assert speaker.play_calls == [1]
+
+
+def test_post_capture_does_not_start_another_read_after_budget_expires(monkeypatch):
+    clock = iter((0.0, 0.0, 0.3))
+    capture = object()
+    calls = []
+
+    monkeypatch.setattr(playlist_playback.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(
+        playlist_playback,
+        "capture_playlist_play_target",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or capture,
+    )
+
+    result = playlist_playback._post_capture(
+        object(),
+        "SQ:9",
+        acceptable=lambda candidate: False,
+    )
+
+    assert result is capture
+    assert len(calls) == 1
 
 
 def test_unexpected_append_position_reports_partial_append_without_starting_playback():
