@@ -60,6 +60,8 @@ class _MusicLibrary:
     def browse(self, *, ml_item, start, max_items, full_album_art_uri):
         assert ml_item is self.speaker.playlist
         assert (start, full_album_art_uri) == (0, False)
+        if self.speaker.play_calls and self.speaker.post_capture_playlist_hook is not None:
+            self.speaker.post_capture_playlist_hook()
         return Result(copy.deepcopy(self.speaker.playlist_items[:max_items]))
 
 
@@ -94,10 +96,15 @@ class FakeSonosSpeaker:
         self.play_failure_after_mutation = False
         self.playback_verification_failure = False
         self.playback_transitions_until = None
+        self.post_capture_transport_hook = None
+        self.post_capture_playlist_hook = None
+        self.post_capture_queue_hook = None
         self.avTransport = _Transport(self)
         self.music_library = _MusicLibrary(self)
 
     def get_current_transport_info(self):
+        if self.play_calls and self.post_capture_transport_hook is not None:
+            return {"current_transport_state": self.post_capture_transport_hook()}
         if self.play_calls and self.post_capture_stale_remaining:
             self.post_capture_stale_remaining -= 1
             return {"current_transport_state": "STOPPED"}
@@ -136,6 +143,8 @@ class FakeSonosSpeaker:
         if self.append_calls and self.post_capture_stale_queue_remaining:
             self.post_capture_stale_queue_remaining -= 1
             values = self.queue_before_append
+        if self.play_calls and self.post_capture_queue_hook is not None:
+            self.post_capture_queue_hook()
         return Result(copy.deepcopy(values[:max_items]))
 
     def add_to_queue(self, playlist):
@@ -364,6 +373,13 @@ def test_mcp_stdio_socket_protocol_playback_contract(tmp_path):
         assert value["queue"]["currentPosition"] == 2
         assert value["retryCount"] == 0
         assert value["substitutionCount"] == 0
+        evidence = value["postWriteCaptureEvidence"]
+        assert evidence["attemptCount"] == 1
+        assert evidence["secondAttemptStarted"] is False
+        assert evidence["secondAttemptSkipReason"] == "firstAttemptAuthoritative"
+        assert evidence["attempts"][0]["outcome"] == "completed"
+        assert evidence["attempts"][0]["transport"] == "PLAYING"
+        assert evidence["attempts"][0]["failedPredicates"] == []
 
         replay = client.request(
             5,
@@ -439,7 +455,312 @@ def test_mcp_full_path_waits_for_transitioning_playback_to_converge(tmp_path, mo
         assert value["mutations"]["appendInvocationCount"] == 1
         assert value["mutations"]["playbackStartInvocationCount"] == 1
         assert value["retryCount"] == 0
+        evidence = value["postWriteCaptureEvidence"]
+        assert evidence == {
+            "attempts": [
+                {
+                    "attempt": 1,
+                    "startedElapsedMs": 0,
+                    "completedElapsedMs": 0,
+                    "outcome": "completed",
+                    "queueLength": 3,
+                    "currentPosition": 2,
+                    "transport": "TRANSITIONING",
+                    "source": "QUEUE",
+                    "failedPredicates": ["transportIsPlaying"],
+                },
+                {
+                    "attempt": 2,
+                    "startedElapsedMs": 1000,
+                    "completedElapsedMs": 1000,
+                    "outcome": "completed",
+                    "queueLength": 3,
+                    "currentPosition": 2,
+                    "transport": "PLAYING",
+                    "source": "QUEUE",
+                    "failedPredicates": [],
+                },
+            ],
+            "attemptCount": 2,
+            "secondAttemptStarted": True,
+            "secondAttemptSkipReason": "notApplicable",
+        }
         assert sleeps == [1.0]
+        assert client.request(5, "ping", {})["result"] == {}
+
+
+def test_mcp_full_path_reports_transitioning_when_slow_first_capture_skips_second(
+    tmp_path, monkeypatch
+):
+    now = [0.0]
+    sleeps = []
+    transport_reads = []
+
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(time, "sleep", lambda duration: sleeps.append(duration))
+
+    with playback_contract(tmp_path, {"read", "playlist-play"}) as harness:
+        client, _protocol, speaker, runtime_output = harness
+        _initialize(client)
+        handle = _preflight(client)
+
+        def transitioning_transport():
+            transport_reads.append(now[0])
+            return "TRANSITIONING"
+
+        speaker.post_capture_transport_hook = transitioning_transport
+        speaker.post_capture_playlist_hook = lambda: now.__setitem__(0, 0.6)
+        speaker.post_capture_queue_hook = lambda: now.__setitem__(0, 1.3)
+        response = client.request(
+            4,
+            "tools/call",
+            {
+                "name": "sonos_playlist_play",
+                "arguments": {"planHandle": handle, "approved": True},
+            },
+        )
+
+        result = response["result"]
+        value = result["structuredContent"]
+        details = value["details"]
+        assert result["isError"] is True
+        assert value["code"] == "speaker_rejected"
+        assert details["phase"] == "verify_playback"
+        assert details["appendState"] == "confirmed"
+        assert details["playbackState"] == "unknown"
+        assert details["observedQueueLength"] == 3
+        assert details["observedCurrentPosition"] == 2
+        assert details["observedTransport"] == "TRANSITIONING"
+        assert details["observedSource"] == "QUEUE"
+        assert details["postWriteCaptureEvidence"] == {
+            "attempts": [
+                {
+                    "attempt": 1,
+                    "startedElapsedMs": 0,
+                    "completedElapsedMs": 1300,
+                    "outcome": "completed",
+                    "queueLength": 3,
+                    "currentPosition": 2,
+                    "transport": "TRANSITIONING",
+                    "source": "QUEUE",
+                    "failedPredicates": ["transportIsPlaying"],
+                }
+            ],
+            "attemptCount": 1,
+            "secondAttemptStarted": False,
+            "secondAttemptSkipReason": "latestStartLimitExceeded",
+        }
+        assert details["appendInvocationCount"] == 1
+        assert details["playbackStartInvocationCount"] == 1
+        assert details["retryCount"] == 0
+        assert details["queueRollbackAttempted"] is False
+        assert speaker.append_calls == ["SQ:9"]
+        assert speaker.play_calls == [1]
+        assert transport_reads == [0.0, 1.3]
+        assert sleeps == []
+        assert client.request(5, "ping", {})["result"] == {}
+
+    public = json.dumps(client.public_results)
+    assert BACKEND_TOKEN not in public
+    assert "private:" not in public
+    assert BACKEND_TOKEN.encode() not in runtime_output.getvalue()
+
+
+def test_mcp_full_path_retains_queue_evidence_when_final_dynamic_read_fails(tmp_path, monkeypatch):
+    now = [0.0]
+    sleeps = []
+    transport_read_count = [0]
+
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(
+        time,
+        "sleep",
+        lambda duration: (sleeps.append(duration), now.__setitem__(0, now[0] + duration)),
+    )
+
+    with playback_contract(tmp_path, {"read", "playlist-play"}) as harness:
+        client, _protocol, speaker, runtime_output = harness
+        _initialize(client)
+        handle = _preflight(client)
+
+        def fail_tail_transport_read():
+            transport_read_count[0] += 1
+            if transport_read_count[0] % 2 == 0:
+                raise RuntimeError("private tail transport failure at 192.0.2.1")
+            return "PLAYING"
+
+        speaker.post_capture_transport_hook = fail_tail_transport_read
+        response = client.request(
+            4,
+            "tools/call",
+            {
+                "name": "sonos_playlist_play",
+                "arguments": {"planHandle": handle, "approved": True},
+            },
+        )
+
+        result = response["result"]
+        details = result["structuredContent"]["details"]
+        assert result["isError"] is True
+        assert details["phase"] == "verify_queue"
+        assert details["appendState"] == "confirmed"
+        assert details["playbackState"] == "unknown"
+        assert details["postWriteCaptureEvidence"] == {
+            "attempts": [
+                {
+                    "attempt": 1,
+                    "startedElapsedMs": 0,
+                    "completedElapsedMs": 0,
+                    "outcome": "failed",
+                    "queueLength": 3,
+                    "currentPosition": 2,
+                    "failedPredicates": [],
+                },
+                {
+                    "attempt": 2,
+                    "startedElapsedMs": 1000,
+                    "completedElapsedMs": 1000,
+                    "outcome": "failed",
+                    "queueLength": 3,
+                    "currentPosition": 2,
+                    "failedPredicates": [],
+                },
+            ],
+            "attemptCount": 2,
+            "secondAttemptStarted": True,
+            "secondAttemptSkipReason": "notApplicable",
+        }
+        assert speaker.append_calls == ["SQ:9"]
+        assert speaker.play_calls == [1]
+        assert details["appendInvocationCount"] == 1
+        assert details["playbackStartInvocationCount"] == 1
+        assert details["retryCount"] == 0
+        assert details["queueRollbackAttempted"] is False
+        assert sleeps == [1.0]
+        assert client.request(5, "ping", {})["result"] == {}
+
+    public = json.dumps(client.public_results)
+    assert "private tail transport failure" not in public
+    assert "192.0.2.1" not in public
+    assert BACKEND_TOKEN not in public
+    assert BACKEND_TOKEN.encode() not in runtime_output.getvalue()
+
+
+def test_mcp_full_path_rejects_fresh_non_queue_source(tmp_path, monkeypatch):
+    now = [0.0]
+    sleeps = []
+
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(
+        time,
+        "sleep",
+        lambda duration: (sleeps.append(duration), now.__setitem__(0, now[0] + duration)),
+    )
+
+    with playback_contract(tmp_path, {"read", "playlist-play"}) as harness:
+        client, _protocol, speaker, _runtime_output = harness
+        _initialize(client)
+        handle = _preflight(client)
+        speaker.post_capture_queue_hook = lambda: setattr(
+            speaker, "source_uri", "x-private-non-queue-source"
+        )
+
+        response = client.request(
+            4,
+            "tools/call",
+            {
+                "name": "sonos_playlist_play",
+                "arguments": {"planHandle": handle, "approved": True},
+            },
+        )
+
+        result = response["result"]
+        details = result["structuredContent"]["details"]
+        assert result["isError"] is True
+        assert details["phase"] == "verify_playback"
+        assert details["observedTransport"] == "PLAYING"
+        assert details["observedSource"] == "UNSUPPORTED"
+        evidence = details["postWriteCaptureEvidence"]
+        assert evidence["attemptCount"] == 2
+        assert evidence["secondAttemptStarted"] is True
+        assert [attempt["failedPredicates"] for attempt in evidence["attempts"]] == [
+            ["sourceIsQueue"],
+            ["sourceIsQueue"],
+        ]
+        assert speaker.append_calls == ["SQ:9"]
+        assert speaker.play_calls == [1]
+        assert details["retryCount"] == 0
+        assert sleeps == [1.0]
+        assert client.request(5, "ping", {})["result"] == {}
+
+    public = json.dumps(client.public_results)
+    assert "x-private-non-queue-source" not in public
+    assert BACKEND_TOKEN not in public
+
+
+def test_mcp_full_path_refreshes_playback_after_slow_composite_capture(tmp_path, monkeypatch):
+    now = [0.0]
+    sleeps = []
+    transport_reads = []
+
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(time, "sleep", lambda duration: sleeps.append(duration))
+
+    with playback_contract(tmp_path, {"read", "playlist-play"}) as harness:
+        client, _protocol, speaker, _runtime_output = harness
+        _initialize(client)
+        handle = _preflight(client)
+
+        def playback_transport():
+            transport_reads.append(now[0])
+            return "PLAYING" if now[0] >= 1.0 else "TRANSITIONING"
+
+        speaker.post_capture_transport_hook = playback_transport
+        speaker.post_capture_playlist_hook = lambda: now.__setitem__(0, 0.6)
+        speaker.post_capture_queue_hook = lambda: now.__setitem__(0, 1.3)
+
+        response = client.request(
+            4,
+            "tools/call",
+            {
+                "name": "sonos_playlist_play",
+                "arguments": {"planHandle": handle, "approved": True},
+            },
+        )
+
+        result = response["result"]
+        value = result["structuredContent"]
+        assert result["isError"] is False, (value, transport_reads)
+        assert value["verification"]["authoritative"] is True
+        assert value["room"]["transport"] == "PLAYING"
+        assert value["playback"]["source"] == "QUEUE"
+        assert value["queue"]["currentPosition"] == 2
+        assert value["postWriteCaptureEvidence"] == {
+            "attempts": [
+                {
+                    "attempt": 1,
+                    "startedElapsedMs": 0,
+                    "completedElapsedMs": 1300,
+                    "outcome": "completed",
+                    "queueLength": 3,
+                    "currentPosition": 2,
+                    "transport": "PLAYING",
+                    "source": "QUEUE",
+                    "failedPredicates": [],
+                }
+            ],
+            "attemptCount": 1,
+            "secondAttemptStarted": False,
+            "secondAttemptSkipReason": "firstAttemptAuthoritative",
+        }
+        assert transport_reads == [0.0, 1.3]
+        assert speaker.append_calls == ["SQ:9"]
+        assert speaker.play_calls == [1]
+        assert value["mutations"]["appendInvocationCount"] == 1
+        assert value["mutations"]["playbackStartInvocationCount"] == 1
+        assert value["retryCount"] == 0
+        assert value["mutations"]["queueRollbackAttempted"] is False
+        assert sleeps == []
         assert client.request(5, "ping", {})["result"] == {}
 
 
@@ -465,6 +786,19 @@ def test_mcp_full_path_recaptures_after_transient_post_write_read_failure(tmp_pa
         assert value["verification"]["authoritative"] is True
         assert value["queue"]["afterLength"] == 3
         assert value["queue"]["currentPosition"] == 2
+        evidence = value["postWriteCaptureEvidence"]
+        assert len(evidence["attempts"]) == 2
+        assert evidence["attempts"][0]["outcome"] == "failed"
+        assert "queueLength" not in evidence["attempts"][0]
+        assert "currentPosition" not in evidence["attempts"][0]
+        assert "transport" not in evidence["attempts"][0]
+        assert "source" not in evidence["attempts"][0]
+        assert evidence["attempts"][0]["failedPredicates"] == []
+        assert evidence["attempts"][1]["outcome"] == "completed"
+        assert evidence["attempts"][1]["failedPredicates"] == []
+        assert evidence["attemptCount"] == 2
+        assert evidence["secondAttemptStarted"] is True
+        assert evidence["secondAttemptSkipReason"] == "notApplicable"
         assert speaker.append_calls == ["SQ:9"]
         assert speaker.play_calls == [1]
         assert client.request(5, "ping", {})["result"] == {}
@@ -521,6 +855,9 @@ def test_mcp_full_path_verifies_lost_playback_response(tmp_path):
         assert value["playbackState"] == "confirmed"
         assert value["mutations"]["appendInvocationReturned"] is True
         assert value["mutations"]["playbackStartInvocationReturned"] is False
+        assert value["postWriteCaptureEvidence"]["attemptCount"] == 1
+        assert value["postWriteCaptureEvidence"]["attempts"][0]["transport"] == "PLAYING"
+        assert value["postWriteCaptureEvidence"]["attempts"][0]["failedPredicates"] == []
         assert speaker.append_calls == ["SQ:9"]
         assert speaker.play_calls == [1]
         assert client.request(5, "ping", {})["result"] == {}

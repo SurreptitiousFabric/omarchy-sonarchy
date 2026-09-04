@@ -17,6 +17,28 @@ from .errors import (
     authoritative_playlist_play_result,
 )
 from .media import item_attr, validate_playlist_id
+from .playlist_playback_verification import (
+    PostWritePlaybackObservationError,
+    capture_playlist_play_post_write,
+)
+from .playlist_playback_verification import (
+    append_state_from_queue_evidence as _append_state_from_queue_evidence,
+)
+from .playlist_playback_verification import (
+    append_verification_failures as _append_verification_failures,
+)
+from .playlist_playback_verification import (
+    approved_verification_failures as _post_approved_verification_failures,
+)
+from .playlist_playback_verification import (
+    content_key as _content_key,
+)
+from .playlist_playback_verification import (
+    playback_verification_failures as _post_playback_verification_failures,
+)
+from .playlist_playback_verification import (
+    queue_verification_failures as _post_queue_verification_failures,
+)
 from .playlist_rules import validate_playlist_title
 from .playlists import PlaylistPlayStepError, append_and_start_playlist
 
@@ -27,13 +49,6 @@ MAX_PLAYLIST_ITEM_PREVIEW = 5
 MAX_ITEM_RESOURCES = 8
 MAX_ITEM_TEXT_BYTES = 512
 MAX_RESOURCE_TEXT_BYTES = 2048
-MAX_POST_CAPTURE_ATTEMPTS = 2
-POST_CAPTURE_RETRY_START_WINDOW_SECONDS = 0.25
-POST_PLAYBACK_SECOND_CAPTURE_TARGET_SECONDS, POST_PLAYBACK_SECOND_CAPTURE_LATEST_START_SECONDS = (
-    1.0,
-    1.25,
-)
-
 PLAYLIST_PLAY_SIDE_EFFECTS = (
     "Keep every existing room queue entry",
     "Append the complete reviewed Sonos Playlist to the end of the room queue",
@@ -146,16 +161,6 @@ def _item_value(item: Any, position: int) -> dict[str, Any]:
 
 def _ordered_items(items: list[Any]) -> tuple[dict[str, Any], ...]:
     return tuple(_item_value(item, index) for index, item in enumerate(items, 1))
-
-
-def _content_key(item: dict[str, Any]) -> tuple[Any, ...]:
-    return (
-        item["identity"],
-        item["title"],
-        item["artist"],
-        item["album"],
-        item["duration"],
-    )
 
 
 def _content_fingerprint(items: tuple[dict[str, Any], ...]) -> str:
@@ -296,6 +301,24 @@ def _source(coordinator: Any) -> str:
     return "UNSUPPORTED"
 
 
+def _dynamic_playback_state(coordinator: Any) -> tuple[str, str]:
+    try:
+        transport_info = coordinator.get_current_transport_info()
+    except Exception as exc:
+        raise PlanConflictError("The current Sonos transport could not be read safely") from exc
+    if not isinstance(transport_info, dict):
+        raise PlanConflictError("The current Sonos transport could not be read safely")
+    transport = clean(transport_info.get("current_transport_state")).upper() or "UNKNOWN"
+    if transport not in {
+        "STOPPED",
+        "PAUSED_PLAYBACK",
+        "PLAYING",
+        "TRANSITIONING",
+    }:
+        transport = "UNKNOWN"
+    return transport, _source(coordinator)
+
+
 def _room_state(
     speaker: Any,
 ) -> tuple[dict[str, Any], dict[str, Any], Any]:
@@ -340,21 +363,7 @@ def _room_state(
     mute = getattr(speaker, "mute", None)
     if type(mute) is not bool:
         raise PlanConflictError("The exact room mute state could not be read safely")
-    try:
-        transport_info = coordinator.get_current_transport_info()
-    except Exception as exc:
-        raise PlanConflictError("The current Sonos transport could not be read safely") from exc
-    if not isinstance(transport_info, dict):
-        raise PlanConflictError("The current Sonos transport could not be read safely")
-    transport = clean(transport_info.get("current_transport_state")).upper() or "UNKNOWN"
-    if transport not in {
-        "STOPPED",
-        "PAUSED_PLAYBACK",
-        "PLAYING",
-        "TRANSITIONING",
-    }:
-        transport = "UNKNOWN"
-    source = _source(coordinator)
+    transport, source = _dynamic_playback_state(coordinator)
     capabilities = {
         "append-sonos-playlist": callable(getattr(coordinator, "add_to_queue", None)),
         "play-from-queue": callable(getattr(coordinator, "play_from_queue", None)),
@@ -412,7 +421,7 @@ def capture_playlist_play_target(
     queue, queue_items, current_track = _queue_state(coordinator)
     if enforce_preflight_policy and queue["length"] + playlist["itemCount"] > 100:
         raise PlanConflictError("The room queue and Sonos Playlist would exceed 100 items")
-    return PlaylistPlayCapture(
+    capture = PlaylistPlayCapture(
         state={
             "room": room,
             "topology": topology,
@@ -425,6 +434,14 @@ def capture_playlist_play_target(
         queue_items=queue_items,
         current_track=current_track,
     )
+    if not enforce_preflight_policy:
+        try:
+            transport, source = _dynamic_playback_state(coordinator)
+        except PlanConflictError as exc:
+            raise PostWritePlaybackObservationError(capture) from exc
+        capture.state["room"]["transport"] = transport
+        capture.state["room"]["source"] = source
+    return capture
 
 
 def inspect_playlist_play_target(speaker: Any, playlist_id: str) -> dict[str, Any]:
@@ -448,6 +465,7 @@ def _failure_diagnostics(
     append_count: int,
     playback_start_count: int,
     post: PlaylistPlayCapture | None,
+    post_write_capture_evidence: dict[str, Any] | None = None,
 ) -> PlaylistPlayTransactionError:
     diagnostics: dict[str, Any] = {
         "appendState": append_state,
@@ -461,6 +479,8 @@ def _failure_diagnostics(
         "expectedFirstAppendedPosition": expected_position,
         "succeeded": False,
     }
+    if post_write_capture_evidence is not None:
+        diagnostics["postWriteCaptureEvidence"] = copy.deepcopy(post_write_capture_evidence)
     if playback_state != "unknown":
         diagnostics["playbackStarted"] = playback_state == "confirmed"
     if post is not None:
@@ -474,72 +494,27 @@ def _failure_diagnostics(
     return PlaylistPlayTransactionError(phase=phase, diagnostics=diagnostics)
 
 
-def _append_state_from_queue_evidence(
-    before: PlaylistPlayCapture,
-    post: PlaylistPlayCapture | None,
-    capture_status: dict[str, int],
-) -> str:
-    if post is None:
-        return "unknown"
-    before_items = tuple(map(_content_key, before.queue_items))
-    post_items = tuple(map(_content_key, post.queue_items))
-    playlist_items = tuple(map(_content_key, before.playlist_items))
-    if post_items == before_items + playlist_items:
-        return "confirmed"
-    if (
-        post_items == before_items
-        and capture_status["attemptCount"] == MAX_POST_CAPTURE_ATTEMPTS
-        and capture_status["completedCount"] == MAX_POST_CAPTURE_ATTEMPTS
-    ):
-        return "absent"
-    return "unknown"
-
-
 def _post_capture(
     speaker: Any,
     playlist_id: str,
     *,
     acceptable: Callable[[PlaylistPlayCapture], bool] | None = None,
-    capture_status: dict[str, int] | None = None,
+    failed_predicates: Callable[[PlaylistPlayCapture], tuple[str, ...]] | None = None,
+    capture_status: dict[str, Any] | None = None,
     playback_verification: bool = False,
 ) -> PlaylistPlayCapture | None:
-    started = time.monotonic()
-    deadline = (
-        float("inf") if playback_verification else started + POST_CAPTURE_RETRY_START_WINDOW_SECONDS
+    return capture_playlist_play_post_write(
+        lambda: capture_playlist_play_target(
+            speaker,
+            playlist_id,
+            enforce_preflight_policy=False,
+        ),
+        acceptable=acceptable,
+        failed_predicates=failed_predicates,
+        capture_status=capture_status,
+        playback_verification=playback_verification,
+        clock=time,
     )
-    latest: PlaylistPlayCapture | None = None
-    status = capture_status if capture_status is not None else {}
-    status.update(attemptCount=0, completedCount=0, failedCount=0)
-    for attempt in range(MAX_POST_CAPTURE_ATTEMPTS):
-        if attempt > 0 and not playback_verification and time.monotonic() >= deadline:
-            break
-        if attempt > 0 and playback_verification:
-            elapsed = time.monotonic() - started
-            if elapsed < POST_PLAYBACK_SECOND_CAPTURE_TARGET_SECONDS:
-                time.sleep(POST_PLAYBACK_SECOND_CAPTURE_TARGET_SECONDS - elapsed)
-                elapsed = time.monotonic() - started
-            if elapsed > POST_PLAYBACK_SECOND_CAPTURE_LATEST_START_SECONDS:
-                break
-        status["attemptCount"] += 1
-        try:
-            candidate = capture_playlist_play_target(
-                speaker,
-                playlist_id,
-                enforce_preflight_policy=False,
-            )
-            status["completedCount"] += 1
-            latest = candidate
-            if acceptable is None or acceptable(candidate):
-                return candidate
-        except Exception:  # noqa: BLE001 - partial or incomplete reads are bounded
-            status["failedCount"] += 1
-        if time.monotonic() >= deadline:
-            break
-    return latest
-
-
-def _stable_room(room: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in room.items() if key not in {"transport", "source"}}
 
 
 def _post_state_matches_queue(
@@ -549,27 +524,12 @@ def _post_state_matches_queue(
     expected_position: int,
     position: int,
 ) -> bool:
-    approved_playlist = expected_state["playlist"]
-    approved_queue = expected_state["queue"]
-    stable_state_matches = (
-        _stable_room(post.state["room"]) == _stable_room(expected_state["room"])
-        and post.state["topology"] == expected_state["topology"]
-        and post.state["playlist"] == approved_playlist
-    )
-    expected_after_length = approved_queue["length"] + approved_playlist["itemCount"]
-    prefix_matches = tuple(
-        map(_content_key, post.queue_items[: approved_queue["length"]])
-    ) == tuple(map(_content_key, before.queue_items))
-    appended_items = post.queue_items[approved_queue["length"] :]
-    appended_matches = tuple(map(_content_key, appended_items)) == tuple(
-        map(_content_key, before.playlist_items)
-    )
-    return (
-        stable_state_matches
-        and post.state["queue"]["length"] == expected_after_length
-        and prefix_matches
-        and appended_matches
-        and position == expected_position
+    return not _post_queue_verification_failures(
+        before,
+        post,
+        expected_state,
+        expected_position,
+        position,
     )
 
 
@@ -578,22 +538,7 @@ def _post_state_matches_playback(
     post: PlaylistPlayCapture,
     expected_position: int,
 ) -> bool:
-    if not 1 <= expected_position <= len(post.queue_items):
-        return False
-    first_item = before.playlist_items[0]
-    current_queue_item = post.queue_items[expected_position - 1]
-    return (
-        post.state["room"]["transport"] == "PLAYING"
-        and post.state["room"]["source"] == "QUEUE"
-        and post.state["queue"]["currentPosition"] == expected_position
-        and _content_key(current_queue_item) == _content_key(first_item)
-        and post.current_track
-        == {
-            "title": first_item["title"],
-            "artist": first_item["artist"],
-            "album": first_item["album"],
-        }
-    )
+    return not _post_playback_verification_failures(before, post, expected_position)
 
 
 def _post_state_matches_approved(
@@ -603,10 +548,13 @@ def _post_state_matches_approved(
     expected_position: int,
     position: int,
 ) -> bool:
-    queue_matches = _post_state_matches_queue(
-        before, post, expected_state, expected_position, position
+    return not _post_approved_verification_failures(
+        before,
+        post,
+        expected_state,
+        expected_position,
+        position,
     )
-    return queue_matches and _post_state_matches_playback(before, post, expected_position)
 
 
 def execute_preflighted_playlist_play(
@@ -690,13 +638,16 @@ def execute_preflighted_playlist_play(
     except PlaylistPlayStepError as exc:
         if exc.phase == "append_playlist":
             append_invocation_returned = exc.invocation_returned
-            capture_status: dict[str, int] = {}
+            capture_status: dict[str, Any] = {}
             post = _post_capture(
                 speaker,
                 playlist_id,
                 acceptable=lambda candidate: (
                     _append_state_from_queue_evidence(before, candidate, capture_status)
                     == "confirmed"
+                ),
+                failed_predicates=lambda candidate: _append_verification_failures(
+                    before, candidate
                 ),
                 capture_status=capture_status,
             )
@@ -717,6 +668,7 @@ def execute_preflighted_playlist_play(
                 append_count=append_count,
                 playback_start_count=playback_start_count,
                 post=post,
+                post_write_capture_evidence=capture_status["postWriteCaptureEvidence"],
             ) from exc
 
         playback_start_count = 1
@@ -724,12 +676,21 @@ def execute_preflighted_playlist_play(
         lost_playback_error = exc
         position = exc.position or expected_position
 
+    capture_status = {}
     post = _post_capture(
         speaker,
         playlist_id,
         acceptable=lambda candidate: _post_state_matches_approved(
             before, candidate, expected_state, expected_position, position
         ),
+        failed_predicates=lambda candidate: _post_approved_verification_failures(
+            before,
+            candidate,
+            expected_state,
+            expected_position,
+            position,
+        ),
+        capture_status=capture_status,
         playback_verification=True,
     )
     if post is None:
@@ -743,6 +704,7 @@ def execute_preflighted_playlist_play(
             append_count=append_count,
             playback_start_count=playback_start_count,
             post=None,
+            post_write_capture_evidence=capture_status["postWriteCaptureEvidence"],
         )
     queue_matches = _post_state_matches_queue(
         before,
@@ -762,6 +724,7 @@ def execute_preflighted_playlist_play(
             append_count=append_count,
             playback_start_count=playback_start_count,
             post=post,
+            post_write_capture_evidence=capture_status["postWriteCaptureEvidence"],
         )
 
     playback_matches = _post_state_matches_playback(before, post, expected_position)
@@ -776,6 +739,7 @@ def execute_preflighted_playlist_play(
             append_count=append_count,
             playback_start_count=playback_start_count,
             post=post,
+            post_write_capture_evidence=capture_status["postWriteCaptureEvidence"],
         )
 
     approved_playlist = expected_state["playlist"]
@@ -794,4 +758,5 @@ def execute_preflighted_playlist_play(
         current_item=before.playlist_items[0],
         append_invocation_returned=append_invocation_returned,
         playback_start_invocation_returned=playback_start_invocation_returned,
+        post_write_capture_evidence=capture_status["postWriteCaptureEvidence"],
     )

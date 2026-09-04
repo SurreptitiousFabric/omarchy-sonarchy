@@ -21,6 +21,9 @@ from sonarchy_backend.domains.playlist_playback import (
     execute_preflighted_playlist_play,
     inspect_playlist_play_target,
 )
+from sonarchy_backend.domains.playlist_playback_verification import (
+    POST_CAPTURE_RETRY_START_WINDOW_SECONDS,
+)
 
 
 class Result(list):
@@ -716,7 +719,7 @@ def test_post_capture_keeps_last_successful_partial_state_when_later_read_fails(
     speaker = FakeSpeaker()
     application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
     review = preflight(application)
-    speaker.post_capture_stale_remaining = 1
+    speaker.post_capture_stale_remaining = 2
     speaker.post_capture_failure_after_stale = True
 
     with pytest.raises(PlaylistPlayTransactionError) as rejected:
@@ -739,7 +742,12 @@ def test_post_capture_keeps_last_successful_partial_state_when_later_read_fails(
 
 def test_post_capture_does_not_start_another_read_after_budget_expires(monkeypatch):
     clock = iter((0.0, 0.0, 0.3))
-    capture = object()
+    capture = SimpleNamespace(
+        state={
+            "queue": {"length": 3, "currentPosition": 2},
+            "room": {"transport": "TRANSITIONING", "source": "QUEUE"},
+        }
+    )
     calls = []
 
     monkeypatch.setattr(playlist_playback.time, "monotonic", lambda: next(clock))
@@ -763,7 +771,12 @@ def test_playback_post_capture_returns_immediately_when_first_capture_is_authori
     monkeypatch,
 ):
     now = [0.0]
-    capture = object()
+    capture = SimpleNamespace(
+        state={
+            "queue": {"length": 3, "currentPosition": 2},
+            "room": {"transport": "PLAYING", "source": "QUEUE"},
+        }
+    )
     capture_calls = []
     sleeps = []
 
@@ -789,7 +802,15 @@ def test_playback_post_capture_returns_immediately_when_first_capture_is_authori
 
 def test_playback_post_capture_starts_second_capture_immediately_after_target(monkeypatch):
     now = [0.0]
-    captures = [object(), object()]
+    captures = [
+        SimpleNamespace(
+            state={
+                "queue": {"length": 3, "currentPosition": 2},
+                "room": {"transport": transport, "source": "QUEUE"},
+            }
+        )
+        for transport in ("TRANSITIONING", "PLAYING")
+    ]
     capture_calls = []
     sleeps = []
 
@@ -817,7 +838,12 @@ def test_playback_post_capture_starts_second_capture_immediately_after_target(mo
 
 def test_playback_post_capture_does_not_start_after_latest_start_limit(monkeypatch):
     now = [0.0]
-    capture = object()
+    capture = SimpleNamespace(
+        state={
+            "queue": {"length": 3, "currentPosition": 2},
+            "room": {"transport": "TRANSITIONING", "source": "QUEUE"},
+        }
+    )
     capture_calls = []
     sleeps = []
 
@@ -854,7 +880,12 @@ def test_post_capture_does_not_start_second_after_blocking_first_exceeds_window(
         capture_calls.append((args, kwargs))
         started.set()
         release.wait()
-        return object()
+        return SimpleNamespace(
+            state={
+                "queue": {"length": 3, "currentPosition": 2},
+                "room": {"transport": "TRANSITIONING", "source": "QUEUE"},
+            }
+        )
 
     def run_capture():
         result.append(
@@ -872,7 +903,7 @@ def test_post_capture_does_not_start_second_after_blocking_first_exceeds_window(
     worker.start()
     try:
         assert started.wait(timeout=1)
-        clock[0] = playlist_playback.POST_CAPTURE_RETRY_START_WINDOW_SECONDS + 0.001
+        clock[0] = POST_CAPTURE_RETRY_START_WINDOW_SECONDS + 0.001
         assert not finished.is_set()
         release.set()
         assert finished.wait(timeout=1)
@@ -902,13 +933,15 @@ def test_unexpected_append_position_reports_partial_append_without_starting_play
 
 
 @pytest.mark.parametrize(
-    ("attribute", "phase"),
+    ("attribute", "phase", "failed_predicate"),
     (
-        ("queue_verification_failure", "verify_queue"),
-        ("playback_verification_failure", "verify_playback"),
+        ("queue_verification_failure", "verify_queue", "appendedSegmentMatches"),
+        ("playback_verification_failure", "verify_playback", "transportIsPlaying"),
     ),
 )
-def test_post_write_verification_failures_report_partial_state_without_rollback(attribute, phase):
+def test_post_write_verification_failures_report_partial_state_without_rollback(
+    attribute, phase, failed_predicate
+):
     speaker = FakeSpeaker()
     application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
     review = preflight(application)
@@ -920,6 +953,13 @@ def test_post_write_verification_failures_report_partial_state_without_rollback(
     assert rejected.value.details["phase"] == phase
     assert rejected.value.details["queueAppended"] is True
     assert rejected.value.details["playbackState"] == "unknown"
+    evidence = rejected.value.details["postWriteCaptureEvidence"]
+    assert len(evidence["attempts"]) == 2
+    assert [attempt["failedPredicates"] for attempt in evidence["attempts"]] == [
+        [failed_predicate],
+        [failed_predicate],
+    ]
+    assert evidence["secondAttemptStarted"] is True
     assert "playbackStarted" not in rejected.value.details
     assert rejected.value.details["queueRollbackAttempted"] is False
     assert speaker.append_calls == ["SQ:9"]
