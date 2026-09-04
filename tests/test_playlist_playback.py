@@ -719,7 +719,7 @@ def test_post_capture_keeps_last_successful_partial_state_when_later_read_fails(
     speaker = FakeSpeaker()
     application = SonarchyApplication(PlaybackBackend(speaker))  # type: ignore[arg-type]
     review = preflight(application)
-    speaker.post_capture_stale_remaining = 1
+    speaker.post_capture_stale_remaining = 2
     speaker.post_capture_failure_after_stale = True
 
     with pytest.raises(PlaylistPlayTransactionError) as rejected:

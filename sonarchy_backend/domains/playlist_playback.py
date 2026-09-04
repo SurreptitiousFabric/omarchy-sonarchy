@@ -17,7 +17,10 @@ from .errors import (
     authoritative_playlist_play_result,
 )
 from .media import item_attr, validate_playlist_id
-from .playlist_playback_verification import capture_playlist_play_post_write
+from .playlist_playback_verification import (
+    PostWritePlaybackObservationError,
+    capture_playlist_play_post_write,
+)
 from .playlist_playback_verification import (
     append_state_from_queue_evidence as _append_state_from_queue_evidence,
 )
@@ -298,6 +301,24 @@ def _source(coordinator: Any) -> str:
     return "UNSUPPORTED"
 
 
+def _dynamic_playback_state(coordinator: Any) -> tuple[str, str]:
+    try:
+        transport_info = coordinator.get_current_transport_info()
+    except Exception as exc:
+        raise PlanConflictError("The current Sonos transport could not be read safely") from exc
+    if not isinstance(transport_info, dict):
+        raise PlanConflictError("The current Sonos transport could not be read safely")
+    transport = clean(transport_info.get("current_transport_state")).upper() or "UNKNOWN"
+    if transport not in {
+        "STOPPED",
+        "PAUSED_PLAYBACK",
+        "PLAYING",
+        "TRANSITIONING",
+    }:
+        transport = "UNKNOWN"
+    return transport, _source(coordinator)
+
+
 def _room_state(
     speaker: Any,
 ) -> tuple[dict[str, Any], dict[str, Any], Any]:
@@ -342,21 +363,7 @@ def _room_state(
     mute = getattr(speaker, "mute", None)
     if type(mute) is not bool:
         raise PlanConflictError("The exact room mute state could not be read safely")
-    try:
-        transport_info = coordinator.get_current_transport_info()
-    except Exception as exc:
-        raise PlanConflictError("The current Sonos transport could not be read safely") from exc
-    if not isinstance(transport_info, dict):
-        raise PlanConflictError("The current Sonos transport could not be read safely")
-    transport = clean(transport_info.get("current_transport_state")).upper() or "UNKNOWN"
-    if transport not in {
-        "STOPPED",
-        "PAUSED_PLAYBACK",
-        "PLAYING",
-        "TRANSITIONING",
-    }:
-        transport = "UNKNOWN"
-    source = _source(coordinator)
+    transport, source = _dynamic_playback_state(coordinator)
     capabilities = {
         "append-sonos-playlist": callable(getattr(coordinator, "add_to_queue", None)),
         "play-from-queue": callable(getattr(coordinator, "play_from_queue", None)),
@@ -414,7 +421,7 @@ def capture_playlist_play_target(
     queue, queue_items, current_track = _queue_state(coordinator)
     if enforce_preflight_policy and queue["length"] + playlist["itemCount"] > 100:
         raise PlanConflictError("The room queue and Sonos Playlist would exceed 100 items")
-    return PlaylistPlayCapture(
+    capture = PlaylistPlayCapture(
         state={
             "room": room,
             "topology": topology,
@@ -427,6 +434,14 @@ def capture_playlist_play_target(
         queue_items=queue_items,
         current_track=current_track,
     )
+    if not enforce_preflight_policy:
+        try:
+            transport, source = _dynamic_playback_state(coordinator)
+        except PlanConflictError as exc:
+            raise PostWritePlaybackObservationError(capture) from exc
+        capture.state["room"]["transport"] = transport
+        capture.state["room"]["source"] = source
+    return capture
 
 
 def inspect_playlist_play_target(speaker: Any, playlist_id: str) -> dict[str, Any]:

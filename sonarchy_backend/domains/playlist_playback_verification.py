@@ -13,6 +13,12 @@ POST_PLAYBACK_SECOND_CAPTURE_TARGET_SECONDS, POST_PLAYBACK_SECOND_CAPTURE_LATEST
 )
 
 
+class PostWritePlaybackObservationError(Exception):
+    def __init__(self, partial_capture: Any) -> None:
+        super().__init__("Post-write playback observation failed")
+        self.partial_capture = partial_capture
+
+
 def content_key(item: dict[str, Any]) -> tuple[Any, ...]:
     return (
         item["identity"],
@@ -117,6 +123,14 @@ def capture_playlist_play_post_write(
         }
         try:
             candidate = capture()
+        except PostWritePlaybackObservationError as exc:
+            attempt_evidence.update(
+                completedElapsedMs=_elapsed_ms(started, clock.monotonic()),
+                queueLength=exc.partial_capture.state["queue"]["length"],
+                currentPosition=exc.partial_capture.state["queue"]["currentPosition"],
+            )
+            evidence["attempts"].append(attempt_evidence)
+            status["failedCount"] += 1
         except Exception:  # noqa: BLE001 - partial or incomplete reads are bounded
             attempt_evidence["completedElapsedMs"] = _elapsed_ms(started, clock.monotonic())
             evidence["attempts"].append(attempt_evidence)
