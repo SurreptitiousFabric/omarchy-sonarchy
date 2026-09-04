@@ -20,6 +20,31 @@ PLAYLIST_PLAY_PHASES = frozenset(
     }
 )
 SAFE_FINGERPRINT_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
+PLAYLIST_PLAY_CAPTURE_PREDICATES = frozenset(
+    {
+        "appendPositionMatches",
+        "appendedSegmentMatches",
+        "currentItemIdentityMatches",
+        "currentMetadataMatches",
+        "currentPositionMatches",
+        "originalPrefixMatches",
+        "playlistMatches",
+        "queueLengthMatches",
+        "sourceIsQueue",
+        "stableRoomMatches",
+        "topologyMatches",
+        "transportIsPlaying",
+    }
+)
+POST_WRITE_CAPTURE_SKIP_REASONS = frozenset(
+    {
+        "firstAttemptAuthoritative",
+        "latestStartLimitExceeded",
+        "maximumAttemptsReached",
+        "notApplicable",
+    }
+)
+MAX_POST_WRITE_CAPTURE_ELAPSED_MS = 120_000
 
 
 class SafeDomainError(Exception):
@@ -87,6 +112,123 @@ class PlaylistTransactionError(SafeDomainError):
         super().__init__("speaker_rejected", message, details=details)
 
 
+def _bounded_elapsed_ms(value: Any) -> int | None:
+    if type(value) is not int or not 0 <= value <= MAX_POST_WRITE_CAPTURE_ELAPSED_MS:
+        return None
+    return value
+
+
+def bounded_post_write_capture_evidence(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    raw_attempts = value.get("attempts")
+    if not isinstance(raw_attempts, list) or not 1 <= len(raw_attempts) <= 2:
+        return None
+    attempts: list[dict[str, Any]] = []
+    for expected_attempt, raw_attempt in enumerate(raw_attempts, 1):
+        if (
+            not isinstance(raw_attempt, dict)
+            or type(raw_attempt.get("attempt")) is not int
+            or raw_attempt["attempt"] != expected_attempt
+        ):
+            return None
+        started = _bounded_elapsed_ms(raw_attempt.get("startedElapsedMs"))
+        completed = _bounded_elapsed_ms(raw_attempt.get("completedElapsedMs"))
+        if started is None or completed is None or completed < started:
+            return None
+        outcome = raw_attempt.get("outcome")
+        if not isinstance(outcome, str) or outcome not in {"completed", "failed"}:
+            return None
+        raw_predicates = raw_attempt.get("failedPredicates")
+        if (
+            not isinstance(raw_predicates, list)
+            or len(raw_predicates) > len(PLAYLIST_PLAY_CAPTURE_PREDICATES)
+            or any(not isinstance(item, str) for item in raw_predicates)
+            or len(set(raw_predicates)) != len(raw_predicates)
+            or any(item not in PLAYLIST_PLAY_CAPTURE_PREDICATES for item in raw_predicates)
+        ):
+            return None
+        attempt: dict[str, Any] = {
+            "attempt": expected_attempt,
+            "startedElapsedMs": started,
+            "completedElapsedMs": completed,
+            "outcome": outcome,
+            "failedPredicates": list(raw_predicates),
+        }
+        queue_length = raw_attempt.get("queueLength")
+        current_position = raw_attempt.get("currentPosition")
+        transport = raw_attempt.get("transport")
+        source = raw_attempt.get("source")
+        if "queueLength" in raw_attempt:
+            if type(queue_length) is not int or not 0 <= queue_length <= 100:
+                return None
+            attempt["queueLength"] = queue_length
+        if "currentPosition" in raw_attempt:
+            if current_position is not None and (
+                type(current_position) is not int or not 1 <= current_position <= 100
+            ):
+                return None
+            attempt["currentPosition"] = current_position
+        if "transport" in raw_attempt:
+            if not isinstance(transport, str) or transport not in {
+                "STOPPED",
+                "PAUSED_PLAYBACK",
+                "PLAYING",
+                "TRANSITIONING",
+                "UNKNOWN",
+            }:
+                return None
+            attempt["transport"] = transport
+        if "source" in raw_attempt:
+            if not isinstance(source, str) or source not in {
+                "QUEUE",
+                "NONE",
+                "UNSUPPORTED",
+                "UNKNOWN",
+            }:
+                return None
+            attempt["source"] = source
+        if (
+            outcome == "completed"
+            and not {
+                "queueLength",
+                "currentPosition",
+                "transport",
+                "source",
+            }
+            <= raw_attempt.keys()
+        ):
+            return None
+        if outcome == "failed" and raw_predicates:
+            return None
+        attempts.append(attempt)
+
+    attempt_count = value.get("attemptCount")
+    if type(attempt_count) is not int or attempt_count != len(attempts):
+        return None
+    if type(value.get("secondAttemptStarted")) is not bool:
+        return None
+    second_started = value["secondAttemptStarted"]
+    evidence: dict[str, Any] = {
+        "attempts": attempts,
+        "attemptCount": attempt_count,
+        "secondAttemptStarted": second_started,
+    }
+    skip_reason = value.get("secondAttemptSkipReason")
+    if not isinstance(skip_reason, str) or skip_reason not in POST_WRITE_CAPTURE_SKIP_REASONS:
+        return None
+    evidence["secondAttemptSkipReason"] = skip_reason
+    if second_started:
+        if len(attempts) != 2 or skip_reason != "notApplicable":
+            return None
+    elif len(attempts) != 1 or skip_reason not in {
+        "firstAttemptAuthoritative",
+        "latestStartLimitExceeded",
+    }:
+        return None
+    return evidence
+
+
 def bounded_playlist_play_failure(value: dict[str, Any]) -> dict[str, Any]:
     append_state = value.get("appendState")
     if append_state not in {"confirmed", "absent", "unknown"}:
@@ -132,6 +274,9 @@ def bounded_playlist_play_failure(value: dict[str, Any]) -> dict[str, Any]:
     source = value.get("observedSource")
     if source in {"QUEUE", "NONE", "UNSUPPORTED", "UNKNOWN"}:
         details["observedSource"] = source
+    capture_evidence = bounded_post_write_capture_evidence(value.get("postWriteCaptureEvidence"))
+    if capture_evidence is not None:
+        details["postWriteCaptureEvidence"] = capture_evidence
     return details
 
 
@@ -149,6 +294,7 @@ def authoritative_playlist_play_result(
     current_item: dict[str, Any],
     append_invocation_returned: bool,
     playback_start_invocation_returned: bool,
+    post_write_capture_evidence: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "ok": True,
@@ -200,6 +346,7 @@ def authoritative_playlist_play_result(
         "appendState": "confirmed",
         "playbackState": "confirmed",
         "playbackStarted": True,
+        "postWriteCaptureEvidence": copy.deepcopy(post_write_capture_evidence),
         "retryCount": 0,
         "substitutionCount": 0,
     }
