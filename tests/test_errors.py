@@ -54,6 +54,17 @@ def _valid_post_write_capture_evidence():
         "attemptCount": 1,
         "secondAttemptStarted": False,
         "secondAttemptSkipReason": "latestStartLimitExceeded",
+        "convergence": {
+            "observations": [],
+            "observationCount": 0,
+            "maximumObservationCount": 20,
+            "intervalMs": 250,
+            "latestObservationStartMs": 0,
+            "playingObserved": False,
+            "completeCaptureAttempted": False,
+            "completeCaptureAuthoritative": False,
+            "finalReason": "convergenceNotNeeded",
+        },
     }
 
 
@@ -75,6 +86,56 @@ def test_post_write_capture_evidence_rejects_adversarial_unbounded_values():
         target = evidence
         for key in path[:-1]:
             target = target[key]
+        target[path[-1]] = unsafe
+
+        assert bounded_post_write_capture_evidence(evidence) is None
+
+
+def test_post_write_capture_evidence_retains_bounded_convergence_summary():
+    evidence = _valid_post_write_capture_evidence()
+    evidence["convergence"] = {
+        "observations": [
+            {
+                "observation": 1,
+                "startedElapsedMs": 250,
+                "completedElapsedMs": 250,
+                "outcome": "completed",
+                "transport": "PLAYING",
+            }
+        ],
+        "observationCount": 1,
+        "maximumObservationCount": 20,
+        "intervalMs": 250,
+        "latestObservationStartMs": 250,
+        "playingObserved": True,
+        "completeCaptureAttempted": True,
+        "completeCaptureAuthoritative": True,
+        "finalReason": "playingObserved",
+    }
+
+    assert bounded_post_write_capture_evidence(evidence)["convergence"] == evidence["convergence"]
+
+
+def test_post_write_capture_evidence_rejects_invalid_convergence_summary():
+    for path, unsafe in (
+        (("convergence", "outcome"), "private"),
+        (("convergence", "pollCount"), 21),
+        (("convergence", "lastObservedElapsedMs"), 5001),
+        (("convergence", "lastTransport"), "private"),
+    ):
+        evidence = _valid_post_write_capture_evidence()
+        evidence["convergence"] = {
+            "observations": [],
+            "observationCount": 0,
+            "maximumObservationCount": 20,
+            "intervalMs": 250,
+            "latestObservationStartMs": 0,
+            "playingObserved": False,
+            "completeCaptureAttempted": False,
+            "completeCaptureAuthoritative": False,
+            "finalReason": "convergenceNotNeeded",
+        }
+        target = evidence["convergence"]
         target[path[-1]] = unsafe
 
         assert bounded_post_write_capture_evidence(evidence) is None

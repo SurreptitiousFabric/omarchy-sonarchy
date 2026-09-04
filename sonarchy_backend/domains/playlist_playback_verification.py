@@ -4,12 +4,28 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from .errors import PlanConflictError
+
 MAX_POST_CAPTURE_ATTEMPTS = 2
 MAX_POST_CAPTURE_ELAPSED_MS = 120_000
 POST_CAPTURE_RETRY_START_WINDOW_SECONDS = 0.25
 POST_PLAYBACK_SECOND_CAPTURE_TARGET_SECONDS, POST_PLAYBACK_SECOND_CAPTURE_LATEST_START_SECONDS = (
     1.0,
     1.25,
+)
+PLAYBACK_CONVERGENCE_DEADLINE_SECONDS = 5.0
+PLAYBACK_CONVERGENCE_POLL_SECONDS = 0.25
+MAX_PLAYBACK_CONVERGENCE_POLLS = 20
+PLAYBACK_CONVERGENCE_FINAL_REASONS = frozenset(
+    {
+        "convergenceNotNeeded",
+        "playingObserved",
+        "observationWindowExhausted",
+        "observationReadFailed",
+        "completeCaptureFailed",
+        "completeCaptureMismatch",
+        "terminalNonPlaying",
+    }
 )
 
 
@@ -67,11 +83,95 @@ def _elapsed_ms(started: float, observed: float) -> int:
     return min(MAX_POST_CAPTURE_ELAPSED_MS, max(0, elapsed))
 
 
+def _convergence_evidence() -> dict[str, Any]:
+    return {
+        "observations": [],
+        "observationCount": 0,
+        "maximumObservationCount": MAX_PLAYBACK_CONVERGENCE_POLLS,
+        "intervalMs": round(PLAYBACK_CONVERGENCE_POLL_SECONDS * 1000),
+        "latestObservationStartMs": 0,
+        "playingObserved": False,
+        "completeCaptureAttempted": False,
+        "completeCaptureAuthoritative": False,
+        "finalReason": "convergenceNotNeeded",
+    }
+
+
+def observe_transport_convergence(
+    read_transport: Callable[[], str],
+    *,
+    started: float,
+    capture_status: dict[str, Any],
+    clock: Any = time,
+) -> str:
+    evidence = _convergence_evidence()
+    deadline = started + PLAYBACK_CONVERGENCE_DEADLINE_SECONDS
+    poll_count = 0
+    outcome = "observationWindowExhausted"
+    while poll_count < MAX_PLAYBACK_CONVERGENCE_POLLS:
+        remaining = deadline - clock.monotonic()
+        if remaining < 0:
+            break
+        target = min(PLAYBACK_CONVERGENCE_POLL_SECONDS, remaining)
+        if target:
+            clock.sleep(target)
+        observation_started = clock.monotonic()
+        observation = {
+            "observation": poll_count + 1,
+            "startedElapsedMs": _elapsed_ms(started, observation_started),
+            "outcome": "failed",
+            "transport": "UNKNOWN",
+        }
+        try:
+            transport = read_transport()
+        except PlanConflictError:
+            observation["completedElapsedMs"] = _elapsed_ms(started, clock.monotonic())
+            evidence["observations"].append(observation)
+            poll_count += 1
+            outcome = "observationReadFailed"
+            break
+        observation.update(
+            {
+                "completedElapsedMs": _elapsed_ms(started, clock.monotonic()),
+                "outcome": "completed",
+                "transport": transport,
+            }
+        )
+        evidence["observations"].append(observation)
+        poll_count += 1
+        if transport == "PLAYING":
+            evidence["playingObserved"] = True
+            outcome = "playingObserved"
+            break
+        if transport in {"STOPPED", "PAUSED_PLAYBACK", "UNKNOWN"}:
+            outcome = "terminalNonPlaying"
+            break
+    evidence.update(
+        observationCount=poll_count,
+        latestObservationStartMs=(
+            evidence["observations"][-1]["startedElapsedMs"] if evidence["observations"] else 0
+        ),
+        finalReason=outcome,
+    )
+    capture_status["postWriteCaptureEvidence"]["convergence"] = evidence
+    if outcome == "playingObserved":
+        evidence["completeCaptureAttempted"] = True
+        return "ready"
+    if outcome != "terminalNonPlaying":
+        capture_status["verificationOutcome"] = "inconclusive"
+    return {
+        "observationReadFailed": "convergenceReadFailure",
+        "terminalNonPlaying": "convergenceTerminalState",
+        "observationWindowExhausted": "convergenceDeadlineExceeded",
+    }.get(outcome, "convergenceDeadlineExceeded")
+
+
 def capture_playlist_play_post_write(
     capture: Callable[[], Any],
     *,
     acceptable: Callable[[Any], bool] | None = None,
     failed_predicates: Callable[[Any], tuple[str, ...]] | None = None,
+    prepare_retry: Callable[[Any, float, Any], str | None] | None = None,
     capture_status: dict[str, Any] | None = None,
     playback_verification: bool = False,
     clock: Any = time,
@@ -81,6 +181,7 @@ def capture_playlist_play_post_write(
         float("inf") if playback_verification else started + POST_CAPTURE_RETRY_START_WINDOW_SECONDS
     )
     latest: Any | None = None
+    retry_ready = False
     status = capture_status if capture_status is not None else {}
     evidence: dict[str, Any] = {
         "attempts": [],
@@ -88,6 +189,8 @@ def capture_playlist_play_post_write(
         "secondAttemptStarted": False,
         "secondAttemptSkipReason": "notApplicable",
     }
+    if playback_verification:
+        evidence["convergence"] = _convergence_evidence()
     status.update(
         attemptCount=0,
         completedCount=0,
@@ -102,7 +205,7 @@ def capture_playlist_play_post_write(
         if attempt > 0 and not playback_verification and clock.monotonic() >= deadline:
             skip_second_attempt("latestStartLimitExceeded")
             break
-        if attempt > 0 and playback_verification:
+        if attempt > 0 and playback_verification and not retry_ready:
             elapsed = clock.monotonic() - started
             if elapsed < POST_PLAYBACK_SECOND_CAPTURE_TARGET_SECONDS:
                 clock.sleep(POST_PLAYBACK_SECOND_CAPTURE_TARGET_SECONDS - elapsed)
@@ -151,9 +254,17 @@ def capture_playlist_play_post_write(
             latest = candidate
             evidence["attempts"].append(attempt_evidence)
             if acceptable is None or acceptable(candidate):
+                if playback_verification:
+                    evidence["convergence"]["completeCaptureAuthoritative"] = True
                 if attempt == 0:
                     skip_second_attempt("firstAttemptAuthoritative")
                 return candidate
+            if attempt == 0 and prepare_retry is not None:
+                retry_decision = prepare_retry(candidate, started, clock)
+                if retry_decision is not None and retry_decision != "ready":
+                    skip_second_attempt(retry_decision)
+                    break
+                retry_ready = retry_decision == "ready"
         if clock.monotonic() >= deadline:
             if attempt == 0:
                 skip_second_attempt("latestStartLimitExceeded")

@@ -10,6 +10,7 @@ from typing import Any
 
 from sonarchy_mcp_contract import MCP_OPERATION_PLAY_EXECUTE
 
+from . import playlist_playback_verification as verification
 from .common import clean, safe_index
 from .errors import (
     PlanConflictError,
@@ -17,28 +18,6 @@ from .errors import (
     authoritative_playlist_play_result,
 )
 from .media import item_attr, validate_playlist_id
-from .playlist_playback_verification import (
-    PostWritePlaybackObservationError,
-    capture_playlist_play_post_write,
-)
-from .playlist_playback_verification import (
-    append_state_from_queue_evidence as _append_state_from_queue_evidence,
-)
-from .playlist_playback_verification import (
-    append_verification_failures as _append_verification_failures,
-)
-from .playlist_playback_verification import (
-    approved_verification_failures as _post_approved_verification_failures,
-)
-from .playlist_playback_verification import (
-    content_key as _content_key,
-)
-from .playlist_playback_verification import (
-    playback_verification_failures as _post_playback_verification_failures,
-)
-from .playlist_playback_verification import (
-    queue_verification_failures as _post_queue_verification_failures,
-)
 from .playlist_rules import validate_playlist_title
 from .playlists import PlaylistPlayStepError, append_and_start_playlist
 
@@ -164,7 +143,7 @@ def _ordered_items(items: list[Any]) -> tuple[dict[str, Any], ...]:
 
 
 def _content_fingerprint(items: tuple[dict[str, Any], ...]) -> str:
-    return _fingerprint([_content_key(item) for item in items])
+    return _fingerprint([verification.content_key(item) for item in items])
 
 
 def _complete_result(result: Any, maximum: int, label: str) -> list[Any]:
@@ -301,7 +280,7 @@ def _source(coordinator: Any) -> str:
     return "UNSUPPORTED"
 
 
-def _dynamic_playback_state(coordinator: Any) -> tuple[str, str]:
+def _transport_state(coordinator: Any) -> str:
     try:
         transport_info = coordinator.get_current_transport_info()
     except Exception as exc:
@@ -316,7 +295,11 @@ def _dynamic_playback_state(coordinator: Any) -> tuple[str, str]:
         "TRANSITIONING",
     }:
         transport = "UNKNOWN"
-    return transport, _source(coordinator)
+    return transport
+
+
+def _dynamic_playback_state(coordinator: Any) -> tuple[str, str]:
+    return _transport_state(coordinator), _source(coordinator)
 
 
 def _room_state(
@@ -438,10 +421,41 @@ def capture_playlist_play_target(
         try:
             transport, source = _dynamic_playback_state(coordinator)
         except PlanConflictError as exc:
-            raise PostWritePlaybackObservationError(capture) from exc
+            raise verification.PostWritePlaybackObservationError(capture) from exc
         capture.state["room"]["transport"] = transport
         capture.state["room"]["source"] = source
     return capture
+
+
+def _prepare_playback_retry(
+    candidate: PlaylistPlayCapture,
+    started: float,
+    clock: Any,
+    *,
+    before: PlaylistPlayCapture,
+    expected_state: dict[str, Any],
+    expected_position: int,
+    position: int,
+    capture_status: dict[str, Any],
+) -> str | None:
+    failures = verification.approved_verification_failures(
+        before,
+        candidate,
+        expected_state,
+        expected_position,
+        position,
+    )
+    if (
+        failures != ("transportIsPlaying",)
+        or candidate.state["room"]["transport"] != "TRANSITIONING"
+    ):
+        return None
+    return verification.observe_transport_convergence(
+        lambda: _transport_state(candidate.coordinator),
+        started=started,
+        capture_status=capture_status,
+        clock=clock,
+    )
 
 
 def inspect_playlist_play_target(speaker: Any, playlist_id: str) -> dict[str, Any]:
@@ -466,6 +480,7 @@ def _failure_diagnostics(
     playback_start_count: int,
     post: PlaylistPlayCapture | None,
     post_write_capture_evidence: dict[str, Any] | None = None,
+    verification_outcome: str | None = None,
 ) -> PlaylistPlayTransactionError:
     diagnostics: dict[str, Any] = {
         "appendState": append_state,
@@ -481,6 +496,8 @@ def _failure_diagnostics(
     }
     if post_write_capture_evidence is not None:
         diagnostics["postWriteCaptureEvidence"] = copy.deepcopy(post_write_capture_evidence)
+    if verification_outcome is not None:
+        diagnostics["verificationOutcome"] = verification_outcome
     if playback_state != "unknown":
         diagnostics["playbackStarted"] = playback_state == "confirmed"
     if post is not None:
@@ -500,10 +517,11 @@ def _post_capture(
     *,
     acceptable: Callable[[PlaylistPlayCapture], bool] | None = None,
     failed_predicates: Callable[[PlaylistPlayCapture], tuple[str, ...]] | None = None,
+    prepare_retry: Callable[[PlaylistPlayCapture, float, Any], str | None] | None = None,
     capture_status: dict[str, Any] | None = None,
     playback_verification: bool = False,
 ) -> PlaylistPlayCapture | None:
-    return capture_playlist_play_post_write(
+    return verification.capture_playlist_play_post_write(
         lambda: capture_playlist_play_target(
             speaker,
             playlist_id,
@@ -511,49 +529,10 @@ def _post_capture(
         ),
         acceptable=acceptable,
         failed_predicates=failed_predicates,
+        prepare_retry=prepare_retry,
         capture_status=capture_status,
         playback_verification=playback_verification,
         clock=time,
-    )
-
-
-def _post_state_matches_queue(
-    before: PlaylistPlayCapture,
-    post: PlaylistPlayCapture,
-    expected_state: dict[str, Any],
-    expected_position: int,
-    position: int,
-) -> bool:
-    return not _post_queue_verification_failures(
-        before,
-        post,
-        expected_state,
-        expected_position,
-        position,
-    )
-
-
-def _post_state_matches_playback(
-    before: PlaylistPlayCapture,
-    post: PlaylistPlayCapture,
-    expected_position: int,
-) -> bool:
-    return not _post_playback_verification_failures(before, post, expected_position)
-
-
-def _post_state_matches_approved(
-    before: PlaylistPlayCapture,
-    post: PlaylistPlayCapture,
-    expected_state: dict[str, Any],
-    expected_position: int,
-    position: int,
-) -> bool:
-    return not _post_approved_verification_failures(
-        before,
-        post,
-        expected_state,
-        expected_position,
-        position,
     )
 
 
@@ -627,6 +606,39 @@ def execute_preflighted_playlist_play(
     append_invocation_returned = True
     playback_start_invocation_returned = True
     lost_playback_error: PlaylistPlayStepError | None = None
+
+    def reject(
+        *,
+        phase: str,
+        post: PlaylistPlayCapture | None,
+        append_state: str = "confirmed",
+        playback_state: str = "unknown",
+        playback_start_returned: bool | None = None,
+        evidence: dict[str, Any] | None = None,
+        verification_outcome: str | None = None,
+        cause: BaseException | None = None,
+    ) -> None:
+        error = _failure_diagnostics(
+            phase=phase,
+            expected_position=expected_position,
+            append_state=append_state,
+            playback_state=playback_state,
+            append_invocation_returned=append_invocation_returned,
+            playback_start_invocation_returned=(
+                playback_start_invocation_returned
+                if playback_start_returned is None
+                else playback_start_returned
+            ),
+            append_count=append_count,
+            playback_start_count=playback_start_count,
+            post=post,
+            post_write_capture_evidence=evidence,
+            verification_outcome=verification_outcome,
+        )
+        if cause is None:
+            raise error
+        raise error from cause
+
     try:
         position = append_and_start_playlist(
             before.coordinator,
@@ -643,33 +655,30 @@ def execute_preflighted_playlist_play(
                 speaker,
                 playlist_id,
                 acceptable=lambda candidate: (
-                    _append_state_from_queue_evidence(before, candidate, capture_status)
+                    verification.append_state_from_queue_evidence(before, candidate, capture_status)
                     == "confirmed"
                 ),
-                failed_predicates=lambda candidate: _append_verification_failures(
+                failed_predicates=lambda candidate: verification.append_verification_failures(
                     before, candidate
                 ),
                 capture_status=capture_status,
             )
             append_state = exc.append_state
             if append_state == "unknown":
-                append_state = _append_state_from_queue_evidence(
+                append_state = verification.append_state_from_queue_evidence(
                     before,
                     post,
                     capture_status,
                 )
-            raise _failure_diagnostics(
+            reject(
                 phase=exc.phase,
-                expected_position=expected_position,
                 append_state=append_state,
                 playback_state="absent",
-                append_invocation_returned=append_invocation_returned,
-                playback_start_invocation_returned=False,
-                append_count=append_count,
-                playback_start_count=playback_start_count,
                 post=post,
-                post_write_capture_evidence=capture_status["postWriteCaptureEvidence"],
-            ) from exc
+                playback_start_returned=False,
+                evidence=capture_status["postWriteCaptureEvidence"],
+                cause=exc,
+            )
 
         playback_start_count = 1
         playback_start_invocation_returned = False
@@ -680,66 +689,71 @@ def execute_preflighted_playlist_play(
     post = _post_capture(
         speaker,
         playlist_id,
-        acceptable=lambda candidate: _post_state_matches_approved(
-            before, candidate, expected_state, expected_position, position
+        acceptable=lambda candidate: (
+            not verification.approved_verification_failures(
+                before, candidate, expected_state, expected_position, position
+            )
         ),
-        failed_predicates=lambda candidate: _post_approved_verification_failures(
+        failed_predicates=lambda candidate: verification.approved_verification_failures(
             before,
             candidate,
             expected_state,
             expected_position,
             position,
         ),
+        prepare_retry=lambda candidate, started, clock: _prepare_playback_retry(
+            candidate,
+            started,
+            clock,
+            before=before,
+            expected_state=expected_state,
+            expected_position=expected_position,
+            position=position,
+            capture_status=capture_status,
+        ),
         capture_status=capture_status,
         playback_verification=True,
     )
+
+    def mark_complete_capture_failure(reason: str) -> str | None:
+        convergence = capture_status.get("postWriteCaptureEvidence", {}).get("convergence", {})
+        if convergence.get("playingObserved") is not True:
+            return None
+        convergence["completeCaptureAuthoritative"] = False
+        convergence["finalReason"] = reason
+        capture_status["verificationOutcome"] = "inconclusive"
+        return "inconclusive"
+
     if post is None:
-        raise _failure_diagnostics(
+        reject(
             phase=lost_playback_error.phase if lost_playback_error else "verify_queue",
-            expected_position=expected_position,
-            append_state="confirmed",
-            playback_state="unknown",
-            append_invocation_returned=append_invocation_returned,
-            playback_start_invocation_returned=playback_start_invocation_returned,
-            append_count=append_count,
-            playback_start_count=playback_start_count,
             post=None,
-            post_write_capture_evidence=capture_status["postWriteCaptureEvidence"],
+            evidence=capture_status["postWriteCaptureEvidence"],
+            verification_outcome=mark_complete_capture_failure("completeCaptureFailed")
+            or capture_status.get("verificationOutcome"),
         )
-    queue_matches = _post_state_matches_queue(
-        before,
-        post,
-        expected_state,
-        expected_position,
-        position,
+    queue_matches = not verification.queue_verification_failures(
+        before, post, expected_state, expected_position, position
     )
     if not queue_matches:
-        raise _failure_diagnostics(
+        reject(
             phase=lost_playback_error.phase if lost_playback_error else "verify_queue",
-            expected_position=expected_position,
-            append_state="confirmed",
-            playback_state="unknown",
-            append_invocation_returned=append_invocation_returned,
-            playback_start_invocation_returned=playback_start_invocation_returned,
-            append_count=append_count,
-            playback_start_count=playback_start_count,
             post=post,
-            post_write_capture_evidence=capture_status["postWriteCaptureEvidence"],
+            evidence=capture_status["postWriteCaptureEvidence"],
+            verification_outcome=mark_complete_capture_failure("completeCaptureMismatch")
+            or capture_status.get("verificationOutcome"),
         )
 
-    playback_matches = _post_state_matches_playback(before, post, expected_position)
+    playback_matches = not verification.playback_verification_failures(
+        before, post, expected_position
+    )
     if not playback_matches:
-        raise _failure_diagnostics(
+        reject(
             phase=lost_playback_error.phase if lost_playback_error else "verify_playback",
-            expected_position=expected_position,
-            append_state="confirmed",
-            playback_state="unknown",
-            append_invocation_returned=append_invocation_returned,
-            playback_start_invocation_returned=playback_start_invocation_returned,
-            append_count=append_count,
-            playback_start_count=playback_start_count,
             post=post,
-            post_write_capture_evidence=capture_status["postWriteCaptureEvidence"],
+            evidence=capture_status["postWriteCaptureEvidence"],
+            verification_outcome=mark_complete_capture_failure("completeCaptureMismatch")
+            or capture_status.get("verificationOutcome"),
         )
 
     approved_playlist = expected_state["playlist"]
