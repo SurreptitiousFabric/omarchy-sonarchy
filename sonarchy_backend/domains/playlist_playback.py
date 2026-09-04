@@ -29,6 +29,10 @@ MAX_ITEM_TEXT_BYTES = 512
 MAX_RESOURCE_TEXT_BYTES = 2048
 MAX_POST_CAPTURE_ATTEMPTS = 2
 POST_CAPTURE_RETRY_START_WINDOW_SECONDS = 0.25
+POST_PLAYBACK_SECOND_CAPTURE_TARGET_SECONDS, POST_PLAYBACK_SECOND_CAPTURE_LATEST_START_SECONDS = (
+    1.0,
+    1.25,
+)
 
 PLAYLIST_PLAY_SIDE_EFFECTS = (
     "Keep every existing room queue entry",
@@ -497,14 +501,25 @@ def _post_capture(
     *,
     acceptable: Callable[[PlaylistPlayCapture], bool] | None = None,
     capture_status: dict[str, int] | None = None,
+    playback_verification: bool = False,
 ) -> PlaylistPlayCapture | None:
-    deadline = time.monotonic() + POST_CAPTURE_RETRY_START_WINDOW_SECONDS
+    started = time.monotonic()
+    deadline = (
+        float("inf") if playback_verification else started + POST_CAPTURE_RETRY_START_WINDOW_SECONDS
+    )
     latest: PlaylistPlayCapture | None = None
     status = capture_status if capture_status is not None else {}
     status.update(attemptCount=0, completedCount=0, failedCount=0)
     for attempt in range(MAX_POST_CAPTURE_ATTEMPTS):
-        if attempt > 0 and time.monotonic() >= deadline:
+        if attempt > 0 and not playback_verification and time.monotonic() >= deadline:
             break
+        if attempt > 0 and playback_verification:
+            elapsed = time.monotonic() - started
+            if elapsed < POST_PLAYBACK_SECOND_CAPTURE_TARGET_SECONDS:
+                time.sleep(POST_PLAYBACK_SECOND_CAPTURE_TARGET_SECONDS - elapsed)
+                elapsed = time.monotonic() - started
+            if elapsed > POST_PLAYBACK_SECOND_CAPTURE_LATEST_START_SECONDS:
+                break
         status["attemptCount"] += 1
         try:
             candidate = capture_playlist_play_target(
@@ -516,12 +531,10 @@ def _post_capture(
             latest = candidate
             if acceptable is None or acceptable(candidate):
                 return candidate
-            if time.monotonic() >= deadline:
-                break
         except Exception:  # noqa: BLE001 - partial or incomplete reads are bounded
             status["failedCount"] += 1
-            if time.monotonic() >= deadline:
-                break
+        if time.monotonic() >= deadline:
+            break
     return latest
 
 
@@ -590,13 +603,10 @@ def _post_state_matches_approved(
     expected_position: int,
     position: int,
 ) -> bool:
-    return _post_state_matches_queue(
-        before,
-        post,
-        expected_state,
-        expected_position,
-        position,
-    ) and _post_state_matches_playback(before, post, expected_position)
+    queue_matches = _post_state_matches_queue(
+        before, post, expected_state, expected_position, position
+    )
+    return queue_matches and _post_state_matches_playback(before, post, expected_position)
 
 
 def execute_preflighted_playlist_play(
@@ -717,16 +727,10 @@ def execute_preflighted_playlist_play(
     post = _post_capture(
         speaker,
         playlist_id,
-        acceptable=lambda candidate: (
-            _post_state_matches_queue(
-                before,
-                candidate,
-                expected_state,
-                expected_position,
-                position,
-            )
-            and _post_state_matches_playback(before, candidate, expected_position)
+        acceptable=lambda candidate: _post_state_matches_approved(
+            before, candidate, expected_state, expected_position, position
         ),
+        playback_verification=True,
     )
     if post is None:
         raise _failure_diagnostics(

@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -92,6 +93,7 @@ class FakeSonosSpeaker:
         self.post_capture_stale_remaining = 0
         self.play_failure_after_mutation = False
         self.playback_verification_failure = False
+        self.playback_transitions_until = None
         self.avTransport = _Transport(self)
         self.music_library = _MusicLibrary(self)
 
@@ -99,6 +101,12 @@ class FakeSonosSpeaker:
         if self.play_calls and self.post_capture_stale_remaining:
             self.post_capture_stale_remaining -= 1
             return {"current_transport_state": "STOPPED"}
+        if (
+            self.play_calls
+            and self.playback_transitions_until is not None
+            and time.monotonic() < self.playback_transitions_until
+        ):
+            return {"current_transport_state": "TRANSITIONING"}
         return {"current_transport_state": self.transport}
 
     def get_current_track_info(self):
@@ -148,6 +156,8 @@ class FakeSonosSpeaker:
         self.play_calls.append(index)
         self.current_position = index + 1
         self.transport = "PAUSED_PLAYBACK" if self.playback_verification_failure else "PLAYING"
+        if self.playback_transitions_until is not None:
+            self.playback_transitions_until = time.monotonic() + 1.0
         if self.play_failure_after_mutation:
             raise RuntimeError("lost playback response after mutation")
 
@@ -385,6 +395,52 @@ def test_mcp_stdio_socket_protocol_playback_contract(tmp_path):
     for private_value in ("x-private-provider:", "x-private-protocol", "192.0.2.1"):
         assert private_value not in public
         assert private_value not in client.stderr
+
+
+def test_mcp_full_path_waits_for_transitioning_playback_to_converge(tmp_path, monkeypatch):
+    now = [0.0]
+    sleeps = []
+
+    def monotonic():
+        return now[0]
+
+    def sleep(duration):
+        sleeps.append(duration)
+        now[0] += duration
+
+    monkeypatch.setattr(time, "monotonic", monotonic)
+    monkeypatch.setattr(time, "sleep", sleep)
+
+    with playback_contract(tmp_path, {"read", "playlist-play"}) as harness:
+        client, _protocol, speaker, _runtime_output = harness
+        speaker.playback_transitions_until = 0.0
+        _initialize(client)
+        handle = _preflight(client)
+
+        response = client.request(
+            4,
+            "tools/call",
+            {
+                "name": "sonos_playlist_play",
+                "arguments": {"planHandle": handle, "approved": True},
+            },
+        )
+
+        result = response["result"]
+        value = result["structuredContent"]
+        assert result["isError"] is False
+        assert value["verification"]["authoritative"] is True
+        assert value["appendState"] == "confirmed"
+        assert value["playbackState"] == "confirmed"
+        assert value["queue"]["currentPosition"] == 2
+        assert value["room"]["transport"] == "PLAYING"
+        assert speaker.append_calls == ["SQ:9"]
+        assert speaker.play_calls == [1]
+        assert value["mutations"]["appendInvocationCount"] == 1
+        assert value["mutations"]["playbackStartInvocationCount"] == 1
+        assert value["retryCount"] == 0
+        assert sleeps == [1.0]
+        assert client.request(5, "ping", {})["result"] == {}
 
 
 def test_mcp_full_path_recaptures_after_transient_post_write_read_failure(tmp_path):
