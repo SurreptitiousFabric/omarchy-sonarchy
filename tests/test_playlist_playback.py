@@ -759,6 +759,89 @@ def test_post_capture_does_not_start_another_read_after_budget_expires(monkeypat
     assert len(calls) == 1
 
 
+def test_playback_post_capture_returns_immediately_when_first_capture_is_authoritative(
+    monkeypatch,
+):
+    now = [0.0]
+    capture = object()
+    capture_calls = []
+    sleeps = []
+
+    monkeypatch.setattr(playlist_playback.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(playlist_playback.time, "sleep", sleeps.append)
+    monkeypatch.setattr(
+        playlist_playback,
+        "capture_playlist_play_target",
+        lambda *args, **kwargs: capture_calls.append((args, kwargs)) or capture,
+    )
+
+    result = playlist_playback._post_capture(
+        object(),
+        "SQ:9",
+        acceptable=lambda candidate: candidate is capture,
+        playback_verification=True,
+    )
+
+    assert result is capture
+    assert len(capture_calls) == 1
+    assert sleeps == []
+
+
+def test_playback_post_capture_starts_second_capture_immediately_after_target(monkeypatch):
+    now = [0.0]
+    captures = [object(), object()]
+    capture_calls = []
+    sleeps = []
+
+    def capture(*args, **kwargs):
+        capture_calls.append((args, kwargs))
+        if len(capture_calls) == 1:
+            now[0] = 1.1
+        return captures[len(capture_calls) - 1]
+
+    monkeypatch.setattr(playlist_playback.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(playlist_playback.time, "sleep", sleeps.append)
+    monkeypatch.setattr(playlist_playback, "capture_playlist_play_target", capture)
+
+    result = playlist_playback._post_capture(
+        object(),
+        "SQ:9",
+        acceptable=lambda candidate: False,
+        playback_verification=True,
+    )
+
+    assert result is captures[1]
+    assert len(capture_calls) == 2
+    assert sleeps == []
+
+
+def test_playback_post_capture_does_not_start_after_latest_start_limit(monkeypatch):
+    now = [0.0]
+    capture = object()
+    capture_calls = []
+    sleeps = []
+
+    def capture_target(*args, **kwargs):
+        capture_calls.append((args, kwargs))
+        now[0] = 1.3
+        return capture
+
+    monkeypatch.setattr(playlist_playback.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(playlist_playback.time, "sleep", sleeps.append)
+    monkeypatch.setattr(playlist_playback, "capture_playlist_play_target", capture_target)
+
+    result = playlist_playback._post_capture(
+        object(),
+        "SQ:9",
+        acceptable=lambda candidate: False,
+        playback_verification=True,
+    )
+
+    assert result is capture
+    assert len(capture_calls) == 1
+    assert sleeps == []
+
+
 def test_post_capture_does_not_start_second_after_blocking_first_exceeds_window(monkeypatch):
     started = Event()
     release = Event()
