@@ -223,6 +223,22 @@ Automated tests use fake speakers/controllers only. Physical acceptance remains
 pending and must use one retained commissioning playlist in one quiet
 standalone room under a separate owner-approved prompt.
 
+Physical retest on 2026-09-05, installed commit `b94a1c7`: the owner authorized
+one append-and-play of retained commissioning playlist `SQ:53` in the standalone
+Master Bedroom. The room was stopped, unmuted, at volume 8, with one existing
+`Just Like Heaven` queue item. Fresh preflight matched the reviewed fingerprint.
+Exactly one append and one playback-start invocation returned; queue length two
+and current position two were confirmed. Playback verification nevertheless
+reported `speaker_rejected` in `verify_playback`: both observations reported
+`TRANSITIONING`, completing at 157 ms and 1144 ms (second start at 1000 ms).
+The only failed predicate was `transportIsPlaying`. A subsequent read reported
+`PLAYING` at volume 8; a separate queue read confirmed both items with the second
+current. No write retry or cleanup was performed. The running backend started
+after the installed verification files were updated. This reproduces a false
+negative with the timing fixes installed; exact-playback acceptance remains
+open. These are device-reported observations, not a claim of audible acceptance
+or a measurement of the precise time playback began.
+
 ## Required real-device acceptance
 
 - [ ] Complete a keyboard-only tour of every page and every visible control,

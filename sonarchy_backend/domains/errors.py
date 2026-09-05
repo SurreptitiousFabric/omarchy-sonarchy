@@ -42,6 +42,26 @@ POST_WRITE_CAPTURE_SKIP_REASONS = frozenset(
         "latestStartLimitExceeded",
         "maximumAttemptsReached",
         "notApplicable",
+        "convergenceDeadlineExceeded",
+        "convergenceReadFailure",
+        "convergenceTerminalState",
+    }
+)
+PLAYBACK_CONVERGENCE_OUTCOMES = frozenset(
+    {"playingObserved", "observationReadFailed", "observationWindowExhausted", "terminalNonPlaying"}
+)
+PLAYBACK_CONVERGENCE_TRANSPORTS = frozenset(
+    {"STOPPED", "PAUSED_PLAYBACK", "PLAYING", "TRANSITIONING", "UNKNOWN"}
+)
+PLAYBACK_CONVERGENCE_FINAL_REASONS = frozenset(
+    {
+        "convergenceNotNeeded",
+        "playingObserved",
+        "observationWindowExhausted",
+        "observationReadFailed",
+        "completeCaptureFailed",
+        "completeCaptureMismatch",
+        "terminalNonPlaying",
     }
 )
 MAX_POST_WRITE_CAPTURE_ELAPSED_MS = 120_000
@@ -224,8 +244,92 @@ def bounded_post_write_capture_evidence(value: Any) -> dict[str, Any] | None:
     elif len(attempts) != 1 or skip_reason not in {
         "firstAttemptAuthoritative",
         "latestStartLimitExceeded",
+        "convergenceDeadlineExceeded",
+        "convergenceReadFailure",
+        "convergenceTerminalState",
     }:
         return None
+    raw_convergence = value.get("convergence")
+    if raw_convergence is None:
+        return evidence
+    if not isinstance(raw_convergence, dict):
+        return None
+    observations = raw_convergence.get("observations")
+    if not isinstance(observations, list) or len(observations) > 20:
+        return None
+    bounded_observations: list[dict[str, Any]] = []
+    for expected_observation, raw_observation in enumerate(observations, 1):
+        if not isinstance(raw_observation, dict) or set(raw_observation) != {
+            "observation",
+            "startedElapsedMs",
+            "completedElapsedMs",
+            "outcome",
+            "transport",
+        }:
+            return None
+        if raw_observation.get("observation") != expected_observation:
+            return None
+        started = _bounded_elapsed_ms(raw_observation.get("startedElapsedMs"))
+        completed = _bounded_elapsed_ms(raw_observation.get("completedElapsedMs"))
+        if started is None or completed is None or completed < started or started > 5_000:
+            return None
+        outcome = raw_observation.get("outcome")
+        transport = raw_observation.get("transport")
+        if (
+            outcome not in {"completed", "failed"}
+            or transport not in PLAYBACK_CONVERGENCE_TRANSPORTS
+        ):
+            return None
+        bounded_observations.append(
+            {
+                "observation": expected_observation,
+                "startedElapsedMs": started,
+                "completedElapsedMs": completed,
+                "outcome": outcome,
+                "transport": transport,
+            }
+        )
+    observation_count = raw_convergence.get("observationCount")
+    maximum = raw_convergence.get("maximumObservationCount")
+    interval = raw_convergence.get("intervalMs")
+    latest_start = _bounded_elapsed_ms(raw_convergence.get("latestObservationStartMs"))
+    if (
+        set(raw_convergence)
+        != {
+            "observations",
+            "observationCount",
+            "maximumObservationCount",
+            "intervalMs",
+            "latestObservationStartMs",
+            "playingObserved",
+            "completeCaptureAttempted",
+            "completeCaptureAuthoritative",
+            "finalReason",
+        }
+        or type(observation_count) is not int
+        or observation_count != len(bounded_observations)
+        or type(maximum) is not int
+        or maximum != 20
+        or type(interval) is not int
+        or interval != 250
+        or latest_start is None
+        or raw_convergence.get("playingObserved") not in {True, False}
+        or raw_convergence.get("completeCaptureAttempted") not in {True, False}
+        or raw_convergence.get("completeCaptureAuthoritative") not in {True, False}
+        or raw_convergence.get("finalReason") not in PLAYBACK_CONVERGENCE_FINAL_REASONS
+    ):
+        return None
+    evidence["convergence"] = {
+        "observations": bounded_observations,
+        "observationCount": observation_count,
+        "maximumObservationCount": maximum,
+        "intervalMs": interval,
+        "latestObservationStartMs": latest_start,
+        "playingObserved": raw_convergence["playingObserved"],
+        "completeCaptureAttempted": raw_convergence["completeCaptureAttempted"],
+        "completeCaptureAuthoritative": raw_convergence["completeCaptureAuthoritative"],
+        "finalReason": raw_convergence["finalReason"],
+    }
     return evidence
 
 
@@ -250,6 +354,9 @@ def bounded_playlist_play_failure(value: dict[str, Any]) -> dict[str, Any]:
         "queueRollbackAttempted": value.get("queueRollbackAttempted") is True,
         "succeeded": value.get("succeeded") is True,
     }
+    verification_outcome = value.get("verificationOutcome")
+    if verification_outcome in {"inconclusive"}:
+        details["verificationOutcome"] = verification_outcome
     if playback_state != "unknown":
         details["playbackStarted"] = playback_state == "confirmed"
     if append_state != "unknown":
@@ -359,6 +466,13 @@ class PlaylistPlayTransactionError(SafeDomainError):
         if bounded_phase == "preflight_revalidation":
             code = "conflict"
             message = "The reviewed room, playlist, or queue state changed before playback"
+        elif details.get("verificationOutcome") == "inconclusive":
+            code = "verification_inconclusive"
+            message = (
+                "Playback start was accepted, but bounded post-write verification did not "
+                "establish authoritative playback; playback may still be starting. "
+                "Do not repeat the mutation."
+            )
         else:
             code = "speaker_rejected"
             message = (

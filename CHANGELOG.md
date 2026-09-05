@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Allow exact-playlist playback transport to settle through at most 20 read-only
+  observations on fixed 250 ms slots within a five-second latest-start window.
+  Skip missed slots and reject late wakeups; `PLAYING` triggers fresh complete
+  verification. Append and playback remain single-execution, and an exhausted
+  convergence window reports non-retryable `verification_inconclusive`.
 - Added a single-authority, Quickshell-owned local MCP bridge over an owner-only
   Unix socket, with read-only room/content tools and independently permissioned
   exact Apple-track playlist creation and exact native Sonos Playlist playback.

@@ -144,6 +144,20 @@ verification fails, the appended items may remain. Sonarchy reports that
 partial state and does not clear, reconstruct, remove, or roll back queue items;
 general rollback remains deferred to issue #19.
 
+After the single playback mutation, post-write verification keeps `PLAYING` as
+mandatory proof of success. If transport is initially `TRANSITIONING`, it may
+observe transport only on a fixed 250 ms cadence, for at most 20 observations;
+the latest new observation may start at 5,000 ms. That boundary is not a hard
+end-to-end timeout: an already-started synchronous SoCo read may finish later.
+Slots are measured from the start of post-write verification. Slots missed
+during slow reads are skipped; wakeups after the deadline start no further read.
+Observing `PLAYING` only triggers one fresh complete capture of the exact room,
+playlist, queue, position, item, source, volume, mute, and topology. A bounded
+verification failure is reported as non-retryable `verification_inconclusive`
+because mutation may already have occurred. Actual speaker rejection and plan
+expiry retain their separate classifications. No mutation retry or rollback
+occurs.
+
 ## Diagnostics and removal
 
 Inspect metadata without connecting or reading private traffic:
