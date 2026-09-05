@@ -149,6 +149,8 @@ mandatory proof of success. If transport is initially `TRANSITIONING`, it may
 observe transport only on a fixed 250 ms cadence, for at most 20 observations;
 the latest new observation may start at 5,000 ms. That boundary is not a hard
 end-to-end timeout: an already-started synchronous SoCo read may finish later.
+Slots are measured from the start of post-write verification. Slots missed
+during slow reads are skipped; wakeups after the deadline start no further read.
 Observing `PLAYING` only triggers one fresh complete capture of the exact room,
 playlist, queue, position, item, source, volume, mute, and topology. A bounded
 verification failure is reported as non-retryable `verification_inconclusive`

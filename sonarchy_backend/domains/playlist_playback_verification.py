@@ -108,14 +108,20 @@ def observe_transport_convergence(
     deadline = started + PLAYBACK_CONVERGENCE_DEADLINE_SECONDS
     poll_count = 0
     outcome = "observationWindowExhausted"
-    while poll_count < MAX_PLAYBACK_CONVERGENCE_POLLS:
-        remaining = deadline - clock.monotonic()
-        if remaining < 0:
+    for slot in range(1, MAX_PLAYBACK_CONVERGENCE_POLLS + 1):
+        now = clock.monotonic()
+        if now > deadline:
             break
-        target = min(PLAYBACK_CONVERGENCE_POLL_SECONDS, remaining)
-        if target:
-            clock.sleep(target)
+        target = started + slot * PLAYBACK_CONVERGENCE_POLL_SECONDS
+        # Skip slots missed during a slow read instead of issuing catch-up reads.
+        if target < now:
+            continue
+        if target > now:
+            clock.sleep(target - now)
         observation_started = clock.monotonic()
+        # A scheduler wakeup can be late even when the requested sleep was bounded.
+        if observation_started > deadline:
+            break
         observation = {
             "observation": poll_count + 1,
             "startedElapsedMs": _elapsed_ms(started, observation_started),

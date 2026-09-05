@@ -519,7 +519,11 @@ def test_mcp_full_path_reports_inconclusive_when_transition_never_converges(tmp_
     transport_reads = []
 
     monkeypatch.setattr(time, "monotonic", lambda: now[0])
-    monkeypatch.setattr(time, "sleep", lambda duration: sleeps.append(duration))
+    monkeypatch.setattr(
+        time,
+        "sleep",
+        lambda duration: (sleeps.append(duration), now.__setitem__(0, now[0] + duration)),
+    )
 
     with playback_contract(tmp_path, {"read", "playlist-play"}) as harness:
         client, _protocol, speaker, runtime_output = harness
@@ -577,17 +581,17 @@ def test_mcp_full_path_reports_inconclusive_when_transition_never_converges(tmp_
                 "observations": [
                     {
                         "observation": index,
-                        "startedElapsedMs": 1300,
-                        "completedElapsedMs": 1300,
+                        "startedElapsedMs": 1250 + index * 250,
+                        "completedElapsedMs": 1250 + index * 250,
                         "outcome": "completed",
                         "transport": "TRANSITIONING",
                     }
-                    for index in range(1, 21)
+                    for index in range(1, 16)
                 ],
-                "observationCount": 20,
+                "observationCount": 15,
                 "maximumObservationCount": 20,
                 "intervalMs": 250,
-                "latestObservationStartMs": 1300,
+                "latestObservationStartMs": 5000,
                 "playingObserved": False,
                 "completeCaptureAttempted": False,
                 "completeCaptureAuthoritative": False,
@@ -600,8 +604,10 @@ def test_mcp_full_path_reports_inconclusive_when_transition_never_converges(tmp_
         assert details["queueRollbackAttempted"] is False
         assert speaker.append_calls == ["SQ:9"]
         assert speaker.play_calls == [1]
-        assert transport_reads == [0.0, 1.3] + [1.3] * 20
-        assert sleeps == [0.25] * 20
+        assert transport_reads == [0.0, 1.3] + [index / 4 for index in range(6, 21)]
+        assert len(sleeps) == 15
+        assert round(sleeps[0], 3) == 0.2
+        assert sleeps[1:] == [0.25] * 14
         assert client.request(5, "ping", {})["result"] == {}
 
     public = json.dumps(client.public_results)
@@ -1136,4 +1142,46 @@ def test_mcp_socket_playlist_play_permission_is_independently_enforced(tmp_path)
         assert [r for r in protocol.requests if r.get("op") == "playlists.play.execute"] == []
         assert speaker.append_calls == []
         assert speaker.play_calls == []
+        assert client.request(5, "ping", {})["result"] == {}
+
+
+def test_mcp_convergence_late_wakeup_preserves_partial_evidence_without_new_read(
+    tmp_path, monkeypatch
+):
+    now = [0.0]
+    reads = []
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(time, "sleep", lambda duration: now.__setitem__(0, 5.01))
+
+    with playback_contract(tmp_path, {"read", "playlist-play"}) as harness:
+        client, _protocol, speaker, _runtime_output = harness
+        _initialize(client)
+        handle = _preflight(client)
+
+        def transport():
+            reads.append(now[0])
+            return "PLAYING" if now[0] > 5.0 else "TRANSITIONING"
+
+        speaker.post_capture_transport_hook = transport
+        response = client.request(
+            4,
+            "tools/call",
+            {"name": "sonos_playlist_play", "arguments": {"planHandle": handle, "approved": True}},
+        )
+        result = response["result"]
+        assert result["isError"] is True
+        assert result["structuredContent"]["code"] == "verification_inconclusive"
+        details = result["structuredContent"]["details"]
+        assert details["appendState"] == "confirmed"
+        assert details["playbackState"] == "unknown"
+        assert details["observedCurrentPosition"] == 2
+        convergence = details["postWriteCaptureEvidence"]["convergence"]
+        assert convergence["observations"] == []
+        assert convergence["completeCaptureAttempted"] is False
+        assert convergence["finalReason"] == "observationWindowExhausted"
+        assert reads == [0.0, 0.0]
+        assert speaker.append_calls == ["SQ:9"]
+        assert speaker.play_calls == [1]
+        assert details["retryCount"] == 0
+        assert details["queueRollbackAttempted"] is False
         assert client.request(5, "ping", {})["result"] == {}
