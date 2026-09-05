@@ -219,9 +219,9 @@ playlist and starts its first appended item without retry or queue replacement.
 If a later phase fails, appended entries may remain and no issue #19 rollback
 is attempted. Never infer playback approval from successful playlist creation.
 
-Automated tests use fake speakers/controllers only. Physical acceptance remains
-pending and must use one retained commissioning playlist in one quiet
-standalone room under a separate owner-approved prompt.
+Automated tests use fake speakers/controllers only. The narrow physical case
+below passed under separate owner approval; broader physical acceptance remains
+subject to the unchanged checklist and marketplace HOLD.
 
 Physical retest on 2026-09-05, installed commit `b94a1c7`: the owner authorized
 one append-and-play of retained commissioning playlist `SQ:53` in the standalone
@@ -235,9 +235,31 @@ The only failed predicate was `transportIsPlaying`. A subsequent read reported
 `PLAYING` at volume 8; a separate queue read confirmed both items with the second
 current. No write retry or cleanup was performed. The running backend started
 after the installed verification files were updated. This reproduces a false
-negative with the timing fixes installed; exact-playback acceptance remains
-open. These are device-reported observations, not a claim of audible acceptance
-or a measurement of the precise time playback began.
+negative with those timing fixes installed; exact-playback acceptance remained
+open at that revision. These are device-reported observations, not a claim of
+audible acceptance or a measurement of the precise time playback began.
+
+Physical acceptance passed on 2026-09-05 with tested software revision
+`8d938043caaf625992bdae071a43aab1ab5c4664` (PR #46), distinct from this later
+documentation update. Retained evidence confirmed installed/backend/MCP
+provenance and a fresh owner-approved plan for one standalone room, initially
+stopped, queue source, volume 8, unmuted. Retained playlist `SQ:53` contained one
+`Just Like Heaven` by The Cure. One append and one playback-start invocation
+both returned, with zero retries. Public MCP returned `ok: true` and
+`verification.authoritative: true`: queue length grew from 2 to 3, original
+entries were preserved, and position 3 was verified as the first appended item
+using positional evidence, not matching titles. Fresh complete verification
+confirmed the exact state, including unchanged playlist, volume, mute and
+topology.
+
+Six transport observations were made; `PLAYING` returned at 1593 ms. Fresh
+complete verification ran from 1594 to 2587 ms with no failed predicates, under
+the existing 250 ms / maximum 20 observations / 5000 ms latest-start policy.
+These are post-write verification timings, not audible-onset measurements.
+The owner separately confirmed audible playback in the intended room. No
+cleanup, restoration, replay or second test occurred. This accepts only this
+exact case, not every playlist, device or playback scenario. See the
+[sanitized physical evidence on #14](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/14#issuecomment-5553308423).
 
 ## Required real-device acceptance
 
@@ -310,6 +332,6 @@ must not be submitted to the marketplace.
 - [x] Existing protocol, Apple create, QML, plugin, and packaging gates remain
   required.
 - [x] No new real-device run was authorized or performed for this implementation.
-  The merged PR #18 physical evidence remains create-only; exact-playback
-  physical acceptance is a separate owner-approved phase. Issue #14 remains
+  The merged PR #18 physical evidence remains create-only. The later separately
+  approved exact-playback case on `8d93804` is recorded above. Issue #14 remains
   open for every broader action.
