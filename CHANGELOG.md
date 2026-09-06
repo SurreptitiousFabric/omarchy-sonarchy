@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Require independent Python 3.14.0/current CI jobs with exact interpreter
+  provenance, isolated test environments, locked runtime imports and source
+  compilation; runtime/wheel/lock failures remain visible.
 - Rebuild managed environments on interpreter-identity, lock or dependency-health
   drift. Validate replacements before promotion under the setup lock, preserve
   the previous environment on build/install/check failure, and bound health checks.
