@@ -64,6 +64,28 @@ request or explicit user dismissal can clear a correlated request error.
 
 ## Dependency updates
 
+CI must complete the runtime advisory audit on both Python targets. Run locally
+with `mise exec -- python -m scripts.audit_runtime "$(git rev-parse HEAD)"`
+from a clean candidate checkout. It validates installed runtime versions against
+`requirements.lock`, then queries the public
+[OSV version API](https://google.github.io/osv.dev/post-v1-query/) for each exact
+PyPI name/version. The report identifies the candidate SHA, lock digest, query
+time, exact versions and advisory IDs. A clean result means no advisory returned
+by OSV at that time, not proof that dependencies are vulnerability-free.
+
+Only public runtime package names/versions go to OSV; no credentials, private
+configuration or device metadata are sent. Proxy environment settings and
+redirects are not used. Requests have a 15-second timeout and 1 MiB response cap;
+the workflow adds a five-minute total limit. An outage, invalid response,
+pagination/incomplete result or environment mismatch fails closed (exit 2),
+never clean. Rerun after the service recovers; do not bypass the required gate.
+Known advisories fail (exit 1); file a separately scoped dependency-upgrade issue
+with the affected version and advisory ID. There are no suppression exceptions.
+Any future exception mechanism needs separately approved scope, rationale,
+owner and expiry; do not add a permanent ignore to unblock a release.
+Development-only tooling and non-Python components are outside this runtime-lock
+audit's coverage; it also cannot detect unknown vulnerabilities or malicious code.
+
 Direct runtime requirements belong in `requirements.in`; direct development
 requirements belong in `requirements-dev.in`. Regenerate both lock files with
 a reviewed version of `pip-compile` under Python 3.14 using

@@ -61,6 +61,9 @@ jobs:
         run: |
           mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m coverage run -m pytest -q
           mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m coverage report
+      - name: Audit exact runtime dependencies against OSV
+        timeout-minutes: 5
+        run: mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m scripts.audit_runtime "$GITHUB_SHA"
 
   test:
     name: test
