@@ -49,6 +49,9 @@ BorderSurface {
   }
 
   onClicked: activateCursor()
+  // Replaced options follow the selected value; missing selection uses the
+  // first option, and an empty model has no cursor. Never emit on model changes.
+  onOptionsChanged: cursorIndex = indexOfValue(value)
   onValueChanged: cursorIndex = indexOfValue(value)
   onActiveFocusChanged: {
     if (activeFocus) cursorIndex = indexOfValue(value)

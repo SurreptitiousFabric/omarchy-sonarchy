@@ -36,6 +36,7 @@ Item {
         { value: "queue", label: "Queue", icon: "C" }
       ]
       navigation.value = "now"
+      navigation.cursorIndex = 0
       navigation.forceActiveFocus()
       wait(0)
     }
@@ -87,6 +88,49 @@ Item {
       keyClick(Qt.Key_Right)
       keyClick(Qt.Key_Return)
       compare(host.selections.length, 0)
+    }
+
+    function test_unchanged_selection_reorder_resynchronizes_cursor() {
+      navigation.options = [{ value: "rooms", label: "Rooms" }, { value: "now", label: "Now" }]
+      wait(0)
+      compare(navigation.value, "now")
+      compare(navigation.cursorIndex, 1)
+      verify(delegates()[1].current)
+      compare(host.selections.length, 0)
+      keyClick(Qt.Key_Return)
+      compare(host.selections.length, 1)
+      compare(host.selections[0], "now")
+      keyClick(Qt.Key_Space)
+      compare(host.selections.length, 2)
+      compare(host.selections[1], "now")
+    }
+
+    function test_removed_selection_falls_back_without_emitting_or_changing_value() {
+      keyClick(Qt.Key_Right)
+      keyClick(Qt.Key_Right)
+      navigation.options = ["rooms"]
+      wait(0)
+      compare(navigation.value, "now")
+      compare(navigation.cursorIndex, 0)
+      compare(host.selections.length, 0)
+      keyClick(Qt.Key_Return)
+      compare(host.selections.length, 1)
+      compare(host.selections[0], "rooms")
+    }
+
+    function test_empty_then_repopulated_options_resynchronizes_cursor() {
+      keyClick(Qt.Key_Right)
+      navigation.options = []
+      wait(0)
+      compare(navigation.cursorIndex, -1)
+      keyClick(Qt.Key_Return)
+      compare(host.selections.length, 0)
+      navigation.options = ["rooms", "now"]
+      wait(0)
+      compare(navigation.cursorIndex, 1)
+      keyClick(Qt.Key_Space)
+      compare(host.selections.length, 1)
+      compare(host.selections[0], "now")
     }
   }
 }
