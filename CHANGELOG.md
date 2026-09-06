@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Rebuild managed environments on interpreter-identity, lock or dependency-health
+  drift. Validate replacements before promotion under the setup lock, preserve
+  the previous environment on build/install/check failure, and bound health checks.
 - Declare stable CPython 3.14.x support and guard both launchers before setup or
   imports. Reject unvalidated future minors/prereleases with stderr diagnostics;
   distinguish the declared 3.14.0 floor from the currently tested Mise target.
