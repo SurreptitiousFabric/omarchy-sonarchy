@@ -41,13 +41,15 @@ omarchy plugin validate .
 bash -n sonarchy-backend.sh sonarchy-mcp.sh tests/qml/run-component-tests.sh
 bash tests/qml/run-component-tests.sh
 mise exec -- shellcheck sonarchy-backend.sh sonarchy-mcp.sh tests/qml/run-component-tests.sh
-/usr/lib/qt6/bin/qmllint BarWidget.qml LiveService.qml Service.qml SonarchyContentState.qml SonarchyNowPage.qml SonarchyBrowsePage.qml SonarchyRoomsPage.qml SonarchySoundPage.qml SonarchySystemPage.qml
+mise run validate-platform
 ```
 
-QML lint may report unresolved `qs.Commons`/`qs.Ui` imports when invoked outside
-the running shell's module context; syntax failure or a nonzero exit is not
-acceptable. After a shell restart, inspect the user journal for this plugin's
-QML/runtime errors.
+The required [platform release-host gate](docs/platform-validation.md) resolves
+real shell imports and lints every shipped root QML file with zero warnings.
+Missing imports or tooling are not acceptable success. This separate job must
+pass on the exact clean release candidate; generic Ubuntu Python CI is not
+Omarchy acceptance. After an independently authorized shell restart, inspect the
+user journal for this plugin's QML/runtime errors.
 
 CI checks every shipped shell launcher with Bash and ShellCheck. The Python
 suite also runs a temporary copy of the MCP launcher from an unrelated working
