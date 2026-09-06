@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Declare stable CPython 3.14.x support and guard both launchers before setup or
+  imports. Reject unvalidated future minors/prereleases with stderr diagnostics;
+  distinguish the declared 3.14.0 floor from the currently tested Mise target.
 - Add per-request Apple browse storefront selection through MCP and the private
   protocol, with effective-region results and strict malformed-input rejection.
   Omitted storefronts retain the existing backend default; no global setting changes.

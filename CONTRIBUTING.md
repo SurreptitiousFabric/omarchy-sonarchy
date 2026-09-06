@@ -6,6 +6,11 @@ control API, install hooks, or privileged operations.
 
 ## Environment
 
+- Stable CPython 3.14.x only, with a declared 3.14.0 floor. Use the exact
+  project Mise pin for development; only that target currently has suite/CI
+  evidence. The floor gate is tracked in #75. Future minors and prereleases
+  require an explicit support decision, not an automatic pin bump. See
+  [ADR 0003](docs/adr/0003-python-runtime-policy.md).
 - [Mise](https://mise.jdx.dev/) with the repository's trusted `.mise.toml`
 - Current Omarchy/Quickshell for QML integration checks
 - The external Mise-managed `../.venvs/omarchy-sonarchy`; never install test
