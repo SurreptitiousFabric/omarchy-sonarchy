@@ -639,7 +639,7 @@ Item {
                   && modelData.playable === true
                 iconText: "󰒭"
                 tooltipText: root.confirmation === resultCard.replaceKey
-                  ? "Press again to replace the queue" : "Replace queue and play"
+                  ? "Press again to play if queue empty" : "Play if queue empty"
                 foreground: root.confirmation === resultCard.replaceKey
                   ? Color.urgent : root.foreground
                 focusable: true
