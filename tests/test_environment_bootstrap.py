@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shlex
 import shutil
 import stat
 import subprocess
@@ -101,6 +102,38 @@ def test_healthy_compatible_environment_reuses_without_install(bootstrap):
     assert result.returncode == 0, result.stderr
     assert calls(bootstrap) == ["health", "start"]
     assert (bootstrap[1] / "old-marker").exists()
+
+
+@pytest.mark.parametrize("partial_identity", ("", "test-abi"))
+@pytest.mark.parametrize("install_failure", (False, True))
+def test_failed_identity_read_rebuilds_or_reports_setup_error(
+    bootstrap, tmp_path, partial_identity, install_failure
+):
+    script, venv, config, _, _ = bootstrap
+    (venv / ".healthy").touch()
+    if install_failure:
+        config.write_text(json.dumps({"fail": "install"}))
+    reader = tmp_path / "failed-identity-read"
+    reader.write_text("#!/bin/bash\nprintf %s " + shlex.quote(partial_identity) + "\nexit 1\n")
+    reader.chmod(0o700)
+    source = script.read_text()
+    assert source.count('cat "$IDENTITY_FILE"') == 1
+    # Inject only the OS-level read failure; keep assignment, set -e and recovery real.
+    script.write_text(source.replace('cat "$IDENTITY_FILE"', f'"{reader}" "$IDENTITY_FILE"'))
+    result = run_bootstrap(bootstrap)
+    assert result.stdout == b""
+    assert calls(bootstrap).count("build") == 1
+    if install_failure:
+        assert result.returncode != 0
+        assert b"SONOS_SETUP_ERROR" in result.stderr
+        assert (venv / "old-marker").exists()
+        assert "start" not in calls(bootstrap)
+        assert not list(venv.parent.glob("venv.build.*"))
+    else:
+        assert result.returncode == 0, result.stderr
+        assert calls(bootstrap)[-2:] == ["health", "start"]
+        assert not (venv / "old-marker").exists()
+        assert (venv / ".python-identity").read_text().strip() == "test-abi"
 
 
 @pytest.mark.parametrize("changed", ("minor", "abi", "lock", "executable", "legacy"))

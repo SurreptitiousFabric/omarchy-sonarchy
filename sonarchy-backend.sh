@@ -64,7 +64,7 @@ fi
 
 installed_identity=""
 if [[ -f "$IDENTITY_FILE" ]]; then
-  installed_identity="$(cat "$IDENTITY_FILE")"
+  installed_identity="$(cat "$IDENTITY_FILE" 2>/dev/null)" || installed_identity=""
 fi
 if [[ ! -x "$VENV_DIR/bin/python" || "$installed_hash" != "$requirements_hash" \
   || "$installed_identity" != "$python_identity" ]] || ! environment_healthy "$VENV_DIR"; then
