@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Keep the navigation keyboard cursor aligned with the selected value when options
+  are replaced. If that value disappears, target the first option (or none for
+  an empty list) without changing the selection or emitting an action.
+
 - Require independent Python 3.14.0/current CI jobs with exact interpreter
   provenance, isolated test environments, locked runtime imports and source
   compilation; runtime/wheel/lock failures remain visible.
