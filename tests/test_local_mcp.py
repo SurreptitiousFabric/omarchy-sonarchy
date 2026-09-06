@@ -16,6 +16,7 @@ from sonarchy_backend.local_mcp import (
     OwnershipError,
     load_mcp_permissions,
 )
+from sonarchy_mcp.server import _permissions as load_adapter_permissions
 
 
 class StubProtocol:
@@ -100,10 +101,20 @@ def test_explicit_playlist_permission_is_loaded_once(tmp_path: Path):
     assert load_mcp_permissions(str(tmp_path)) == {"read", "playlist-create"}
 
 
+def test_independent_playlist_play_permission_is_loaded_by_backend_and_adapter(
+    tmp_path: Path, monkeypatch
+):
+    _write_config(tmp_path, 'enabled = true\npermissions = ["read", "playlist-play"]\n')
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert load_mcp_permissions(str(tmp_path)) == {"read", "playlist-play"}
+    assert load_adapter_permissions() == {"read", "playlist-play"}
+
+
 @pytest.mark.parametrize(
     "text,mode",
     [
         ('enabled = true\npermissions = ["read", "playback"]\n', 0o600),
+        ('enabled = true\npermissions = ["playlist-play"]\n', 0o600),
         ("not toml =", 0o600),
         ('enabled = true\npermissions = ["read", "playlist-create"]\n', 0o644),
     ],
@@ -178,11 +189,93 @@ def test_socket_permission_filter_denies_panel_and_unconfigured_create(tmp_path:
         socket_client=client,
         stdout=stdout,
     )
+    runtime._dispatch(
+        {"id": "same", "op": "playlists.play.execute", "args": {"planToken": "x"}},
+        socket_client=client,
+        stdout=stdout,
+    )
     denied = [json.loads(line) for line in client.output_buffer.splitlines()]
     assert [item["error"]["code"] for item in denied] == [
         "permission_denied",
         "permission_denied",
+        "permission_denied",
     ]
+    assert protocol.calls == []
+    runtime._close_client(client)
+    peer_sock.close()
+    listener.close()
+
+
+def test_socket_allows_playback_preflight_with_read_and_execute_only_with_playlist_play(
+    tmp_path: Path,
+):
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(tmp_path / "listener"))
+    protocol = StubProtocol()
+    runtime = MultiClientRuntime(
+        protocol,
+        listener,
+        frozenset({"read", "playlist-play"}),  # type: ignore[arg-type]
+    )
+    server_sock, peer_sock = socket.socketpair()
+    client = runtime.clients[server_sock.fileno()] = __import__(
+        "sonarchy_backend.local_mcp", fromlist=["_Client"]
+    )._Client(server_sock)
+    runtime.selector.register(server_sock, 1, client)
+    stdout = io.BytesIO()
+
+    runtime._dispatch(
+        {
+            "id": "preflight",
+            "op": "playlists.play.validate",
+            "args": {"roomUid": "R1", "playlistId": "SQ:9"},
+        },
+        socket_client=client,
+        stdout=stdout,
+    )
+    runtime._dispatch(
+        {
+            "id": "execute",
+            "op": "playlists.play.execute",
+            "args": {"planToken": "ticket", "approved": True},
+        },
+        socket_client=client,
+        stdout=stdout,
+    )
+
+    assert protocol.calls == ["playlists.play.validate", "playlists.play.execute"]
+    runtime._close_client(client)
+    peer_sock.close()
+    listener.close()
+
+
+def test_playlist_create_socket_permission_does_not_authorize_playlist_play(tmp_path: Path):
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(tmp_path / "listener"))
+    protocol = StubProtocol()
+    runtime = MultiClientRuntime(
+        protocol,
+        listener,
+        frozenset({"read", "playlist-create"}),  # type: ignore[arg-type]
+    )
+    server_sock, peer_sock = socket.socketpair()
+    client = runtime.clients[server_sock.fileno()] = __import__(
+        "sonarchy_backend.local_mcp", fromlist=["_Client"]
+    )._Client(server_sock)
+    runtime.selector.register(server_sock, 1, client)
+
+    runtime._dispatch(
+        {
+            "id": "execute",
+            "op": "playlists.play.execute",
+            "args": {"planToken": "ticket", "approved": True},
+        },
+        socket_client=client,
+        stdout=io.BytesIO(),
+    )
+
+    denied = json.loads(client.output_buffer.decode().splitlines()[0])
+    assert denied["error"]["code"] == "permission_denied"
     assert protocol.calls == []
     runtime._close_client(client)
     peer_sock.close()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 from types import SimpleNamespace
 
@@ -9,12 +10,15 @@ import soco
 from soco.data_structures_entry import from_didl_string
 from soco.exceptions import SoCoUPnPException
 
+import sonarchy_backend.domains.apple_playlist_transaction as apple_transaction
+import sonarchy_mcp.server as mcp_server
 from sonarchy_backend.contracts import (
     MAX_PROTOCOL_LINE_BYTES,
     MAX_PROTOCOL_REQUEST_ID_BYTES,
     protocol_line,
     result_payload,
 )
+from sonarchy_backend.domains.apple_playlist_plan import MAX_TRACK_TEXT_LENGTH
 from sonarchy_backend.domains.apple_playlist_transaction import (
     apple_song_identity_from_item,
     create_preflighted_apple_playlist,
@@ -22,6 +26,7 @@ from sonarchy_backend.domains.apple_playlist_transaction import (
     verify_apple_items,
 )
 from sonarchy_backend.domains.errors import PlanConflictError, PlaylistTransactionError
+from sonarchy_backend.domains.media import MAX_PLAYLIST_ID_LENGTH, validate_playlist_id
 from sonarchy_backend.infrastructure.apple_saved_queue import (
     APPEND_INDEX,
     APPLE_SAVED_RESOURCE_PROTOCOL_INFO,
@@ -423,7 +428,136 @@ def test_physical_sq49_shape_has_strong_identity_and_verified_metadata():
             "title": "Just Like Heaven",
             "artist": "The Cure",
             "album": "Kiss Me, Kiss Me, Kiss Me",
+            "albumVerification": {
+                "kind": "evidence_bound",
+                "reviewedAlbum": "Kiss Me, Kiss Me, Kiss Me",
+                "observedAlbum": "Kiss Me Kiss Me Kiss Me (Deluxe Edition)",
+            },
         }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("reviewed_album", "observed_album"),
+    (
+        ("Unrelated Album", "Unrelated Album (Deluxe Edition)"),
+        ("Alpha, Beta", "Alpha Beta"),
+    ),
+)
+def test_unrelated_album_display_differences_are_rejected(
+    reviewed_album,
+    observed_album,
+):
+    track = copy.deepcopy(TRACK_ONE)
+    track["album"] = reviewed_album
+    item = apple_item(track)
+    item.album = observed_album
+
+    with pytest.raises(ValueError, match="metadata"):
+        verify_apple_items([item], [track], container="saved Sonos Playlist")
+
+
+def test_ordinary_album_match_reports_exact_complete_displays():
+    item = apple_item(TRACK_TWO)
+    item.album = "  The Colour   of Spring  "
+
+    result = verify_apple_items([item], [TRACK_TWO], container="playlist")
+
+    assert result[0]["album"] == "The Colour of Spring"
+    assert result[0]["albumVerification"] == {
+        "kind": "exact",
+        "reviewedAlbum": "The Colour of Spring",
+        "observedAlbum": "The Colour   of Spring",
+    }
+
+
+@pytest.mark.parametrize(
+    ("dimension", "value"),
+    (
+        ("catalogId", "999999"),
+        ("title", "Friday I'm in Love"),
+        ("artist", "Another Artist"),
+        ("reviewedAlbum", "Disintegration"),
+        ("observedAlbum", "Kiss Me Kiss Me Kiss Me (Super Deluxe Edition)"),
+    ),
+)
+def test_physical_album_evidence_requires_every_tuple_dimension(dimension, value):
+    track = copy.deepcopy(TRACK_ONE)
+    item = physical_sq49_item()
+    if dimension == "catalogId":
+        track["catalogId"] = value
+        track["url"] = f"https://music.apple.com/ch/album/reviewed/1?i={value}"
+        item = apple_item(track)
+        item.album = "Kiss Me Kiss Me Kiss Me (Deluxe Edition)"
+    elif dimension == "title":
+        track["title"] = value
+        item.title = value
+    elif dimension == "artist":
+        track["artist"] = value
+        item.creator = value
+    elif dimension == "reviewedAlbum":
+        track["album"] = value
+    else:
+        item.album = value
+
+    with pytest.raises(ValueError, match="metadata"):
+        verify_apple_items([item], [track], container="saved Sonos Playlist")
+
+
+def test_known_album_pair_does_not_override_wrong_anchored_identity():
+    item = physical_sq49_item()
+    item.item_id = "song:999999"
+    item.resources = []
+
+    with pytest.raises(ValueError, match="identity"):
+        verify_apple_items([item], [TRACK_ONE], container="saved Sonos Playlist")
+
+
+@pytest.mark.parametrize(
+    "observed_album",
+    (
+        "Kiss Me Kiss Me Kiss Me (Live Edition)",
+        "Kiss Me Kiss Me Kiss Me (Remix)",
+        "Kiss Me Kiss Me Kiss Me (Super Deluxe Edition)",
+        "Disintegration",
+    ),
+)
+def test_other_album_editions_and_recordings_are_rejected(observed_album):
+    item = physical_sq49_item()
+    item.album = observed_album
+
+    with pytest.raises(ValueError, match="metadata"):
+        verify_apple_items([item], [TRACK_ONE], container="saved Sonos Playlist")
+
+
+@pytest.mark.parametrize(
+    "unsafe_album",
+    ("Private\nAlbum", "é" * (MAX_TRACK_TEXT_LENGTH // 2 + 1)),
+)
+def test_unsafe_observed_album_is_rejected_without_value_leakage(unsafe_album):
+    item = apple_item(TRACK_ONE)
+    item.album = unsafe_album
+
+    with pytest.raises(ValueError, match="safe reviewed metadata") as error:
+        verify_apple_items([item], [TRACK_ONE], container="saved Sonos Playlist")
+
+    assert unsafe_album not in str(error.value)
+
+
+def test_mixed_exact_and_evidence_bound_items_preserve_order_and_policy():
+    result = verify_apple_items(
+        [apple_item(TRACK_TWO), physical_sq49_item()],
+        [TRACK_TWO, TRACK_ONE],
+        container="saved Sonos Playlist",
+    )
+
+    assert [item["canonicalIdentity"] for item in result] == [
+        "song:1443065566",
+        "song:1452806384",
+    ]
+    assert [item["albumVerification"]["kind"] for item in result] == [
+        "exact",
+        "evidence_bound",
     ]
 
 
@@ -503,6 +637,11 @@ def test_direct_create_retains_verified_physical_shape_without_cleanup_or_queue_
     )
 
     assert result["playlist"]["items"][0]["canonicalIdentity"] == "song:1452806384"
+    assert result["playlist"]["items"][0]["albumVerification"] == {
+        "kind": "evidence_bound",
+        "reviewedAlbum": "Kiss Me, Kiss Me, Kiss Me",
+        "observedAlbum": "Kiss Me Kiss Me Kiss Me (Deluxe Edition)",
+    }
     assert result["queueMutation"] is False
     assert result["playbackMutation"] is False
     assert speaker.remove_calls == []
@@ -569,6 +708,14 @@ def test_direct_create_25_songs_preserves_exact_order_and_fits_protocol():
     assert [item["canonicalIdentity"] for item in result["playlist"]["items"]] == [
         f"song:{track['catalogId']}" for track in planned
     ]
+    assert [item["albumVerification"] for item in result["playlist"]["items"]] == [
+        {
+            "kind": "exact",
+            "reviewedAlbum": track["album"],
+            "observedAlbum": track["album"],
+        }
+        for track in planned
+    ]
     envelope = result_payload(
         "x" * MAX_PROTOCOL_REQUEST_ID_BYTES,
         revision=7,
@@ -586,6 +733,117 @@ def test_direct_create_25_songs_preserves_exact_order_and_fits_protocol():
         "Token",
     ):
         assert forbidden not in serialized
+
+
+def test_worst_case_expanded_result_is_rejected_before_playlist_mutation():
+    speaker = FakeSpeaker()
+    planned = tracks(25)
+    for track in planned:
+        track["title"] = "\\" * MAX_TRACK_TEXT_LENGTH
+        track["artist"] = "\\" * MAX_TRACK_TEXT_LENGTH
+        track["album"] = "\\" * MAX_TRACK_TEXT_LENGTH
+
+    with pytest.raises(PlanConflictError, match="protocol limit"):
+        execute(speaker, plan_for(speaker, name="AI 25", planned_tracks=planned))
+
+    assert speaker.create_calls == []
+    assert speaker.add_calls == []
+    assert speaker.playlists == {}
+    assert speaker.forbidden_calls == []
+
+
+def test_escaped_request_and_max_playlist_id_reject_before_mutation(monkeypatch):
+    speaker = FakeSpeaker()
+    speaker.create_return_id = "SQ:" + ("9" * 29)
+    planned = tracks(25)
+    for position, track in enumerate(planned):
+        track["title"] = "\\" * 238
+        track["artist"] = "\\" * (239 if position < 13 else 240)
+        track["album"] = "\\" * MAX_TRACK_TEXT_LENGTH
+
+    estimated_sizes = []
+    original_protocol_line = apple_transaction.protocol_line
+
+    def record_estimate(payload):
+        line = original_protocol_line(payload)
+        estimated_sizes.append(len(line.encode("utf-8")))
+        return line
+
+    monkeypatch.setattr(apple_transaction, "protocol_line", record_estimate)
+    with pytest.raises(PlanConflictError, match="protocol limit"):
+        execute(speaker, plan_for(speaker, name="AI 25", planned_tracks=planned))
+
+    assert estimated_sizes[-1] > MAX_PROTOCOL_LINE_BYTES
+    print(f"corrected_estimate={estimated_sizes[-1]}")
+    assert speaker.create_calls == []
+    assert speaker.add_calls == []
+    assert speaker.playlists == {}
+    assert speaker.forbidden_calls == []
+
+
+def test_near_boundary_25_track_result_fits_backend_and_compact_mcp(monkeypatch):
+    speaker = FakeSpeaker()
+    longest_playlist_id = "SQ:" + ("9" * (MAX_PLAYLIST_ID_LENGTH - len("SQ:")))
+    speaker.create_return_id = longest_playlist_id
+    planned = tracks(25)
+    for track in planned:
+        track["title"] = "\\" * 236
+        track["artist"] = "\\" * 236
+        track["album"] = "\\" * MAX_TRACK_TEXT_LENGTH
+
+    result = execute(speaker, plan_for(speaker, name="AI 25", planned_tracks=planned))
+    backend_encoded = protocol_line(
+        result_payload(
+            "\\" * MAX_PROTOCOL_REQUEST_ID_BYTES,
+            revision=(1 << 63) - 1,
+            value=result,
+        )
+    ).encode("utf-8")
+    mcp_request_id = "\\" * ((mcp_server.MAX_REQUEST_ID_BYTES - 2) // 2)
+    mcp_output = io.BytesIO()
+    monkeypatch.setattr(mcp_server.sys, "stdout", SimpleNamespace(buffer=mcp_output))
+    mcp_server._emit_response(
+        {
+            "jsonrpc": "2.0",
+            "id": mcp_request_id,
+            "result": {
+                "content": [{"type": "text", "text": json.dumps(result)}],
+                "structuredContent": result,
+                "isError": False,
+            },
+        },
+        mcp_request_id,
+    )
+    mcp_encoded = mcp_output.getvalue()
+
+    assert validate_playlist_id(longest_playlist_id) == longest_playlist_id
+    with pytest.raises(ValueError):
+        validate_playlist_id(longest_playlist_id + "9")
+    assert [item["canonicalIdentity"] for item in result["playlist"]["items"]] == [
+        f"song:{track['catalogId']}" for track in planned
+    ]
+    assert all(
+        item["albumVerification"]
+        == {
+            "kind": "exact",
+            "reviewedAlbum": "\\" * MAX_TRACK_TEXT_LENGTH,
+            "observedAlbum": "\\" * MAX_TRACK_TEXT_LENGTH,
+        }
+        for item in result["playlist"]["items"]
+    )
+    assert len(backend_encoded) <= MAX_PROTOCOL_LINE_BYTES
+    assert len(mcp_encoded) <= mcp_server.MAX_LINE
+    assert json.loads(mcp_encoded)["result"] == {
+        "content": [],
+        "structuredContent": result,
+        "isError": False,
+    }
+    assert result["queueMutation"] is False
+    assert result["playbackMutation"] is False
+    assert speaker.create_calls == ["AI 25"]
+    assert speaker.add_calls == [track["catalogId"] for track in planned]
+    monkeypatch.undo()
+    print(f"backend_bytes={len(backend_encoded)} compact_mcp_bytes={len(mcp_encoded)}")
 
 
 @pytest.mark.parametrize(

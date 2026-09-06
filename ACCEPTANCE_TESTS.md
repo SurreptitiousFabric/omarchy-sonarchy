@@ -10,10 +10,10 @@ recorded; it must not be called tested.
 
 ## Completed local gates
 
-- [x] All 427 automated Python tests pass with 85% branch coverage, alongside
-  32 headless QML runtime checks.
+- [x] The complete automated Python suite passes under the checked-in branch
+  coverage gate, and the complete headless QML component suite passes.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
-  Omarchy manifest, and standalone QML lint gates pass.
+  protocol, security, Omarchy plugin, and standalone QML lint gates pass.
 - [x] Headless real-event QML tests load Omarchy's installed `PanelSlider`,
   prove wheel input scrolls without a slider mutation, preserve intentional
   dragging, enforce request-owned error clearing, and cover content root,
@@ -35,6 +35,12 @@ recorded; it must not be called tested.
   exact per-add/final reopen verification, code-800 failures, bounded visibility
   retry, and exact-ID cleanup/cleanup failure. The redesigned direct operation
   has also passed the bounded physical cases recorded below.
+- [x] Fake-only exact-playlist playback tests cover independent permissions,
+  exact UID targeting, standalone/online/source/transport/volume/size policy,
+  complete fingerprints, fresh-state conflicts, single-use handles/tickets,
+  exact append order/start position, authoritative verification, partial
+  append/start/verification failure, no retry/rollback, and QML snapshot
+  broadcast after a post-append failure.
 - [x] Live idempotent writes pass for same-name rename, same-volume write,
   every speaker-reported sound/device setting, and current shuffle, repeat,
   and crossfade values. No effective setting or playback change was requested.
@@ -152,7 +158,8 @@ account, licensing, provider, or universal-availability conclusion.
 - [ ] Physical playlists larger than the tested two-item case.
 - [ ] AI-orchestration policy for individually rejected catalogue items.
 - [ ] MCP process ownership and concurrency under issue #11.
-- [ ] MCP room-targeted playback under issue #14.
+- [ ] Broader MCP transport, queue, grouping, source, and volume actions under
+  issue #14.
 - [ ] General destructive queue restoration under issue #19.
 - [ ] Apple private-library access or Apple/Sonos playlist synchronization.
 
@@ -202,12 +209,57 @@ not universal acceptance of every Apple catalogue song.
 6. Retain any successful disposable playlist until separately approved
    exact-ID cleanup. Do not play it during this acceptance.
 
-### Separately reviewed playback
+### Separately reviewed exact-playlist playback
 
-Playback is not a stage of creation. If later acceptance covers playback, it
-must start with the verified `SQ:<id>`, perform a new exact-room preflight, and
-obtain separate explicit approval under the future issues #14/#11 flow. Never
-infer playback approval from successful playlist creation.
+Playback is not a stage of creation. The implemented first issue #14 slice
+requires a verified `SQ:<id>`, exact standalone room UID, volume at most 20,
+stopped/paused transport, confirmed queue/no source, complete playlist/queue
+reads, explicit approval, and a fresh identical preflight. It appends the
+playlist and starts its first appended item without retry or queue replacement.
+If a later phase fails, appended entries may remain and no issue #19 rollback
+is attempted. Never infer playback approval from successful playlist creation.
+
+Automated tests use fake speakers/controllers only. The narrow physical case
+below passed under separate owner approval; broader physical acceptance remains
+subject to the unchanged checklist and marketplace HOLD.
+
+Physical retest on 2026-09-05, installed commit `b94a1c7`: the owner authorized
+one append-and-play of retained commissioning playlist `SQ:53` in the standalone
+Master Bedroom. The room was stopped, unmuted, at volume 8, with one existing
+`Just Like Heaven` queue item. Fresh preflight matched the reviewed fingerprint.
+Exactly one append and one playback-start invocation returned; queue length two
+and current position two were confirmed. Playback verification nevertheless
+reported `speaker_rejected` in `verify_playback`: both observations reported
+`TRANSITIONING`, completing at 157 ms and 1144 ms (second start at 1000 ms).
+The only failed predicate was `transportIsPlaying`. A subsequent read reported
+`PLAYING` at volume 8; a separate queue read confirmed both items with the second
+current. No write retry or cleanup was performed. The running backend started
+after the installed verification files were updated. This reproduces a false
+negative with those timing fixes installed; exact-playback acceptance remained
+open at that revision. These are device-reported observations, not a claim of
+audible acceptance or a measurement of the precise time playback began.
+
+Physical acceptance passed on 2026-09-05 with tested software revision
+`8d938043caaf625992bdae071a43aab1ab5c4664` (PR #46), distinct from this later
+documentation update. Retained evidence confirmed installed/backend/MCP
+provenance and a fresh owner-approved plan for one standalone room, initially
+stopped, queue source, volume 8, unmuted. Retained playlist `SQ:53` contained one
+`Just Like Heaven` by The Cure. One append and one playback-start invocation
+both returned, with zero retries. Public MCP returned `ok: true` and
+`verification.authoritative: true`: queue length grew from 2 to 3, original
+entries were preserved, and position 3 was verified as the first appended item
+using positional evidence, not matching titles. Fresh complete verification
+confirmed the exact state, including unchanged playlist, volume, mute and
+topology.
+
+Six transport observations were made; `PLAYING` returned at 1593 ms. Fresh
+complete verification ran from 1594 to 2587 ms with no failed predicates, under
+the existing 250 ms / maximum 20 observations / 5000 ms latest-start policy.
+These are post-write verification timings, not audible-onset measurements.
+The owner separately confirmed audible playback in the intended room. No
+cleanup, restoration, replay or second test occurred. This accepts only this
+exact case, not every playlist, device or playback scenario. See the
+[sanitized physical evidence on #14](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/14#issuecomment-5553308423).
 
 ## Required real-device acceptance
 
@@ -271,11 +323,15 @@ must not be submitted to the marketplace.
 
 - [x] Process ownership and socket/config symlink, owner, and mode boundaries
   are covered with fake-only tests.
-- [x] Read-only default and exact optional create inventory are contract tested.
+- [x] Read-only default and independent optional create/play inventories are
+  contract tested; `playlist-create` does not authorize playback.
 - [x] Backend token hiding, opaque single-use handles, restart invalidation, no
-  replacement fields, and exactly-once create dispatch are covered.
+  replacement fields, fresh second-handle use, and exactly-once create/play
+  dispatch are covered.
 - [x] MCP import boundaries prohibit SoCo/controller/QML imports.
 - [x] Existing protocol, Apple create, QML, plugin, and packaging gates remain
   required.
-- [ ] No new real-device run is required or authorized for the MCP bridge. The
-  merged PR #18 physical evidence remains the create-operation evidence.
+- [x] No new real-device run was authorized or performed for this implementation.
+  The merged PR #18 physical evidence remains create-only. The later separately
+  approved exact-playback case on `8d93804` is recorded above. Issue #14 remains
+  open for every broader action.

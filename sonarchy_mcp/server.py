@@ -11,8 +11,36 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from sonarchy_mcp_contract import (
+    MAX_MCP_CONFIG_BYTES,
+    MAX_SONOS_PLAYLIST_ID_LENGTH,
+    MCP_CONFIG_DIRECTORY,
+    MCP_CONFIG_FILENAME,
+    MCP_DEFAULT_PERMISSIONS,
+    MCP_OPERATION_APPLE_CREATE,
+    MCP_OPERATION_APPLE_VALIDATE,
+    MCP_OPERATION_CONTENT_BROWSE,
+    MCP_OPERATION_PERMISSIONS,
+    MCP_OPERATION_PLAY_EXECUTE,
+    MCP_OPERATION_PLAY_VALIDATE,
+    MCP_OPERATION_STATE_REFRESH,
+    MCP_PERMISSION_READ,
+    MCP_PUBLIC_FIELDS,
+    MCP_TOOL_APPLE_CREATE,
+    MCP_TOOL_APPLE_PREFLIGHT,
+    MCP_TOOL_CONTENT_BROWSE,
+    MCP_TOOL_OPERATIONS,
+    MCP_TOOL_ORDER,
+    MCP_TOOL_PLAY,
+    MCP_TOOL_PLAY_PREFLIGHT,
+    MCP_TOOL_ROOM_STATE_GET,
+    MCP_TOOL_ROOMS_LIST,
+    parse_mcp_permissions,
+)
+
 MAX_LINE = 64 * 1024
-MAX_CONFIG = 8 * 1024
+MAX_REQUEST_ID_BYTES = 256
+MAX_PENDING_MCP_HANDLES = 256
 UNAVAILABLE = (
     "Sonarchy is unavailable. Ensure the Omarchy Sonarchy plugin is enabled and "
     "Quickshell is running."
@@ -36,6 +64,102 @@ class ToolError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.details = details or {}
+
+
+def _read_frame(reader: Any) -> tuple[bytes | None, bool]:
+    raw = reader.readline(MAX_LINE + 1)
+    if not raw:
+        return None, False
+    if len(raw) <= MAX_LINE:
+        return raw, False
+    while not raw.endswith(b"\n"):
+        raw = reader.readline(MAX_LINE + 1)
+        if not raw:
+            break
+    return b"", True
+
+
+def _error_response(code: int, message: str, request_id: str | int | None = None) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "error": {"code": code, "message": message},
+    }
+
+
+def _validated_envelope(
+    value: Any,
+) -> tuple[str | int | None, str, dict[str, Any] | None, bool] | dict[str, Any] | None:
+    if not isinstance(value, dict) or value.get("jsonrpc") != "2.0":
+        return _error_response(-32600, "Invalid Request")
+    method = value.get("method")
+    if not isinstance(method, str):
+        return _error_response(-32600, "Invalid Request")
+    notification = "id" not in value
+    request_id = value.get("id")
+    if not notification:
+        try:
+            encoded_id = json.dumps(request_id, ensure_ascii=False, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        except TypeError, ValueError, UnicodeEncodeError:
+            return _error_response(-32600, "Invalid Request")
+        if (
+            isinstance(request_id, bool)
+            or not isinstance(request_id, (str, int))
+            or len(encoded_id) > MAX_REQUEST_ID_BYTES
+        ):
+            return _error_response(-32600, "Invalid Request")
+    params = value.get("params")
+    if "params" in value and not isinstance(params, dict):
+        if notification:
+            return None
+        return _error_response(-32602, "Invalid params", request_id)
+    return request_id, method, params, notification
+
+
+def _functional_params(
+    params: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, bool]:
+    if params is None or "_meta" not in params:
+        return params, True
+    if not isinstance(params["_meta"], dict):
+        return None, False
+    return {key: value for key, value in params.items() if key != "_meta"}, True
+
+
+def _emit_response(response: dict[str, Any], request_id: str | int | None) -> None:
+    try:
+        encoded = (json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        )
+    except TypeError, ValueError, UnicodeEncodeError, RecursionError:
+        encoded = b""
+    result = response.get("result")
+    if (
+        len(encoded) > MAX_LINE
+        and isinstance(result, dict)
+        and result.get("isError") is False
+        and "structuredContent" in result
+    ):
+        compact_response = {**response, "result": {**result, "content": []}}
+        try:
+            encoded = (
+                json.dumps(compact_response, ensure_ascii=False, separators=(",", ":")) + "\n"
+            ).encode("utf-8")
+        except TypeError, ValueError, UnicodeEncodeError, RecursionError:
+            encoded = b""
+    if not encoded or len(encoded) > MAX_LINE:
+        encoded = (
+            json.dumps(
+                _error_response(-32603, "Internal error", request_id),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("utf-8")
+    sys.stdout.buffer.write(encoded)
+    sys.stdout.buffer.flush()
 
 
 class BackendClient:
@@ -134,7 +258,7 @@ class BackendClient:
                         error.get("details") if isinstance(error.get("details"), dict) else {},
                     )
                 matched_value = payload.get("value")
-                if operation == "state.refresh":
+                if operation == MCP_OPERATION_STATE_REFRESH:
                     refresh_revision = int(payload.get("revision", 0))
                     continue
                 return matched_value
@@ -150,54 +274,45 @@ class PlanHandle:
     token: str
     backend_instance: str
     expires_ms: int
+    expires_monotonic: float
+    operation: str
 
 
 def _permissions() -> frozenset[str]:
     root = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    directory = Path(root) / "sonarchy"
+    directory = Path(root) / MCP_CONFIG_DIRECTORY
     try:
         directory_fd = os.open(
             directory, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
         )
     except OSError:
-        return frozenset({"read"})
+        return MCP_DEFAULT_PERMISSIONS
     try:
         directory_info = os.fstat(directory_fd)
         if not stat.S_ISDIR(directory_info.st_mode) or directory_info.st_uid != os.getuid():
-            return frozenset({"read"})
+            return MCP_DEFAULT_PERMISSIONS
         try:
             config_fd = os.open(
-                "mcp.toml", os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=directory_fd
+                MCP_CONFIG_FILENAME,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                dir_fd=directory_fd,
             )
         except OSError:
-            return frozenset({"read"})
+            return MCP_DEFAULT_PERMISSIONS
         try:
             info = os.fstat(config_fd)
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
-                return frozenset({"read"})
-            raw = os.read(config_fd, MAX_CONFIG + 1)
-            if len(raw) > MAX_CONFIG:
-                return frozenset({"read"})
+                return MCP_DEFAULT_PERMISSIONS
+            raw = os.read(config_fd, MAX_MCP_CONFIG_BYTES + 1)
+            if len(raw) > MAX_MCP_CONFIG_BYTES:
+                return MCP_DEFAULT_PERMISSIONS
         finally:
             os.close(config_fd)
-        import tomllib
-
-        data = tomllib.loads(raw.decode("utf-8"))
-    except OSError, UnicodeDecodeError, ValueError:
-        return frozenset({"read"})
+    except OSError:
+        return MCP_DEFAULT_PERMISSIONS
     finally:
         os.close(directory_fd)
-    if data.get("enabled") is not True:
-        return frozenset()
-    values = data.get("permissions")
-    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
-        return frozenset({"read"})
-    result = frozenset(values)
-    return (
-        result
-        if "read" in result and result <= {"read", "playlist-create"}
-        else frozenset({"read"})
-    )
+    return parse_mcp_permissions(raw)
 
 
 def _object_schema(
@@ -225,11 +340,11 @@ TRACK_SCHEMA = _object_schema(
 
 
 def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
-    if "read" not in permissions:
+    if MCP_PERMISSION_READ not in permissions:
         return []
-    inventory = [
-        {
-            "name": "rooms_list",
+    inventory = {
+        MCP_TOOL_ROOMS_LIST: {
+            "name": MCP_TOOL_ROOMS_LIST,
             "description": (
                 "List authoritative Sonos households, groups, and visible rooms "
                 "with exact room UIDs. Read-only."
@@ -237,8 +352,8 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             "inputSchema": _object_schema({}, []),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
-        {
-            "name": "room_state_get",
+        MCP_TOOL_ROOM_STATE_GET: {
+            "name": MCP_TOOL_ROOM_STATE_GET,
             "description": (
                 "Get bounded authoritative state for one exact room UID without "
                 "changing QML selection. Read-only."
@@ -248,11 +363,12 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             ),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
-        {
-            "name": "content_browse",
+        MCP_TOOL_CONTENT_BROWSE: {
+            "name": MCP_TOOL_CONTENT_BROWSE,
             "description": (
                 "Browse one explicitly allowed Sonarchy content kind using normalized "
-                "provider-neutral items. Read-only."
+                "provider-neutral items. Apple kinds may omit roomUid; Sonos-backed "
+                "kinds require an exact roomUid. Supplied room UIDs are validated. Read-only."
             ),
             "inputSchema": _object_schema(
                 {
@@ -266,8 +382,8 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             ),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
-        {
-            "name": "apple_playlist_preflight",
+        MCP_TOOL_APPLE_PREFLIGHT: {
+            "name": MCP_TOOL_APPLE_PREFLIGHT,
             "description": (
                 "Validate a reviewed ordered list of exact public Apple catalogue songs "
                 "for one new native Sonos Playlist. Read-only; returns an opaque "
@@ -289,31 +405,72 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             ),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
-    ]
-    if "playlist-create" in permissions:
-        inventory.append(
-            {
-                "name": "apple_playlist_create",
-                "description": (
-                    "Create one new native Sonos Playlist from a current reviewed "
-                    "preflight. This is mutating and non-idempotent and requires "
-                    "explicit current user approval immediately before the call."
-                ),
-                "inputSchema": _object_schema(
-                    {
-                        "planHandle": {"type": "string", "minLength": 32, "maxLength": 128},
-                        "approved": {"const": True},
+        MCP_TOOL_PLAY_PREFLIGHT: {
+            "name": MCP_TOOL_PLAY_PREFLIGHT,
+            "description": (
+                "Validate one exact existing native Sonos Playlist for append-and-play in "
+                "one exact standalone room. Read-only; returns an opaque single-use local handle."
+            ),
+            "inputSchema": _object_schema(
+                {
+                    "roomUid": {"type": "string", "minLength": 1, "maxLength": 256},
+                    "playlistId": {
+                        "type": "string",
+                        "pattern": r"^SQ:\d+$",
+                        "maxLength": MAX_SONOS_PLAYLIST_ID_LENGTH,
                     },
-                    ["planHandle", "approved"],
-                ),
-                "annotations": {
-                    "readOnlyHint": False,
-                    "destructiveHint": False,
-                    "idempotentHint": False,
                 },
-            }
-        )
-    return inventory
+                ["roomUid", "playlistId"],
+            ),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        MCP_TOOL_APPLE_CREATE: {
+            "name": MCP_TOOL_APPLE_CREATE,
+            "description": (
+                "Create one new native Sonos Playlist from a current reviewed "
+                "preflight. This is mutating and non-idempotent and requires "
+                "explicit current user approval immediately before the call."
+            ),
+            "inputSchema": _object_schema(
+                {
+                    "planHandle": {"type": "string", "minLength": 32, "maxLength": 128},
+                    "approved": {"const": True},
+                },
+                ["planHandle", "approved"],
+            ),
+            "annotations": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": False,
+            },
+        },
+        MCP_TOOL_PLAY: {
+            "name": MCP_TOOL_PLAY,
+            "description": (
+                "Append one reviewed exact native Sonos Playlist to an unchanged room "
+                "queue and start the first appended item. This is mutating and "
+                "non-idempotent and requires explicit current user approval immediately "
+                "before the call."
+            ),
+            "inputSchema": _object_schema(
+                {
+                    "planHandle": {"type": "string", "minLength": 32, "maxLength": 128},
+                    "approved": {"const": True},
+                },
+                ["planHandle", "approved"],
+            ),
+            "annotations": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": False,
+            },
+        },
+    }
+    return [
+        inventory[name]
+        for name in MCP_TOOL_ORDER
+        if MCP_OPERATION_PERMISSIONS[MCP_TOOL_OPERATIONS[name]] in permissions
+    ]
 
 
 class SonarchyMcp:
@@ -321,9 +478,52 @@ class SonarchyMcp:
         self.backend = BackendClient()
         self.permissions = _permissions()
         self.handles: dict[str, PlanHandle] = {}
+        self._backend_instance = self.backend.instance
+
+    def _sync_backend_instance(self) -> bool:
+        current = self.backend.instance
+        if current == self._backend_instance:
+            return False
+        self.handles.clear()
+        self._backend_instance = current
+        return True
+
+    def _prune_expired_handles(self) -> None:
+        now = time.monotonic()
+        expired = [handle for handle, plan in self.handles.items() if plan.expires_monotonic <= now]
+        for handle in expired:
+            self.handles.pop(handle, None)
+
+    @staticmethod
+    def _expires_monotonic(expires_ms: int) -> float:
+        remaining_ms = max(0, expires_ms - int(time.time() * 1000))
+        return time.monotonic() + remaining_ms / 1000
+
+    def _prepare_handle_issue(self) -> None:
+        self._sync_backend_instance()
+        self._prune_expired_handles()
+        if len(self.handles) >= MAX_PENDING_MCP_HANDLES:
+            raise ToolError(
+                "conflict",
+                "Too many reviewed plans are awaiting execution; wait for existing plans to expire",
+            )
+
+    def _new_handle(self) -> str:
+        for _attempt in range(3):
+            handle = secrets.token_urlsafe(32)
+            if handle not in self.handles:
+                return handle
+        raise ToolError("conflict", "A unique plan handle could not be issued")
+
+    def _backend_call(self, operation: str, args: dict[str, Any]) -> Any:
+        self._sync_backend_instance()
+        try:
+            return self.backend.call(operation, args)
+        finally:
+            self._sync_backend_instance()
 
     def _refresh(self) -> dict[str, Any]:
-        self.backend.call("state.refresh", {})
+        self._backend_call(MCP_OPERATION_STATE_REFRESH, {})
         if self.backend.snapshot is None:
             raise ToolError("unavailable", UNAVAILABLE)
         return self.backend.snapshot
@@ -372,13 +572,16 @@ class SonarchyMcp:
         allowed_names = {tool["name"] for tool in tools(self.permissions)}
         if name not in allowed_names:
             raise ToolError("not_found", "Unknown or disabled Sonarchy tool")
-        if name == "rooms_list":
-            if arguments:
-                raise ToolError("invalid_argument", "rooms_list accepts no inputs")
+        if not MCP_PUBLIC_FIELDS[name].accepts(arguments):
+            if name in {MCP_TOOL_APPLE_CREATE, MCP_TOOL_PLAY}:
+                action = "Creation" if name == MCP_TOOL_APPLE_CREATE else "Playback"
+                raise ToolError(
+                    "invalid_argument", f"{action} requires only planHandle and approved: true"
+                )
+            raise ToolError("invalid_argument", f"Invalid {name} inputs")
+        if name == MCP_TOOL_ROOMS_LIST:
             return self._project_rooms(self._refresh())
-        if name == "room_state_get":
-            if set(arguments) != {"roomUid"}:
-                raise ToolError("invalid_argument", "room_state_get accepts only roomUid")
+        if name == MCP_TOOL_ROOM_STATE_GET:
             room_uid = str(arguments["roomUid"])
             projected = self._project_rooms(self._refresh())
             matches = [
@@ -393,44 +596,86 @@ class SonarchyMcp:
                     "The exact Sonos room is no longer available",
                 )
             return {"revision": projected["revision"], "room": matches[0]}
-        if name == "content_browse":
-            expected = {"kind", "term", "limit", "context"}
-            if not set(arguments) <= expected | {"roomUid"} or not expected <= set(arguments):
-                raise ToolError("invalid_argument", "Invalid content_browse inputs")
+        if name == MCP_TOOL_CONTENT_BROWSE:
             kind = str(arguments["kind"])
             if kind not in READ_KINDS:
                 raise ToolError("invalid_argument", "Unsupported content kind")
-            return self.backend.call("content.browse", dict(arguments))
-        if name == "apple_playlist_preflight":
-            if set(arguments) != {"roomUid", "name", "allowDuplicates", "tracks"}:
-                raise ToolError("invalid_argument", "Invalid preflight inputs")
+            room_uid = arguments.get("roomUid", "")
+            if not isinstance(room_uid, str) or (room_uid and not room_uid.strip()):
+                raise ToolError("invalid_argument", "roomUid must be an exact room UID or empty")
+            if not room_uid and kind not in {"apple", "apple-artist", "apple-album"}:
+                raise ToolError("invalid_argument", "roomUid is required for Sonos-backed content")
+            return self._backend_call(
+                MCP_OPERATION_CONTENT_BROWSE, {**arguments, "roomUid": room_uid}
+            )
+        if name == MCP_TOOL_APPLE_PREFLIGHT:
+            self._prepare_handle_issue()
+            handle = self._new_handle()
             backend_args = dict(arguments)
             backend_args["playlistName"] = backend_args.pop("name")
             backend_args["mode"] = "save-only"
-            value = self.backend.call("playlist_plan.apple.validate", backend_args)
+            value = self._backend_call(MCP_OPERATION_APPLE_VALIDATE, backend_args)
             if not isinstance(value, dict) or not isinstance(value.get("planToken"), str):
                 raise ToolError("backend_error", "Sonarchy returned an invalid preflight")
             token = value.pop("planToken")
             expires_ms = int(value.get("expiresAtEpochMs", int(time.time() * 1000)))
-            handle = secrets.token_urlsafe(32)
-            self.handles[handle] = PlanHandle(token, self.backend.instance, expires_ms)
+            self._prepare_handle_issue()
+            self.handles[handle] = PlanHandle(
+                token,
+                self.backend.instance,
+                expires_ms,
+                self._expires_monotonic(expires_ms),
+                MCP_OPERATION_APPLE_CREATE,
+            )
+            return {**value, "planHandle": handle}
+        if name == MCP_TOOL_PLAY_PREFLIGHT:
+            self._prepare_handle_issue()
+            handle = self._new_handle()
+            value = self._backend_call(MCP_OPERATION_PLAY_VALIDATE, dict(arguments))
+            if not isinstance(value, dict) or not isinstance(value.get("planToken"), str):
+                raise ToolError("backend_error", "Sonarchy returned an invalid playback preflight")
+            token = value.pop("planToken")
+            expires_ms = int(value.get("expiresAtEpochMs", int(time.time() * 1000)))
+            self._prepare_handle_issue()
+            self.handles[handle] = PlanHandle(
+                token,
+                self.backend.instance,
+                expires_ms,
+                self._expires_monotonic(expires_ms),
+                MCP_OPERATION_PLAY_EXECUTE,
+            )
             return {**value, "planHandle": handle}
         if set(arguments) != {"planHandle", "approved"} or arguments.get("approved") is not True:
+            action = "Creation" if name == MCP_TOOL_APPLE_CREATE else "Playback"
             raise ToolError(
-                "invalid_argument", "Creation requires only planHandle and approved: true"
+                "invalid_argument", f"{action} requires only planHandle and approved: true"
             )
         handle = str(arguments["planHandle"])
-        plan = self.handles.pop(handle, None)
-        if plan is None:
-            raise ToolError("conflict", "This plan handle is invalid or has already been used")
-        if plan.backend_instance != self.backend.instance:
+        known_handle = handle in self.handles
+        if self._sync_backend_instance() and known_handle:
             raise ToolError(
                 "conflict", "Sonarchy\u2019s backend connection changed; run a new preflight"
             )
-        if plan.expires_ms <= int(time.time() * 1000):
-            raise ToolError("conflict", "The reviewed playlist plan expired; run a new preflight")
-        return self.backend.call(
-            "playlists.apple.create",
+        plan = self.handles.pop(handle, None)
+        if plan is None:
+            raise ToolError("conflict", "This plan handle is invalid or has already been used")
+        self._prune_expired_handles()
+        if plan.expires_monotonic <= time.monotonic():
+            message = (
+                "The reviewed playlist plan expired; run a new preflight"
+                if name == MCP_TOOL_APPLE_CREATE
+                else "The reviewed playback plan expired; run a new preflight"
+            )
+            raise ToolError("conflict", message)
+        expected_operation = (
+            MCP_OPERATION_APPLE_CREATE
+            if name == MCP_TOOL_APPLE_CREATE
+            else MCP_OPERATION_PLAY_EXECUTE
+        )
+        if plan.operation != expected_operation:
+            raise ToolError("conflict", "This plan handle is bound to another operation")
+        return self._backend_call(
+            expected_operation,
             {
                 "planToken": plan.token,
                 "approved": True,
@@ -438,62 +683,96 @@ class SonarchyMcp:
         )
 
     def run(self) -> None:
-        for raw in sys.stdin.buffer:
+        while True:
+            raw, oversized = _read_frame(sys.stdin.buffer)
+            if raw is None:
+                return
+            if oversized:
+                _emit_response(_error_response(-32600, "Invalid Request"), None)
+                continue
             try:
-                if len(raw) > MAX_LINE:
-                    continue
                 request = json.loads(raw)
-                request_id = request.get("id")
-                method = request.get("method")
+            except UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError:
+                _emit_response(_error_response(-32700, "Parse error"), None)
+                continue
+            envelope = _validated_envelope(request)
+            if envelope is None:
+                continue
+            if isinstance(envelope, dict):
+                _emit_response(envelope, None)
+                continue
+            request_id, method, params, notification = envelope
+            if method == "notifications/initialized" or notification:
+                continue
+            params, valid_metadata = _functional_params(params)
+            if not valid_metadata:
+                _emit_response(_error_response(-32602, "Invalid params", request_id), request_id)
+                continue
+            try:
                 if method == "initialize":
-                    result = {
-                        "protocolVersion": "2025-06-18",
-                        "capabilities": {"tools": {"listChanged": False}},
-                        "serverInfo": {"name": "sonarchy", "version": "1.0.0"},
-                    }
-                elif method == "notifications/initialized":
-                    continue
+                    if params is None:
+                        response = _error_response(-32602, "Invalid params", request_id)
+                    else:
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "result": {
+                                "protocolVersion": "2025-06-18",
+                                "capabilities": {"tools": {"listChanged": False}},
+                                "serverInfo": {"name": "sonarchy", "version": "1.0.0"},
+                            },
+                        }
                 elif method == "ping":
-                    result = {}
+                    if params not in (None, {}):
+                        response = _error_response(-32602, "Invalid params", request_id)
+                    else:
+                        response = {"jsonrpc": "2.0", "id": request_id, "result": {}}
                 elif method == "tools/list":
-                    result = {"tools": tools(self.permissions)}
+                    if params not in (None, {}):
+                        response = _error_response(-32602, "Invalid params", request_id)
+                    else:
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "result": {"tools": tools(self.permissions)},
+                        }
                 elif method == "tools/call":
-                    params = request.get("params") or {}
-                    value = self.call_tool(
-                        str(params.get("name", "")), params.get("arguments") or {}
-                    )
-                    result = {
-                        "content": [
-                            {"type": "text", "text": json.dumps(value, ensure_ascii=False)}
-                        ],
-                        "structuredContent": value,
-                        "isError": False,
-                    }
+                    if (
+                        params is None
+                        or not isinstance(params.get("name"), str)
+                        or ("arguments" in params and not isinstance(params["arguments"], dict))
+                    ):
+                        response = _error_response(-32602, "Invalid params", request_id)
+                    else:
+                        arguments = params.get("arguments", {})
+                        try:
+                            value = self.call_tool(params["name"], arguments)
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": json.dumps(value, ensure_ascii=False),
+                                    }
+                                ],
+                                "structuredContent": value,
+                                "isError": False,
+                            }
+                        except ToolError as exc:
+                            result = {
+                                "content": [{"type": "text", "text": str(exc)}],
+                                "structuredContent": {
+                                    "code": exc.code,
+                                    "message": str(exc),
+                                    "details": exc.details,
+                                },
+                                "isError": True,
+                            }
+                        response = {"jsonrpc": "2.0", "id": request_id, "result": result}
                 else:
-                    raise ToolError("method_not_found", "Unsupported MCP method")
-                response = {"jsonrpc": "2.0", "id": request_id, "result": result}
-            except ToolError as exc:
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": request.get("id") if isinstance(request, dict) else None,
-                    "result": {
-                        "content": [{"type": "text", "text": str(exc)}],
-                        "structuredContent": {
-                            "code": exc.code,
-                            "message": str(exc),
-                            "details": exc.details,
-                        },
-                        "isError": True,
-                    },
-                }
-            except OSError, ValueError, TypeError, json.JSONDecodeError:
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "error": {"code": -32603, "message": "Internal MCP error"},
-                }
-            sys.stdout.write(json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n")
-            sys.stdout.flush()
+                    response = _error_response(-32601, "Method not found", request_id)
+            except Exception:  # noqa: BLE001 - keep the stdio boundary alive without leakage
+                response = _error_response(-32603, "Internal error", request_id)
+            _emit_response(response, request_id)
 
 
 def main() -> int:

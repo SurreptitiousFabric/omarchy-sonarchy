@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from .alarms import alarm_mutations_service, alarms_service
-from .apple_playlist_plan import ApplePlaylistPlanService
+from .apple_playlist_plan import ApplePlaylistPlanService, PlanTicketStore
 from .artwork import artwork_service
 from .browse import browse_service
 from .common import RequestContext
@@ -12,6 +12,7 @@ from .content import content_service
 from .devices import devices_service
 from .mixer import mixer_service
 from .playback import playback_service
+from .playlist_play_plan import PlaylistPlayPlanService
 from .playlists import playlists_service
 from .ports import SonarchyBackendPort
 from .queue import queue_service
@@ -24,7 +25,9 @@ class SonarchyApplication:
 
     def __init__(self, backend: SonarchyBackendPort) -> None:
         self.backend = backend
-        apple_playlist_services = ApplePlaylistPlanService(backend).services()
+        plan_tickets = PlanTicketStore()
+        apple_playlist_services = ApplePlaylistPlanService(backend, tickets=plan_tickets).services()
+        playlist_play_services = PlaylistPlayPlanService(backend, tickets=plan_tickets).services()
         self.services = (
             playback_service(backend),
             content_service(backend),
@@ -39,6 +42,7 @@ class SonarchyApplication:
             queue_service(backend),
             playlists_service(backend),
             *apple_playlist_services,
+            *playlist_play_services,
         )
         operations = [operation for service in self.services for operation in service.operations]
         if len(operations) != len(set(operations)):

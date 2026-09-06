@@ -2,9 +2,27 @@
 
 ## Unreleased
 
+- Permit public Apple MCP browsing without a room UID, without selecting a
+  room. Sonos-backed kinds still require an exact room; supplied stale or
+  malformed room IDs are rejected rather than ignored.
+- Refuse replacement of every nonempty or unverifiable queue before mutation.
+  The confirmed empty-queue action appends and plays without clearing or
+  replay-based rollback; failed operations preserve the resulting state.
+- Allow exact-playlist playback transport to settle through at most 20 read-only
+  observations on fixed 250 ms slots within a five-second latest-start window.
+  Skip missed slots and reject late wakeups; `PLAYING` triggers fresh complete
+  verification. Append and playback remain single-execution, and an exhausted
+  convergence window reports non-retryable `verification_inconclusive`.
 - Added a single-authority, Quickshell-owned local MCP bridge over an owner-only
-  Unix socket, with read-only room/content tools and permission-gated exact
-  Apple-track Sonos Playlist preflight/create. Playback is intentionally absent.
+  Unix socket, with read-only room/content tools and independently permissioned
+  exact Apple-track playlist creation and exact native Sonos Playlist playback.
+- Added the narrow first issue #14 slice: read-only exact room/playlist/queue
+  preflight plus explicit `playlist-play` permission for append-and-play in one
+  online standalone room at volume 20 or below. It accepts only stopped/paused
+  queue or no-source state, preserves the existing queue, starts the first
+  appended item once, revalidates and verifies authoritative state, never
+  retries or rolls back a partial append, and leaves broader issue #14 actions
+  open.
 - Added read-only exact Apple-song playlist preflight and an explicitly
   approved, single-use-token create-only Sonos Playlist operation. It creates
   an empty saved playlist, adds exact songs directly without reading or
@@ -48,7 +66,8 @@
 - Split the QML service into a 76-line public facade, cohesive store, protocol
   router, artwork owner, and the single process-owning live protocol client.
 - Added exact operation inventory tests, correlated result handling, stable
-  capabilities/errors, destructive identity checks, and an 80% coverage gate.
+  capabilities/errors, destructive identity checks, and an overall 80%
+  branch-coverage target alongside the checked-in automated gate.
 - Gated controls at both page and Store boundaries, projected line-in support
   through bounded, quiet AudioIn probes, and removed model-name-based TV
   visibility.

@@ -4,6 +4,8 @@ import ipaddress
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
+from sonarchy_mcp_contract import MCP_BACKEND_FIELDS, MCP_OPERATION_CONTENT_BROWSE
+
 from .apple_browse import browse_apple_album, browse_apple_artist, search_apple
 from .common import DomainService, number_arg, string_arg
 from .library import (
@@ -297,15 +299,21 @@ def browse_content(
 
 
 def browse_service(backend: BrowsePort) -> DomainService:
+    def browse(args: dict[str, Any]) -> dict[str, Any]:
+        if not MCP_BACKEND_FIELDS[MCP_OPERATION_CONTENT_BROWSE].accepts(args):
+            raise ValueError("Content browse contains unsupported or missing arguments")
+        room_uid = args["roomUid"]
+        if not isinstance(room_uid, str) or (room_uid and not room_uid.strip()):
+            raise ValueError("roomUid must be an exact room UID or empty")
+        return backend.browse_content(
+            room_uid,
+            string_arg(args, "kind"),
+            str(args.get("term", "")),
+            int(number_arg(args, "limit")),
+            args.get("context"),
+        )
+
     return DomainService(
-        {
-            "content.browse": lambda args: backend.browse_content(
-                string_arg(args, "roomUid"),
-                string_arg(args, "kind"),
-                str(args.get("term", "")),
-                int(number_arg(args, "limit")),
-                args.get("context"),
-            )
-        },
+        {MCP_OPERATION_CONTENT_BROWSE: browse},
         mutates=False,
     )
