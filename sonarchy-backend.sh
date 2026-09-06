@@ -25,14 +25,16 @@ umask 077
 # below receives a separate allowlisted environment.
 unset PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT
 
+# Reject unsafe plugin paths before executing repository-owned Python.
+if [[ -L "$PLUGIN_DIR" || -L "$PLUGIN_DIR/requirements.lock" ]]; then
+  setup_error "Refusing to start from symbolic-link plugin files."
+fi
+
 command -v "$PYTHON_BIN" >/dev/null 2>&1 \
   || setup_error "Stable CPython 3.14.x is required."
 "$PYTHON_BIN" -I -S -B "$PLUGIN_DIR/sonarchy_runtime.py" \
   || setup_error "Stable CPython 3.14.x is required; other versions are unvalidated."
 
-if [[ -L "$PLUGIN_DIR" || -L "$PLUGIN_DIR/requirements.lock" ]]; then
-  setup_error "Refusing to start from symbolic-link plugin files."
-fi
 if [[ ! -f "$PLUGIN_DIR/requirements.lock" ]]; then
   setup_error "The hash-locked dependency file is missing."
 fi
@@ -62,7 +64,7 @@ fi
 
 installed_identity=""
 if [[ -f "$IDENTITY_FILE" ]]; then
-  installed_identity="$(cat "$IDENTITY_FILE")"
+  installed_identity="$(cat "$IDENTITY_FILE" 2>/dev/null)" || installed_identity=""
 fi
 if [[ ! -x "$VENV_DIR/bin/python" || "$installed_hash" != "$requirements_hash" \
   || "$installed_identity" != "$python_identity" ]] || ! environment_healthy "$VENV_DIR"; then
