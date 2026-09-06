@@ -7,8 +7,10 @@ control API, install hooks, or privileged operations.
 ## Environment
 
 - Stable CPython 3.14.x only, with a declared 3.14.0 floor. Use the exact
-  project Mise pin for development; only that target currently has suite/CI
-  evidence. The floor gate is tracked in #75. Future minors and prereleases
+  project Mise pin for development. CI runs separate exact-floor/current jobs
+  with isolated environments, version assertions, locked imports and the suite.
+  Both jobs must pass; unavailable runtime/wheels or incompatible locks are
+  failures, not skips. Future minors and prereleases
   require an explicit support decision, not an automatic pin bump. See
   [ADR 0003](docs/adr/0003-python-runtime-policy.md).
 - [Mise](https://mise.jdx.dev/) with the repository's trusted `.mise.toml`

@@ -10,9 +10,16 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  python_compatibility:
+    name: Python ${{ matrix.python }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.14.0", "3.14.7"]
+    env:
+      SONARCHY_TEST_VERSION: ${{ matrix.python }}
     steps:
       - name: Check out exact revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -23,22 +30,44 @@ jobs:
         with:
           cache: true
           install: true
+      - name: Create exact-target isolated test environment
+        run: |
+          mise install "python@$SONARCHY_TEST_VERSION"
+          target_root="$(mise where "python@$SONARCHY_TEST_VERSION")"
+          target_venv="$RUNNER_TEMP/sonarchy-ci-$SONARCHY_TEST_VERSION"
+          mise exec "python@$SONARCHY_TEST_VERSION" -- "$target_root/bin/python" -m venv "$target_venv"
+          echo "SONARCHY_CI_PYTHON=$target_venv/bin/python" >> "$GITHUB_ENV"
+          mise exec "python@$SONARCHY_TEST_VERSION" -- "$target_venv/bin/python" -c 'import os, sys; assert sys.version.split()[0] == os.environ["SONARCHY_TEST_VERSION"]; print(sys.version); print(sys.executable); print(sys.base_prefix)'
       - name: Install hash-locked test dependencies
         run: >-
-          mise exec -- python -m pip install --disable-pip-version-check
+          mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m pip install --disable-pip-version-check
           --no-input --no-deps --only-binary=:all: --require-hashes
           -r requirements-dev.lock
       - name: Check Python and shell syntax
         run: |
-          mise exec -- python -m compileall -q sonarchy_service.py sonarchy_backend
-          mise exec -- python -m json.tool manifest.json >/dev/null
+          mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m compileall -q sonarchy_service.py sonarchy_backend sonarchy_mcp sonarchy_mcp_contract.py sonarchy_runtime.py sonarchy_environment.py
+          mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m json.tool manifest.json >/dev/null
           bash -n sonarchy-backend.sh tests/qml/run-component-tests.sh
           mise exec -- shellcheck sonarchy-backend.sh tests/qml/run-component-tests.sh
+      - name: Verify runtime dependency imports and versions
+        run: |
+          identity="$(mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -I -B sonarchy_environment.py identity)"
+          mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -I -B sonarchy_environment.py check requirements.lock "$identity"
       - name: Check Python quality
         run: |
-          mise exec -- python -m ruff check .
-          mise exec -- python -m ruff format --check .
+          mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m ruff check .
+          mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m ruff format --check .
       - name: Run tests with branch coverage
         run: |
-          mise exec -- python -m coverage run -m pytest -q
-          mise exec -- python -m coverage report
+          mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m coverage run -m pytest -q
+          mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m coverage report
+
+  test:
+    name: test
+    needs: [python_compatibility]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require both compatibility targets
+        run: test "${{ needs.python_compatibility.result }}" = success

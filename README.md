@@ -60,8 +60,10 @@ It does not install into system Python or the user's global Python environment,
 never requests administrator privileges, and does not run an installer hook
 during `plugin add`.
 Stable CPython 3.14.x is required (declared floor: 3.14.0). Development and
-current CI use the exact version pinned in `.mise.toml`, currently 3.14.7;
-the floor has not yet been exercised in CI. Python 3.13, prereleases, other
+current CI use the exact version pinned in `.mise.toml`, currently 3.14.7.
+CI requires separate passing jobs for 3.14.0 and that current target, including
+exact-version provenance, locked imports, compilation and the Python suite.
+Python 3.13, prereleases, other
 implementations and future minors are rejected before setup. See the
 [runtime policy](docs/adr/0003-python-runtime-policy.md) for support and test
 evidence; do not assume an Omarchy upgrade preserves a supported interpreter.
