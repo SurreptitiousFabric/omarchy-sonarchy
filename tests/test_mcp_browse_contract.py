@@ -167,3 +167,116 @@ def test_backend_independently_rejects_browse_without_read_permission(browse_con
             "content_browse", {"kind": "apple", "term": "song", "limit": 1, "context": {}}
         )
     http.assert_not_called()
+
+
+@pytest.mark.parametrize("kind", ("apple", "apple-artist", "apple-album"))
+@pytest.mark.parametrize("storefront", ("GB", "gb", "CH"))
+def test_explicit_storefront_crosses_socket_to_every_provider_call(
+    browse_contract, kind, storefront
+):
+    mcp, _, _, _, http = browse_contract
+    result = mcp.call_tool(
+        "content_browse",
+        {"kind": kind, "term": "123", "limit": 6, "context": {}, "storefront": storefront},
+    )
+    assert result["storefront"] == storefront.upper()
+    assert http.called
+    assert {call.kwargs["params"]["country"] for call in http.call_args_list} == {
+        storefront.upper()
+    }
+
+
+@pytest.mark.parametrize("configured,expected", [("CH", "CH"), ("us", "US"), ("bad", "CH")])
+def test_omitted_storefront_uses_existing_configured_default(
+    browse_contract, monkeypatch, configured, expected
+):
+    monkeypatch.setenv("SONARCHY_APPLE_COUNTRY", configured)
+    mcp, _, _, _, http = browse_contract
+    result = mcp.call_tool(
+        "content_browse", {"kind": "apple", "term": "song", "limit": 1, "context": {}}
+    )
+    assert result["storefront"] == expected
+    assert http.call_args.kwargs["params"]["country"] == expected
+    assert os.environ["SONARCHY_APPLE_COUNTRY"] == configured
+
+
+@pytest.mark.parametrize("value", (None, "", "GBR", " GB", "1B", "éB", False, 12, []))
+@pytest.mark.parametrize("direct", (False, True))
+def test_invalid_storefront_fails_at_each_boundary_before_http(browse_contract, value, direct):
+    mcp, _, _, discovery, http = browse_contract
+    args = {
+        "kind": "apple",
+        "term": "song",
+        "limit": 1,
+        "context": {},
+        "roomUid": "",
+        "storefront": value,
+    }
+    with pytest.raises(ToolError, match="storefront"):
+        if direct:
+            mcp.backend.call("content.browse", args)
+        else:
+            mcp.call_tool("content_browse", args)
+    http.assert_not_called()
+    discovery.assert_not_called()
+
+
+@pytest.mark.parametrize("kind", ("queue", "library", "playlist", "playlists", "global"))
+def test_storefront_is_not_silently_ignored_for_non_apple_kinds(browse_contract, kind):
+    mcp, _, _, discovery, http = browse_contract
+    with pytest.raises(ToolError, match="only supported for Apple"):
+        mcp.call_tool(
+            "content_browse",
+            {
+                "kind": kind,
+                "term": "",
+                "limit": 1,
+                "context": {},
+                "roomUid": "stale",
+                "storefront": "GB",
+            },
+        )
+    http.assert_not_called()
+    discovery.assert_not_called()
+
+
+def test_region_specific_identities_and_default_are_not_cross_contaminated(
+    browse_contract, monkeypatch
+):
+    monkeypatch.setenv("SONARCHY_APPLE_COUNTRY", "CH")
+    mcp, _, _, _, http = browse_contract
+
+    def regional_response(method, url, **kwargs):
+        country = kwargs["params"]["country"]
+        identifier = 123 if country == "GB" else 789
+        payload = json.dumps(
+            {
+                "results": [
+                    {
+                        "wrapperType": "track",
+                        "trackId": identifier,
+                        "trackName": "Song",
+                        "trackViewUrl": f"https://music.apple.com/{country.lower()}/album/album/456?i={identifier}",
+                    }
+                ]
+            }
+        ).encode()
+        return SimpleNamespace(
+            status_code=200,
+            headers={},
+            raise_for_status=Mock(),
+            iter_content=lambda **kwargs: iter([payload]),
+            close=Mock(),
+        )
+
+    http.side_effect = regional_response
+    args = {"kind": "apple", "term": "song", "limit": 1, "context": {}}
+    british = mcp.call_tool("content_browse", {**args, "storefront": "GB"})
+    default = mcp.call_tool("content_browse", args)
+    assert british["storefront"] == "GB"
+    assert british["items"][0]["id"] == "123"
+    assert "/gb/" in british["items"][0]["url"]
+    assert default["storefront"] == "CH"
+    assert default["items"][0]["id"] == "789"
+    assert "/ch/" in default["items"][0]["url"]
+    assert os.environ["SONARCHY_APPLE_COUNTRY"] == "CH"

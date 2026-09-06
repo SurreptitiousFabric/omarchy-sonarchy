@@ -35,6 +35,7 @@ from sonarchy_mcp_contract import (
     MCP_TOOL_PLAY_PREFLIGHT,
     MCP_TOOL_ROOM_STATE_GET,
     MCP_TOOL_ROOMS_LIST,
+    normalize_browse_storefront,
     parse_mcp_permissions,
 )
 
@@ -368,11 +369,15 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             "description": (
                 "Browse one explicitly allowed Sonarchy content kind using normalized "
                 "provider-neutral items. Apple kinds may omit roomUid; Sonos-backed "
-                "kinds require an exact roomUid. Supplied room UIDs are validated. Read-only."
+                "kinds require an exact roomUid. Supplied room UIDs are validated. "
+                "Apple kinds accept optional two-letter storefront (for example GB); "
+                "omission uses the backend default and results report the effective storefront. "
+                "Read-only."
             ),
             "inputSchema": _object_schema(
                 {
                     "roomUid": {"type": "string", "maxLength": 256},
+                    "storefront": {"type": "string", "pattern": "^[A-Za-z]{2}$", "maxLength": 2},
                     "kind": {"type": "string", "enum": sorted(READ_KINDS)},
                     "term": {"type": "string", "maxLength": 256},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 100},
@@ -600,6 +605,14 @@ class SonarchyMcp:
             kind = str(arguments["kind"])
             if kind not in READ_KINDS:
                 raise ToolError("invalid_argument", "Unsupported content kind")
+            arguments = dict(arguments)
+            if "storefront" in arguments:
+                try:
+                    arguments["storefront"] = normalize_browse_storefront(
+                        kind, arguments["storefront"]
+                    )
+                except ValueError as exc:
+                    raise ToolError("invalid_argument", str(exc)) from exc
             room_uid = arguments.get("roomUid", "")
             if not isinstance(room_uid, str) or (room_uid and not room_uid.strip()):
                 raise ToolError("invalid_argument", "roomUid must be an exact room UID or empty")

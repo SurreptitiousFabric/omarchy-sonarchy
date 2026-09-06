@@ -15,6 +15,15 @@ MCP_PERMISSIONS = frozenset(
 MCP_DEFAULT_PERMISSIONS = frozenset({MCP_PERMISSION_READ})
 MCP_DISABLED_PERMISSIONS = frozenset()
 
+
+def normalize_browse_storefront(kind: str, value: object) -> str:
+    if kind not in {"apple", "apple-artist", "apple-album"}:
+        raise ValueError("storefront is only supported for Apple content")
+    if not isinstance(value, str) or len(value) != 2 or not value.isascii() or not value.isalpha():
+        raise ValueError("storefront must be a two-letter country code, such as GB")
+    return value.upper()
+
+
 MCP_CONFIG_DIRECTORY = "sonarchy"
 MCP_CONFIG_FILENAME = "mcp.toml"
 MAX_MCP_CONFIG_BYTES = 8 * 1024
@@ -98,7 +107,7 @@ MCP_PUBLIC_FIELDS = MappingProxyType(
         MCP_TOOL_ROOMS_LIST: ArgumentFields(frozenset()),
         MCP_TOOL_ROOM_STATE_GET: ArgumentFields(frozenset({"roomUid"})),
         MCP_TOOL_CONTENT_BROWSE: ArgumentFields(
-            frozenset({"kind", "term", "limit", "context"}), frozenset({"roomUid"})
+            frozenset({"kind", "term", "limit", "context"}), frozenset({"roomUid", "storefront"})
         ),
         MCP_TOOL_APPLE_PREFLIGHT: ArgumentFields(
             frozenset({"roomUid", "name", "allowDuplicates", "tracks"})
@@ -112,7 +121,7 @@ MCP_BACKEND_FIELDS = MappingProxyType(
     {
         MCP_OPERATION_STATE_REFRESH: ArgumentFields(frozenset()),
         MCP_OPERATION_CONTENT_BROWSE: ArgumentFields(
-            frozenset({"roomUid", "kind", "limit"}), frozenset({"term", "context"})
+            frozenset({"roomUid", "kind", "limit"}), frozenset({"term", "context", "storefront"})
         ),
         MCP_OPERATION_APPLE_VALIDATE: ArgumentFields(
             frozenset({"roomUid", "playlistName", "mode", "tracks"}),

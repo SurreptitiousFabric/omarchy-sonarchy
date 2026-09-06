@@ -83,6 +83,14 @@ only to stderr and never include the raw input.
   `playlists`, `playlist` and `global` require an exact room UID. A supplied
   nonempty UID is validated even for Apple; stale IDs are never ignored or
   replaced with the selected room. Read permission remains required.
+  Apple kinds additionally accept optional `storefront`, a two-letter ASCII
+  country code such as `GB` (case-insensitive). Results report the effective
+  uppercase `storefront`. Omission retains the configured backend default;
+  explicit empty/null/malformed values are rejected, not replaced by a default.
+  Send the storefront on each search, artist or album request; it is not stored
+  as session state. Non-Apple kinds reject this field. This selects a public
+  catalog region, not an Apple account region, and does not change desktop
+  configuration or guarantee availability of an individual recording.
 - `apple_playlist_preflight`: exact 1–25 track review and opaque `planHandle`.
 - `sonos_playlist_play_preflight`: read-only review of one exact existing
   `SQ:<id>`, exact room UID, complete bounded playlist and queue state, and
