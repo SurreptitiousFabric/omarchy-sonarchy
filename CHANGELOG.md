@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Permit public Apple MCP browsing without a room UID, without selecting a
+  room. Sonos-backed kinds still require an exact room; supplied stale or
+  malformed room IDs are rejected rather than ignored.
 - Allow exact-playlist playback transport to settle through at most 20 read-only
   observations on fixed 250 ms slots within a five-second latest-start window.
   Skip missed slots and reject late wakeups; `PLAYING` triggers fresh complete

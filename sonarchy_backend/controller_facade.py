@@ -39,6 +39,10 @@ class DomainFacadeMixin:
         limit: int,
         context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if not room_uid:
+            if kind not in {"apple", "apple-artist", "apple-album"}:
+                raise ValueError("roomUid is required for Sonos-backed content")
+            return browse_content(None, kind, term, limit, context)
         speaker = self._zone(room_uid)
         coordinator = self._safe(
             lambda: speaker.group.coordinator if speaker.group else speaker, speaker
