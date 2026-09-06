@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Permit public Apple MCP browsing without a room UID, without selecting a
+  room. Sonos-backed kinds still require an exact room; supplied stale or
+  malformed room IDs are rejected rather than ignored.
 - Refuse replacement of every nonempty or unverifiable queue before mutation.
   The confirmed empty-queue action appends and plays without clearing or
   replay-based rollback; failed operations preserve the resulting state.

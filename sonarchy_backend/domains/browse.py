@@ -302,8 +302,11 @@ def browse_service(backend: BrowsePort) -> DomainService:
     def browse(args: dict[str, Any]) -> dict[str, Any]:
         if not MCP_BACKEND_FIELDS[MCP_OPERATION_CONTENT_BROWSE].accepts(args):
             raise ValueError("Content browse contains unsupported or missing arguments")
+        room_uid = args["roomUid"]
+        if not isinstance(room_uid, str) or (room_uid and not room_uid.strip()):
+            raise ValueError("roomUid must be an exact room UID or empty")
         return backend.browse_content(
-            string_arg(args, "roomUid"),
+            room_uid,
             string_arg(args, "kind"),
             str(args.get("term", "")),
             int(number_arg(args, "limit")),

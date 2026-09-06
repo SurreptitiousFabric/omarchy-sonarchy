@@ -78,7 +78,11 @@ only to stderr and never include the raw input.
 - `rooms_list`: exact room UIDs plus bounded household/group facts.
 - `room_state_get`: current bounded state for one exact UID.
 - `content_browse`: explicitly mapped Sonarchy browse kinds and normalized
-  provider-neutral results.
+  provider-neutral results. `apple`, `apple-artist` and `apple-album` allow
+  omitted or empty `roomUid` and do not select a room. `queue`, `library`,
+  `playlists`, `playlist` and `global` require an exact room UID. A supplied
+  nonempty UID is validated even for Apple; stale IDs are never ignored or
+  replaced with the selected room. Read permission remains required.
 - `apple_playlist_preflight`: exact 1–25 track review and opaque `planHandle`.
 - `sonos_playlist_play_preflight`: read-only review of one exact existing
   `SQ:<id>`, exact room UID, complete bounded playlist and queue state, and
