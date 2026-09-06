@@ -51,6 +51,17 @@ also declares the first-run venv bootstrap above as installer-like behavior for
 human review even though that scanner does not currently emit an `installer`
 capability for the root launcher. This is an intentional disclosure, not a
 claim that the plugin can bypass review.
+
+## Queue replacement containment
+
+The UI/private-protocol `replace` enqueue mode requires an authoritatively
+empty queue. Nonempty and unverifiable queues are refused before mutation:
+resource metadata does not prove exact restorability. Empty-queue requests
+append and play without clearing, retries or destructive failure cleanup.
+Play now, Next and End retain their existing insertion behavior. Concurrent
+external edits are not locked; appending preserves any intervening additions.
+This mode is not exposed by MCP, and no general queue-rollback guarantee exists.
+
 ## Local MCP capability boundary
 
 The read inventory is exactly `rooms_list`, `room_state_get`, `content_browse`,

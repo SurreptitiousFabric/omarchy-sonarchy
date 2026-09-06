@@ -32,7 +32,6 @@ from sonarchy_backend.domains.playlists import (
     validate_playlist_title,
 )
 from sonarchy_backend.domains.queue import (
-    MAX_REPLACE_BACKUP_ITEMS,
     _replace_queue,
     enqueue_content_item,
     find_library_item,
@@ -462,152 +461,82 @@ def test_play_now_inserts_after_current_and_starts_returned_position():
     assert payload["message"] == "Playing now"
 
 
-def test_replace_queue_preflights_then_clears_adds_and_plays():
-    old = item("Q:old")
+@pytest.mark.parametrize("resources", ([], [SimpleNamespace(uri="x-sonosapi-hls:opaque")]))
+def test_replace_queue_refuses_every_nonempty_queue_before_mutating(resources):
+    room = speaker(
+        get_queue=Mock(return_value=QueueResult([item("Q:old", resources=resources)])),
+        clear_queue=Mock(),
+        add_to_queue=Mock(),
+        add_multiple_to_queue=Mock(),
+        play_from_queue=Mock(),
+    )
+    with pytest.raises(ValueError, match="nonempty queue"):
+        _replace_queue(room, item("Q:new"))
+    room.clear_queue.assert_not_called()
+    room.add_to_queue.assert_not_called()
+    room.add_multiple_to_queue.assert_not_called()
+    room.play_from_queue.assert_not_called()
+
+
+@pytest.mark.parametrize("total", (None, -1, 1, 101, "0", False))
+def test_replace_queue_refuses_unverified_empty_result(total):
+    result = QueueResult()
+    result.total_matches = total
+    room = speaker(get_queue=Mock(return_value=result), add_to_queue=Mock(), clear_queue=Mock())
+    with pytest.raises(ValueError, match="verified as empty"):
+        _replace_queue(room, item("Q:new"))
+    room.add_to_queue.assert_not_called()
+    room.clear_queue.assert_not_called()
+
+
+def test_replace_queue_refuses_unverifiable_playback_before_mutating():
+    room = speaker(
+        get_queue=Mock(return_value=QueueResult()),
+        avTransport=SimpleNamespace(),
+        add_to_queue=Mock(),
+        clear_queue=Mock(),
+    )
+    with pytest.raises(ValueError, match="source could not be verified"):
+        _replace_queue(room, item("Q:new"))
+    room.add_to_queue.assert_not_called()
+    room.clear_queue.assert_not_called()
+
+
+@pytest.mark.parametrize("position", (1, 3))
+def test_replace_empty_queue_appends_without_clear_even_after_concurrent_add(position):
     selected = item("Q:new")
     room = speaker(
-        get_queue=Mock(return_value=QueueResult([old])),
-        avTransport=Transport(),
-        get_current_track_info=Mock(return_value={"playlist_position": "1"}),
-        get_current_transport_info=Mock(return_value={"current_transport_state": "PLAYING"}),
+        get_queue=Mock(return_value=QueueResult()),
+        avTransport=Transport(""),
+        clear_queue=Mock(),
+        add_to_queue=Mock(return_value=position),
+        play_from_queue=Mock(),
+    )
+    assert _replace_queue(room, selected) == position
+    room.get_queue.assert_called_once_with(max_items=1, full_album_art_uri=False)
+    room.clear_queue.assert_not_called()
+    room.add_to_queue.assert_called_once_with(selected)
+    room.play_from_queue.assert_called_once_with(position - 1)
+
+
+@pytest.mark.parametrize("failure", ("add", "play"))
+def test_replace_empty_queue_failure_never_clears_or_replays(failure):
+    room = speaker(
+        get_queue=Mock(return_value=QueueResult()),
+        avTransport=Transport(""),
         clear_queue=Mock(),
         add_to_queue=Mock(return_value=1),
         add_multiple_to_queue=Mock(),
         play_from_queue=Mock(),
     )
-
-    assert _replace_queue(room, selected) == 1
-
-    room.get_queue.assert_called_once_with(
-        max_items=MAX_REPLACE_BACKUP_ITEMS,
-        full_album_art_uri=False,
-    )
-    room.clear_queue.assert_called_once_with()
-    room.add_to_queue.assert_called_once_with(selected)
-    room.play_from_queue.assert_called_once_with(0)
+    failing_call = room.add_to_queue if failure == "add" else room.play_from_queue
+    failing_call.side_effect = RuntimeError("speaker rejected operation")
+    with pytest.raises(RuntimeError, match="speaker rejected operation"):
+        _replace_queue(room, item("Q:new"))
+    room.clear_queue.assert_not_called()
     room.add_multiple_to_queue.assert_not_called()
-
-
-def test_replace_queue_refuses_incomplete_backup_before_mutating():
-    room = speaker(
-        get_queue=Mock(
-            return_value=QueueResult(
-                [item(f"Q:{index}") for index in range(MAX_REPLACE_BACKUP_ITEMS)],
-                total_matches=MAX_REPLACE_BACKUP_ITEMS + 1,
-            )
-        ),
-        clear_queue=Mock(),
-    )
-
-    with pytest.raises(ValueError, match="too large"):
-        _replace_queue(room, item("Q:new"))
-
-    room.clear_queue.assert_not_called()
-
-
-def test_replace_queue_refuses_unrestorable_backup_before_mutating():
-    room = speaker(
-        get_queue=Mock(return_value=QueueResult([item("Q:old", resources=[])])),
-        clear_queue=Mock(),
-    )
-
-    with pytest.raises(ValueError, match="cannot be backed up"):
-        _replace_queue(room, item("Q:new"))
-
-    room.clear_queue.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    ("uri", "playlist_position", "message"),
-    (
-        (None, "1", "source could not be verified"),
-        ("x-rincon-queue:RINCON_TEST#0", "0", "position could not be verified"),
-    ),
-)
-def test_replace_queue_refuses_unverifiable_playback_before_mutating(
-    uri, playlist_position, message
-):
-    transport = SimpleNamespace() if uri is None else Transport(uri)
-    room = speaker(
-        get_queue=Mock(return_value=QueueResult([item("Q:old")])),
-        avTransport=transport,
-        get_current_track_info=Mock(return_value={"playlist_position": playlist_position}),
-        get_current_transport_info=Mock(return_value={}),
-        clear_queue=Mock(),
-    )
-
-    with pytest.raises(ValueError, match=message):
-        _replace_queue(room, item("Q:new"))
-
-    room.clear_queue.assert_not_called()
-
-
-@pytest.mark.parametrize(("active", "was_playing"), ((True, False), (False, True)))
-def test_replace_queue_restores_backup_when_replacement_fails(active, was_playing):
-    old = item("Q:old")
-    uri = "x-rincon-queue:RINCON_TEST#0" if active else "x-sonosapi-stream:station"
-    room = speaker(
-        get_queue=Mock(return_value=QueueResult([old])),
-        avTransport=Transport(uri),
-        get_current_track_info=Mock(return_value={"playlist_position": "1"}),
-        get_current_transport_info=Mock(
-            return_value={
-                "current_transport_state": "PLAYING" if was_playing else "PAUSED_PLAYBACK"
-            }
-        ),
-        clear_queue=Mock(),
-        add_to_queue=Mock(side_effect=RuntimeError("speaker rejected item")),
-        add_multiple_to_queue=Mock(),
-        play_from_queue=Mock(),
-    )
-
-    with pytest.raises(RuntimeError, match="speaker rejected item"):
-        _replace_queue(room, item("Q:new"))
-
-    assert room.clear_queue.call_count == 2
-    room.add_multiple_to_queue.assert_called_once_with([old])
-    if active:
-        room.play_from_queue.assert_called_once_with(0, start=was_playing)
-    else:
+    if failure == "add":
         room.play_from_queue.assert_not_called()
-
-
-def test_replace_queue_reports_when_backup_recovery_also_fails():
-    room = speaker(
-        get_queue=Mock(return_value=QueueResult([item("Q:old")])),
-        avTransport=Transport(),
-        get_current_track_info=Mock(return_value={"playlist_position": "1"}),
-        get_current_transport_info=Mock(return_value={}),
-        clear_queue=Mock(),
-        add_to_queue=Mock(side_effect=RuntimeError("replacement failed")),
-        add_multiple_to_queue=Mock(side_effect=RuntimeError("recovery failed")),
-        play_from_queue=Mock(),
-    )
-
-    with pytest.raises(RuntimeError, match="previous queue could not be restored"):
-        _replace_queue(room, item("Q:new"))
-
-    assert room.clear_queue.call_count == 2
-
-
-def test_replace_queue_can_restore_an_empty_backup_without_queueing_items():
-    room = speaker(
-        get_queue=Mock(return_value=QueueResult()),
-        avTransport=Transport("x-sonosapi-stream:station"),
-        get_current_track_info=Mock(return_value={}),
-        get_current_transport_info=Mock(return_value={}),
-        clear_queue=Mock(),
-        add_to_queue=Mock(side_effect=RuntimeError("replacement failed")),
-        add_multiple_to_queue=Mock(),
-        play_from_queue=Mock(),
-    )
-
-    with pytest.raises(RuntimeError, match="replacement failed"):
-        _replace_queue(room, item("Q:new"))
-
-    assert room.clear_queue.call_count == 2
-    room.add_multiple_to_queue.assert_not_called()
-    room.play_from_queue.assert_not_called()
 
 
 def test_replace_enqueue_mode_uses_safe_replacement_path():
@@ -623,7 +552,7 @@ def test_replace_enqueue_mode_uses_safe_replacement_path():
     assert payload == {
         "ok": True,
         "action": "queue-replace",
-        "message": "Replaced the queue and started playback",
+        "message": "Added to the empty queue and started playback",
     }
 
 

@@ -27,7 +27,7 @@ EXPECTED_MATRIX = (
 EXPECTED_PUBLIC_FIELDS = {
     "rooms_list": (set(), set()),
     "room_state_get": ({"roomUid"}, set()),
-    "content_browse": ({"kind", "term", "limit", "context"}, {"roomUid"}),
+    "content_browse": ({"kind", "term", "limit", "context"}, {"roomUid", "storefront"}),
     "apple_playlist_preflight": ({"roomUid", "name", "allowDuplicates", "tracks"}, set()),
     "sonos_playlist_play_preflight": ({"roomUid", "playlistId"}, set()),
     "apple_playlist_create": ({"planHandle", "approved"}, set()),
@@ -36,7 +36,7 @@ EXPECTED_PUBLIC_FIELDS = {
 
 EXPECTED_BACKEND_FIELDS = {
     "state.refresh": (set(), set()),
-    "content.browse": ({"roomUid", "kind", "limit"}, {"term", "context"}),
+    "content.browse": ({"roomUid", "kind", "limit"}, {"term", "context", "storefront"}),
     "playlist_plan.apple.validate": (
         {"roomUid", "playlistName", "mode", "tracks"},
         {"allowDuplicates"},
