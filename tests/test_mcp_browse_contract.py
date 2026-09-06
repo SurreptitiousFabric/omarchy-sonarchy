@@ -37,7 +37,9 @@ def browse_contract(tmp_path, monkeypatch, request):
                     "trackName": "Song",
                     "artistName": "Artist",
                     "collectionName": "Album",
-                    "trackTimeMillis": 180000,
+                    "trackTimeMillis": 180123,
+                    "wrapperType": "track",
+                    "trackExplicitness": "cleaned",
                     "trackViewUrl": "https://music.apple.com/gb/album/album/456?i=123",
                 }
             ]
@@ -280,3 +282,17 @@ def test_region_specific_identities_and_default_are_not_cross_contaminated(
     assert default["items"][0]["id"] == "789"
     assert "/ch/" in default["items"][0]["url"]
     assert os.environ["SONARCHY_APPLE_COUNTRY"] == "CH"
+
+
+@pytest.mark.parametrize("kind", ("apple", "apple-artist", "apple-album"))
+def test_structured_song_metadata_survives_real_socket(browse_contract, kind):
+    mcp, _, _, _, _ = browse_contract
+    result = mcp.call_tool(
+        "content_browse", {"kind": kind, "term": "123", "limit": 1, "context": {}}
+    )
+    song = result["items"][0]
+    assert song["artist"] == "Artist"
+    assert song["album"] == "Album"
+    assert song["durationMs"] == 180123
+    assert song["explicitness"] == "cleaned"
+    assert song["subtitle"] == "Song · Artist · Album · 3:00"

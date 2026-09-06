@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Expose bounded structured artist/album, exact millisecond duration and distinct
+  explicitness classifications for Apple song browse results; retain unknown
+  values and the existing QML subtitle and action identities.
 - Add per-request Apple browse storefront selection through MCP and the private
   protocol, with effective-region results and strict malformed-input rejection.
   Omitted storefronts retain the existing backend default; no global setting changes.

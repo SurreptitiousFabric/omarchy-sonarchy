@@ -52,6 +52,12 @@ def _complete_identity(raw: Any, maximum_bytes: int) -> str | None:
     return raw
 
 
+def bounded_metadata_text(raw: Any) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    return bounded_display_text(raw) or None
+
+
 def _bounded_artwork(raw: Any) -> str:
     value = str(raw or "")
     if any(ord(character) < 32 or ord(character) == 127 for character in value):
@@ -80,6 +86,9 @@ def _bounded_item(raw: Any) -> dict[str, Any] | None:
     for field in DISPLAY_TEXT_FIELDS:
         if field in item:
             item[field] = bounded_display_text(item[field])
+    for field in ("artist", "album"):
+        if field in item:
+            item[field] = bounded_metadata_text(item[field])
     if "album_art" in item:
         item["album_art"] = _bounded_artwork(item["album_art"])
     return item

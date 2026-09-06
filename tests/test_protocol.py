@@ -809,6 +809,9 @@ def _oversized_browse_value(kind):
         for index, item in enumerate(items):
             item["url"] = f"https://music.apple.com/ch/song/example/{index}?i={index}"
             item["album_url"] = f"https://music.apple.com/ch/album/example/{index}"
+            item.update(
+                artist=long_text, album=long_text, durationMs=180123, explicitness="cleaned"
+            )
     return value
 
 
@@ -862,6 +865,12 @@ def test_large_browse_pages_return_successful_exact_prefixes_with_bounded_envelo
     )
     assert all(item["title"].endswith("…") for item in value["items"])
     assert all(item["album_art"] == "" for item in value["items"])
+    if kind.startswith("apple"):
+        for item in value["items"]:
+            assert len(item["artist"].encode("utf-8")) <= 512
+            assert len(item["album"].encode("utf-8")) <= 512
+            assert item["durationMs"] == 180123
+            assert item["explicitness"] == "cleaned"
     if kind == "library":
         assert value["offset"] == 40
         assert value["has_next"] is True

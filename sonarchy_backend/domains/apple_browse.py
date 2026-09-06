@@ -11,7 +11,10 @@ from ..apple_catalog import (
     public_apple_album_url,
     public_apple_music_url,
 )
+from .browse_bounds import bounded_metadata_text
 from .common import clean
+
+MAX_EXACT_DURATION_MS = (1 << 53) - 1
 
 
 def _duration(milliseconds: Any) -> str:
@@ -68,14 +71,31 @@ def _track(item: dict[str, Any]) -> dict[str, Any] | None:
     url = public_apple_music_url(item.get("trackViewUrl"))
     if not identifier or not title or not url:
         return None
-    artist = clean(item.get("artistName"))
-    album = clean(item.get("collectionName"))
+    artist = bounded_metadata_text(item.get("artistName"))
+    album = bounded_metadata_text(item.get("collectionName"))
+    raw_duration = item.get("trackTimeMillis")
+    duration_ms = (
+        raw_duration
+        if type(raw_duration) is int and 0 <= raw_duration <= MAX_EXACT_DURATION_MS
+        else None
+    )
+    raw_explicitness = item.get("trackExplicitness")
+    explicitness = (
+        raw_explicitness
+        if isinstance(raw_explicitness, str)
+        and raw_explicitness in {"cleaned", "explicit", "notExplicit"}
+        else "unknown"
+    )
     return {
         "id": identifier,
         "title": title,
         "subtitle": " · ".join(
-            part for part in ("Song", artist, album, _duration(item.get("trackTimeMillis"))) if part
+            part for part in ("Song", artist, album, _duration(duration_ms)) if part
         ),
+        "artist": artist,
+        "album": album,
+        "durationMs": duration_ms,
+        "explicitness": explicitness,
         "section": "SONGS",
         "media_kind": "song",
         "album_art": apple_artwork_url(item.get("artworkUrl100")),
