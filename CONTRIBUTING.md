@@ -60,6 +60,14 @@ a reviewed version of `pip-compile` under Python 3.14 using
 `--generate-hashes --strip-extras`, review the complete diff, run the full test
 and audit suite, and never hand-edit generated hashes.
 
+When adding a runtime distribution, review its device-free import target in
+`sonarchy_environment.py`. The bootstrap health check validates exact installed
+versions from the lock and imports every listed runtime dependency; unknown
+distributions or unsupported lock syntax fail closed until reviewed. Its
+identity intentionally excludes patch versions but includes implementation,
+major/minor, ABI and architecture. Keep the real-import no-network check and
+synthetic bootstrap failure/concurrency tests passing.
+
 ## Sonos testing
 
 Unit tests must fake speaker mutations. Live smoke tests should be read-only:

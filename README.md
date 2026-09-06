@@ -64,6 +64,19 @@ implementations and future minors are rejected before setup. See the
 [runtime policy](docs/adr/0003-python-runtime-policy.md) for support and test
 evidence; do not assume an Omarchy upgrade preserves a supported interpreter.
 
+The launcher reuses its environment only when the lock hash, Python
+major/minor/ABI/architecture identity and locked dependency imports agree.
+Compatible patch updates do not by themselves trigger installation. Missing
+metadata on an older installation triggers a one-time validated rebuild.
+Health checks have a ten-second deadline and one-second forced-stop grace.
+Replacements are built and checked before promotion under the setup lock;
+download/install/check failures leave the old environment intact. A failed
+promotion attempts to restore it. An interrupted promotion may leave a
+`venv.previous.*` directory in the private Sonarchy data directory for recovery;
+do not delete it without inspecting which environment is usable. A successful
+promotion removes its superseded backup. This does not validate future Python
+minors or prove real OS-upgrade acceptance.
+
 ## Keyboard use
 
 Open or close the popup without a mouse:
