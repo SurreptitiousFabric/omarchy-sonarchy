@@ -25,9 +25,9 @@ umask 077
 unset PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT
 
 command -v "$PYTHON_BIN" >/dev/null 2>&1 \
-  || setup_error "Python 3.14 or newer is required."
-"$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info < (3, 14))' \
-  || setup_error "Python 3.14 or newer is required."
+  || setup_error "Stable CPython 3.14.x is required."
+"$PYTHON_BIN" -I -S -B "$PLUGIN_DIR/sonarchy_runtime.py" \
+  || setup_error "Stable CPython 3.14.x is required; other versions are unvalidated."
 
 if [[ -L "$PLUGIN_DIR" || -L "$PLUGIN_DIR/requirements.lock" ]]; then
   setup_error "Refusing to start from symbolic-link plugin files."

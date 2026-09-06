@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Declare stable CPython 3.14.x support and guard both launchers before setup or
+  imports. Reject unvalidated future minors/prereleases with stderr diagnostics;
+  distinguish the declared 3.14.0 floor from the currently tested Mise target.
 - Allow exact-playlist playback transport to settle through at most 20 read-only
   observations on fixed 250 ms slots within a five-second latest-start window.
   Skip missed slots and reject late wakeups; `PLAYING` triggers fresh complete
