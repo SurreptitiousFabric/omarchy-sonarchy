@@ -367,7 +367,8 @@ def tools(permissions: frozenset[str]) -> list[dict[str, Any]]:
             "name": MCP_TOOL_CONTENT_BROWSE,
             "description": (
                 "Browse one explicitly allowed Sonarchy content kind using normalized "
-                "provider-neutral items. Read-only."
+                "provider-neutral items. Apple kinds may omit roomUid; Sonos-backed "
+                "kinds require an exact roomUid. Supplied room UIDs are validated. Read-only."
             ),
             "inputSchema": _object_schema(
                 {
@@ -599,7 +600,14 @@ class SonarchyMcp:
             kind = str(arguments["kind"])
             if kind not in READ_KINDS:
                 raise ToolError("invalid_argument", "Unsupported content kind")
-            return self._backend_call(MCP_OPERATION_CONTENT_BROWSE, dict(arguments))
+            room_uid = arguments.get("roomUid", "")
+            if not isinstance(room_uid, str) or (room_uid and not room_uid.strip()):
+                raise ToolError("invalid_argument", "roomUid must be an exact room UID or empty")
+            if not room_uid and kind not in {"apple", "apple-artist", "apple-album"}:
+                raise ToolError("invalid_argument", "roomUid is required for Sonos-backed content")
+            return self._backend_call(
+                MCP_OPERATION_CONTENT_BROWSE, {**arguments, "roomUid": room_uid}
+            )
         if name == MCP_TOOL_APPLE_PREFLIGHT:
             self._prepare_handle_issue()
             handle = self._new_handle()
