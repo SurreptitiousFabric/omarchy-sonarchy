@@ -28,6 +28,14 @@ def test_real_imports_resolve(tmp_path, imports):
     assert gate.lint(tmp_path, imports)["status"] == "passed"
 
 
+def test_navigation_outer_ids_are_bound_without_suppressing_other_diagnostics(tmp_path, imports):
+    shutil.copy2(gate.ROOT / "SonarchyNavigation.qml", tmp_path / "SonarchyNavigation.qml")
+    result = gate.lint(tmp_path, imports)
+    assert not [item for item in result["diagnostics"] if item["category"] == "unqualified"]
+    # The complete platform gate still requires all diagnostics to be resolved;
+    # shared theme type limitations remain tracked in #91, not suppressed here.
+
+
 @pytest.mark.parametrize(
     "source", ["import QtQuick\nItem {", "import MissingSonarchyModule\nItem {}"]
 )
