@@ -47,8 +47,8 @@ jobs:
         run: |
           mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m compileall -q sonarchy_service.py sonarchy_backend sonarchy_mcp sonarchy_mcp_contract.py sonarchy_runtime.py sonarchy_environment.py
           mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m json.tool manifest.json >/dev/null
-          bash -n sonarchy-backend.sh tests/qml/run-component-tests.sh
-          mise exec -- shellcheck sonarchy-backend.sh tests/qml/run-component-tests.sh
+          bash -n sonarchy-backend.sh sonarchy-mcp.sh tests/qml/run-component-tests.sh
+          mise exec -- shellcheck sonarchy-backend.sh sonarchy-mcp.sh tests/qml/run-component-tests.sh
       - name: Verify runtime dependency imports and versions
         run: |
           identity="$(mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -I -B sonarchy_environment.py identity)"
