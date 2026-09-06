@@ -8,7 +8,7 @@ Retain intentional Sonos-specific coupling where it is straightforward and
 already localized. Do not add interfaces around every DIDL class, alarm or
 speaker property merely to claim dependency inversion. Additional isolation is
 justified for fragile/private protocol envelopes and security hooks, but the
-first missing step is stronger contract evidence (#98/#99/#100), not
+next missing step is stronger event/topology contract evidence (#98/#99), not
 an all-domain refactor. Keep the existing direct Apple adapter boundary.
 
 The package pin fixes library code, not speaker firmware, subscription behavior,
@@ -40,7 +40,7 @@ Test paths below are under `tests/`. “Tested” does not imply physical accept
 
 | Contract / owner | Guard or failure behavior | Existing evidence / gap |
 | --- | --- | --- |
-| Song URL identity: `apple_catalog.canonical_apple_song` expects `AppleMusicShare.canonical_uri` to return `song:<exact ID>` | Validates original HTTPS URL shape, unique numeric `i`, exact reviewed ID and returned kind/ID. Mismatch raises ValueError before saved-playlist work. This helper has no independent version check. | `test_apple_playlist_plan.py::test_valid_apple_song_url_is_canonicalised_as_exact_song` uses the real pinned canonicalizer; malformed/mismatch input cases reject. Explicit returned-value drift cases are missing: #100. |
+| Song URL identity: `apple_catalog.canonical_apple_song` expects `AppleMusicShare.canonical_uri` to return `song:<exact ID>` | Validates original HTTPS URL shape, unique numeric `i`, exact reviewed ID and returned kind/ID. Mismatch raises ValueError before saved-playlist work. This helper has no independent version check. | `test_apple_playlist_plan.py::test_valid_apple_song_url_is_canonicalised_as_exact_song` uses the real pinned canonicalizer; malformed/mismatch input cases reject. `test_canonicalizer_return_drift_rejects_before_saved_queue_access` in the transaction suite covers returned-value drift (#100). |
 | Apple envelope: `DirectAppleSavedQueueAdapter` expects version 0.31.2, service number 52231, song key 10032020, empty prefix and musicTrack class | Constructor rejects version/magic/service drift or missing AddURIToSavedQueue/browse. Exact extract result `("song", "song%3a<ID>")` required. | `test_direct_adapter_matches_pinned_soco_0312_and_escapes_reviewed_xml`, `test_direct_adapter_fails_closed_on_soco_or_apple_contract_drift` in `test_apple_playlist_transaction.py`; real library DIDL round trip with fake speaker transport. |
 | Saved-queue append: adapter uses SQ numeric ID, browse update_id and AddAtIndex 2**32-1; reviewed metadata uses SA_RINCON descriptor and ElementTree-backed DIDL serialization | Invalid fields/identity/update ID reject; one direct saved-queue call, no temporary playback queue. Remote exceptions propagate to transaction logic; package pin does not validate firmware SOAP semantics. | Same adapter tests, unreviewed-input cases, transaction success/partial-cleanup tests. Approved physical content validation remains required separately. |
 | Read-back identity: `apple_saved_queue_song_identity` accepts only pinned version and full HLS-static song resource/protocol/sid shape | Unknown/mismatched representation returns empty identity. Transaction combines independent item/resource evidence and accepts exactly one non-conflicting ID; complete ordered metadata verification can fail. | `test_song_identity_requires_anchored_apple_evidence`, `test_physical_sq49_shape_has_strong_identity_and_verified_metadata`, version/resource-shape rejection tests. “Physical” names are stored observed fixtures, not newly executed live tests. |
@@ -61,7 +61,8 @@ Test paths below are under `tests/`. “Tested” does not imply physical accept
    hand-edit lock hashes or install into system/plugin Python for testing.
 3. Run the complete Python matrix, locked runtime import/version checks and
    advisory gate. Run the focused Apple-plan/transaction, live-update and
-   controller tests, plus #98/#99/#100 contract tests once available.
+   controller tests, including #100 canonicalizer/magic/extract drift cases,
+   plus #98/#99 contract tests once available.
    A failed or incomplete audit is not a clean result.
 4. Deliberately test old/mismatched version and changed Apple constants/extract
    behavior, absent service methods/update identity, conflicting resource IDs,
