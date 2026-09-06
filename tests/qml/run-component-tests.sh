@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 QML_TEST_RUNNER="/usr/lib/qt6/bin/qmltestrunner"
 OMARCHY_SLIDER="/usr/share/omarchy/shell/Ui/PanelSlider.qml"
+OMARCHY_GLYPH="/usr/share/omarchy/shell/Ui/OpticalGlyph.qml"
 
 [[ -x "$QML_TEST_RUNNER" ]] || {
   echo "qmltestrunner is unavailable: $QML_TEST_RUNNER" >&2
@@ -11,6 +12,10 @@ OMARCHY_SLIDER="/usr/share/omarchy/shell/Ui/PanelSlider.qml"
 }
 [[ -f "$OMARCHY_SLIDER" ]] || {
   echo "Omarchy PanelSlider is unavailable: $OMARCHY_SLIDER" >&2
+  exit 1
+}
+[[ -f "$OMARCHY_GLYPH" ]] || {
+  echo "Omarchy OpticalGlyph is unavailable: $OMARCHY_GLYPH" >&2
   exit 1
 }
 
@@ -23,7 +28,8 @@ trap cleanup EXIT
 mkdir -p "$TEST_ROOT/imports" "$TEST_ROOT/tests"
 cp -R "$PROJECT_ROOT/tests/qml/imports/." "$TEST_ROOT/imports/"
 ln -s "$OMARCHY_SLIDER" "$TEST_ROOT/imports/qs/Ui/PanelSlider.qml"
-for component in SonarchyAlarmDraft.qml SonarchyContentState.qml SonarchyErrorState.qml SonarchyQueuePage.qml SonarchySlider.qml; do
+ln -s "$OMARCHY_GLYPH" "$TEST_ROOT/imports/qs/Ui/OpticalGlyph.qml"
+for component in SonarchyAlarmDraft.qml SonarchyContentState.qml SonarchyErrorState.qml SonarchyNavigation.qml SonarchyQueuePage.qml SonarchySlider.qml; do
   ln -s "$PROJECT_ROOT/$component" "$TEST_ROOT/tests/$component"
 done
 for test_file in "$PROJECT_ROOT"/tests/qml/tst_*.qml; do

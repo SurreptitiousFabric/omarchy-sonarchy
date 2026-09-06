@@ -10,6 +10,7 @@ QtObject {
     property real bodySmall: 12
     property real body: 14
     property real iconSmall: 14
+    property real icon: 18
     property real iconLarge: 20
   }
   property QtObject spacing: QtObject {
@@ -26,4 +27,8 @@ QtObject {
   function selectedFillFor(_foreground, _accent) {
     return "#202020"
   }
+
+  function normalFillFor(_foreground, _accent) { return "#101010" }
+  function focusFillFor(_foreground, _accent) { return "#303030" }
+  function selectedStateColor(foreground, _accent) { return foreground }
 }
