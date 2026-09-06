@@ -38,9 +38,9 @@ mise exec -- python -m ruff format --check .
 mise exec -- python -m coverage run -m pytest -q
 mise exec -- python -m coverage report
 omarchy plugin validate .
-bash -n sonarchy-backend.sh
+bash -n sonarchy-backend.sh sonarchy-mcp.sh tests/qml/run-component-tests.sh
 bash tests/qml/run-component-tests.sh
-mise exec -- shellcheck sonarchy-backend.sh tests/qml/run-component-tests.sh
+mise exec -- shellcheck sonarchy-backend.sh sonarchy-mcp.sh tests/qml/run-component-tests.sh
 /usr/lib/qt6/bin/qmllint BarWidget.qml LiveService.qml Service.qml SonarchyContentState.qml SonarchyNowPage.qml SonarchyBrowsePage.qml SonarchyRoomsPage.qml SonarchySoundPage.qml SonarchySystemPage.qml
 ```
 
@@ -48,6 +48,14 @@ QML lint may report unresolved `qs.Commons`/`qs.Ui` imports when invoked outside
 the running shell's module context; syntax failure or a nonzero exit is not
 acceptable. After a shell restart, inspect the user journal for this plugin's
 QML/runtime errors.
+
+CI checks every shipped shell launcher with Bash and ShellCheck. The Python
+suite also runs a temporary copy of the MCP launcher from an unrelated working
+directory, substituting only `/usr/bin/python3` with the exact test interpreter.
+It exercises real stdio and Unix-socket I/O against a fake backend, with private
+HOME/XDG directories and no runtime installation or speakers. Negative controls
+prove stdout noise and a broken adapter entry point fail the startup assertion.
+This is not evidence for the installed system-Python path or live Omarchy startup.
 
 The component interaction tests run offscreen. The slider test uses the
 installed Omarchy `PanelSlider.qml` with minimal visual-only theme stubs and
