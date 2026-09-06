@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add per-request Apple browse storefront selection through MCP and the private
+  protocol, with effective-region results and strict malformed-input rejection.
+  Omitted storefronts retain the existing backend default; no global setting changes.
 - Permit public Apple MCP browsing without a room UID, without selecting a
   room. Sonos-backed kinds still require an exact room; supplied stale or
   malformed room IDs are rejected rather than ignored.
