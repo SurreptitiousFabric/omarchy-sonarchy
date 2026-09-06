@@ -41,6 +41,8 @@ no platform pass implied by skipped host tests in generic Python CI.
   claim full live-shell behavior.
 - Real-tool controls require a valid real-import probe to pass and malformed
   manifest/QML, missing import and an intentionally failing component to fail.
+  The control subprocess clears inherited `PYTEST_ADDOPTS` so host collection
+  or selection preferences cannot skip these required checks.
 
 Missing tools, malformed/incomplete lint output, timeouts or dirty/mismatched
 candidates cannot report success. Each child command has a two-minute timeout.
