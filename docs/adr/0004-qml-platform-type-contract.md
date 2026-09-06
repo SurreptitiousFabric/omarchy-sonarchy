@@ -46,6 +46,11 @@ Run the device-free probes with:
 SONARCHY_PLATFORM_TESTS=1 mise exec -- python -m pytest -q tests/test_qml_type_contract.py
 ```
 
+The required `mise run validate-platform` job includes this module alongside
+`tests/test_platform_host.py`; a probe failure fails its required control stage.
+The targeted command above is for development, not a substitute for the full
+clean-candidate platform gate.
+
 The first probe lints real installed modules without instantiating them.
 The runtime probe extracts the actual font-role declaration expressions from
 installed Style.qml and supplies only deterministic underlying theme inputs.
