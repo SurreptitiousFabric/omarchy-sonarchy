@@ -15,7 +15,7 @@ owners.
 - Playback-session selection, safe handoff, per-room mixer, and staged grouping
 - Real room rename
 - Sonos Favorites and current-queue playback, drag/keyboard reordering, removal,
-  clearing, and safe replacement
+  clearing, and non-destructive insertion
 - Sonos Playlist create, save-queue, browse, play, reorder, and delete actions
 - Exact Apple-song plans that create and verify a Sonos Playlist directly,
   without changing a room queue or starting playback
@@ -35,9 +35,11 @@ Queue moves re-check both the moved item and destination item. Drag the handle
 onto another row, use the row's arrow buttons, or press **Alt+Up/Alt+Down**
 while one of that row's controls is focused.
 Library and playlist rows offer **Play now**, **Next**, **End**, and a confirmed
-**Replace queue** action. Replace first verifies a bounded backup and restores
-the previous queue if the new item cannot be added; queues over 100 items are
-left untouched because Sonarchy cannot back them up completely.
+**Play if queue empty** action. Nonempty or unverifiable queues are refused
+without clearing, adding or playing. An empty queue is appended to without
+clearing; a failed append/play is reported without destructive cleanup.
+Sonarchy cannot guarantee exact restoration of arbitrary provider queues.
+Use **Next** or **End** to preserve an existing queue without starting playback.
 
 ## Install
 
