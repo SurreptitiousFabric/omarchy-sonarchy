@@ -15,6 +15,15 @@
 - Declare stable CPython 3.14.x support and guard both launchers before setup or
   imports. Reject unvalidated future minors/prereleases with stderr diagnostics;
   distinguish the declared 3.14.0 floor from the currently tested Mise target.
+- Add per-request Apple browse storefront selection through MCP and the private
+  protocol, with effective-region results and strict malformed-input rejection.
+  Omitted storefronts retain the existing backend default; no global setting changes.
+- Permit public Apple MCP browsing without a room UID, without selecting a
+  room. Sonos-backed kinds still require an exact room; supplied stale or
+  malformed room IDs are rejected rather than ignored.
+- Refuse replacement of every nonempty or unverifiable queue before mutation.
+  The confirmed empty-queue action appends and plays without clearing or
+  replay-based rollback; failed operations preserve the resulting state.
 - Allow exact-playlist playback transport to settle through at most 20 read-only
   observations on fixed 250 ms slots within a five-second latest-start window.
   Skip missed slots and reject late wakeups; `PLAYING` triggers fresh complete

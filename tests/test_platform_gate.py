@@ -72,3 +72,52 @@ def test_lint_default_zero_exit_cannot_mask_failed_report(tmp_path, monkeypatch)
         ),
     )
     assert gate.lint(tmp_path, tmp_path)["status"] == "failed"
+
+
+@pytest.mark.parametrize("addopts", ["--collect-only", "-k test_positive_probe"])
+@pytest.mark.parametrize("failing_control", [None, "platform", "contract"])
+def test_inherited_options_cannot_skip_controls(
+    tmp_path, monkeypatch, capsys, addopts, failing_control
+):
+    """Exercise the gate's real subprocess/env path with portable pytest controls."""
+    candidate = "a" * 40
+    monkeypatch.setattr(gate.sys, "argv", ["gate", candidate])
+    monkeypatch.setenv("PYTEST_ADDOPTS", addopts)
+    test_dir = tmp_path / "tests"
+    test_dir.mkdir()
+    (test_dir / "test_platform_host.py").write_text(
+        "from pathlib import Path\n"
+        "def test_positive_probe():\n"
+        "    Path('positive-ran').touch()\n"
+        "def test_negative_control():\n"
+        "    Path('negative-ran').touch()\n"
+        f"    assert {failing_control != 'platform'!r}\n"
+    )
+    (test_dir / "test_qml_type_contract.py").write_text(
+        "from pathlib import Path\n"
+        "def test_type_contract():\n"
+        "    Path('contract-ran').touch()\n"
+        f"    assert {failing_control != 'contract'!r}\n"
+    )
+    real_run = gate.run
+
+    def run(command, **kwargs):
+        if "rev-parse" in command:
+            return SimpleNamespace(returncode=0, stdout=candidate)
+        if "status" in command:
+            return SimpleNamespace(returncode=0, stdout="")
+        return real_run(command, cwd=tmp_path, **kwargs)
+
+    monkeypatch.setattr(gate, "run", run)
+    monkeypatch.setattr(gate, "platform", lambda: {"packages": ["fixture"]})
+    for name in ["manifest", "lint", "components"]:
+        monkeypatch.setattr(gate, name, lambda *_: {"status": "passed"})
+    result = gate.main()
+    report = json.loads(capsys.readouterr().out)
+    assert (tmp_path / "positive-ran").is_file()
+    assert (tmp_path / "negative-ran").is_file()
+    assert (tmp_path / "contract-ran").is_file()
+    assert result == int(failing_control is not None)
+    assert report["stages"]["negativeControls"]["status"] == (
+        "failed" if failing_control else "passed"
+    )
