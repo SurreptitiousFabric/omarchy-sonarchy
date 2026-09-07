@@ -8,9 +8,9 @@ Retain intentional Sonos-specific coupling where it is straightforward and
 already localized. Do not add interfaces around every DIDL class, alarm or
 speaker property merely to claim dependency inversion. Additional isolation is
 justified for fragile/private protocol envelopes and security hooks, but the
-next missing step is stronger event/topology and capability contract evidence
-(#98/#99/#103), not
-an all-domain refactor. Keep the existing direct Apple adapter boundary.
+evidence should come from focused event/topology and capability contract tests
+(#98/#99/#103), not an all-domain refactor. Keep the existing direct Apple
+adapter boundary.
 
 The package pin fixes library code, not speaker firmware, subscription behavior,
 music-service registration, account state or provider resource representations.
@@ -43,7 +43,7 @@ Test paths below are under `tests/`. “Tested” does not imply physical accept
 | --- | --- | --- |
 | Song URL identity: `apple_catalog.canonical_apple_song` expects `AppleMusicShare.canonical_uri` to return `song:<exact ID>` | Validates original HTTPS URL shape, unique numeric `i`, exact reviewed ID and returned kind/ID. Mismatch raises ValueError before saved-playlist work. This helper has no independent version check. | `test_apple_playlist_plan.py::test_valid_apple_song_url_is_canonicalised_as_exact_song` uses the real pinned canonicalizer; malformed/mismatch input cases reject. `test_canonicalizer_return_drift_rejects_before_saved_queue_access` in the transaction suite covers returned-value drift (#100). |
 | Apple envelope: `DirectAppleSavedQueueAdapter` expects version 0.31.2, service number 52231, song key 10032020, empty prefix and musicTrack class | Constructor rejects version/magic/service drift. Exact extract result `("song", "song%3a<ID>")` required. | `test_direct_adapter_matches_pinned_soco_0312_and_escapes_reviewed_xml` verifies the real library's valid DIDL round trip with fake speaker transport. `test_direct_adapter_fails_closed_on_soco_or_apple_contract_drift` tests only version/service-number drift. `test_each_apple_magic_field_drift_disables_adapter` independently covers prefix/key/class; `test_extract_drift_rejects_before_saved_queue_access` covers instance-only extract-output drift without masking the earlier canonicalizer. All are in `test_apple_playlist_transaction.py` (#100). |
-| Direct adapter capabilities: callable AddURIToSavedQueue and browse methods | Constructor rejects absent/non-callable methods before creating or adding saved content. | `test_apple_playlist_transaction.py::test_invalid_anchor_inventory_and_capability_fail_closed_without_queue_calls` covers AddURIToSavedQueue=None through preflight. Missing/non-callable browse and remaining absent-method variants are separate coverage gaps: #103. |
+| Direct adapter capabilities: callable AddURIToSavedQueue and browse methods | Constructor rejects absent/non-callable methods; real target preflight maps this to PlanConflict before playlist inventory, browse or mutation. | `test_apple_playlist_transaction.py::test_missing_or_noncallable_direct_capabilities_reject_before_saved_content` covers genuinely absent, None and present non-callable values for both methods through the actual adapter and target preflight. Guarded service calls and forbidden queue/transport methods prove no saved-content or playback-queue access. The unchanged `test_direct_adapter_matches_pinned_soco_0312_and_escapes_reviewed_xml` retains the real pinned-library DIDL control. Coordinator/service I/O is synthetic; this does not prove live firmware capability or SOAP behavior (#103). |
 | Saved-queue append: adapter uses SQ numeric ID, browse update_id and AddAtIndex 2**32-1; reviewed metadata uses SA_RINCON descriptor and ElementTree-backed DIDL serialization | Invalid fields/identity/update ID reject; one direct saved-queue call, no temporary playback queue. Remote exceptions propagate to transaction logic; package pin does not validate firmware SOAP semantics. | Same adapter tests, unreviewed-input cases, transaction success/partial-cleanup tests. Approved physical content validation remains required separately. |
 | Read-back identity: `apple_saved_queue_song_identity` accepts only pinned version and full HLS-static song resource/protocol/sid shape | Unknown/mismatched representation returns empty identity. Transaction combines independent item/resource evidence and accepts exactly one non-conflicting ID; complete ordered metadata verification can fail. | `test_song_identity_requires_anchored_apple_evidence`, `test_physical_sq49_shape_has_strong_identity_and_verified_metadata`, version/resource-shape rejection tests. “Physical” names are stored observed fixtures, not newly executed live tests. |
 | Error classification: transaction `_safe_sonos_error_code` reads real SoCoUPnPException.error_code | Only a bounded code is exposed: 1–6 digits or up to 32 uppercase letters/digits/underscores starting with a letter (for example TIMEOUT_1). Non-UPnP, bool and malformed values are omitted. Partial failure/cleanup remains transaction-owned; never infer code from raw exception text. | `test_non_upnp_track_failure_does_not_fabricate_a_sonos_code`, `test_untrusted_upnp_error_code_is_not_returned`, partial-cleanup tests. |
@@ -64,7 +64,7 @@ Test paths below are under `tests/`. “Tested” does not imply physical accept
 3. Run the complete Python matrix, locked runtime import/version checks and
    advisory gate. Run the focused Apple-plan/transaction, live-update and
    controller tests, including #100 canonicalizer/magic/extract drift cases,
-   plus #98/#99/#103 contract tests once available.
+   plus #103 capability-negative cases and #98/#99 contract tests once available.
    A failed or incomplete audit is not a clean result.
 4. Deliberately test old/mismatched version and changed Apple constants/extract
    behavior, absent service methods/update identity, conflicting resource IDs,

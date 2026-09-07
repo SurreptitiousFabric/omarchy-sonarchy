@@ -4,6 +4,7 @@ import copy
 import io
 import json
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 import soco
@@ -375,6 +376,67 @@ def test_direct_adapter_fails_closed_on_soco_or_apple_contract_drift(monkeypatch
     )
     with pytest.raises(DirectAppleSavedQueueUnavailableError, match="envelope changed"):
         DirectAppleSavedQueueAdapter(speaker)
+
+
+@pytest.mark.parametrize("entry_point", ["adapter", "preflight"])
+@pytest.mark.parametrize(
+    ("service_name", "method_name"),
+    [("avTransport", "AddURIToSavedQueue"), ("music_library", "browse")],
+)
+@pytest.mark.parametrize("variant", ["absent", "none", "noncallable"])
+def test_missing_or_noncallable_direct_capabilities_reject_before_saved_content(
+    entry_point, service_name, method_name, variant
+):
+    speaker = FakeSpeaker()
+    guarded_calls = []
+
+    def guard(name):
+        call = Mock(name=name, side_effect=AssertionError(f"unexpected saved-content call: {name}"))
+        guarded_calls.append(call)
+        return call
+
+    # Plain namespaces have no dynamic service lookup: absent really means absent.
+    speaker.avTransport = SimpleNamespace(AddURIToSavedQueue=guard("AddURIToSavedQueue"))
+    speaker.music_library = SimpleNamespace(browse=guard("browse"))
+    for name in (
+        "get_sonos_playlists",
+        "create_sonos_playlist",
+        "get_sonos_playlist_by_attr",
+        "remove_sonos_playlist",
+    ):
+        setattr(speaker, name, guard(name))
+    service = getattr(speaker, service_name)
+    if variant == "absent":
+        delattr(service, method_name)
+        assert not hasattr(service, method_name)
+    else:
+        setattr(service, method_name, None if variant == "none" else "not-callable")
+        assert hasattr(service, method_name)
+        assert not callable(getattr(service, method_name))
+
+    if entry_point == "adapter":
+        with pytest.raises(
+            DirectAppleSavedQueueUnavailableError,
+            match="coordinator cannot add direct Apple saved-queue items",
+        ):
+            DirectAppleSavedQueueAdapter(speaker)
+    else:
+        with pytest.raises(PlanConflictError, match="cannot create direct Apple") as error:
+            inspect_apple_playlist_target(speaker, "AI Friday")
+        assert error.value.code == "conflict"
+        assert error.value.details == {}
+        assert error.value.retryable is False
+
+    for call in guarded_calls:
+        call.assert_not_called()
+    assert speaker.browse_calls == 0
+    assert speaker.saved_queue_actions == []
+    assert speaker.create_calls == []
+    assert speaker.add_calls == []
+    assert speaker.remove_calls == []
+    assert speaker.forbidden_calls == []
+    assert speaker.playlists == {}
+    assert speaker.playlist_tracks == {}
 
 
 @pytest.mark.parametrize(
