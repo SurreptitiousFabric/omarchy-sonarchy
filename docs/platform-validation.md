@@ -48,6 +48,12 @@ no platform pass implied by skipped host tests in generic Python CI.
   Page bodies and device data are fixtures; private HOME/XDG paths isolate theme
   reads, and no backend is created. It checks narrow/wide geometry, visible
   messages, empty state and a smaller available screen height.
+  The native-focus regression delivers real Qt Tab/Shift+Tab events in an
+  offscreen Quickshell window with installed buttons and key catcher. It uses
+  production focus observation, dispatch and Now-page scrolling, with a small
+  deterministic page body. It checks clipped control recovery, dropdown child
+  and editor ownership, and fixed controls without creating a backend or
+  sending speaker actions.
   It also requires the ADR 0004 type-contract probes: actual declaration lint,
   live font-role bindings and readonly behavior, popup text existence/live
   updates/writability with drift negative controls, and the named-role prototype.

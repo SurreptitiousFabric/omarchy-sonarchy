@@ -1,0 +1,154 @@
+import QtQuick
+import QtTest
+import Quickshell
+import qs.Commons
+import qs.Ui
+
+FloatingWindow {
+  id: window
+  implicitWidth: 620
+  implicitHeight: 820
+  visible: true
+
+  Item {
+    id: root
+    anchors.fill: parent
+    property bool popupOpen: true
+    property string activePage: "now"
+    property int actions: 0
+    // PRODUCTION_FUNCTIONS
+    // PRODUCTION_FOCUS_CONNECTION
+
+    PanelKeyCatcher {
+      id: keyCatcher
+      anchors.fill: parent
+      blocked: editor.activeFocus
+      Button { id: header; focusable: true; text: "Header"; onClicked: root.actions++ }
+      Item {
+        id: pageViewport
+        y: 65
+        width: parent.width
+        height: 100
+        clip: true
+        Item {
+          id: nowPage
+          anchors.fill: parent
+          // PRODUCTION_PAGE_SCROLL
+          Flickable {
+            id: nowFlick
+            anchors.fill: parent
+            contentWidth: width
+            contentHeight: 750
+            clip: true
+            Button { id: first; focusable: true; text: "First"; onClicked: root.actions++ }
+            Button { id: middle; y: 300; focusable: true; text: "Middle"; onClicked: root.actions++ }
+            TextInput { id: editor; y: 500; width: 100; height: 30 }
+            SonarchyDropdown {
+              id: dropdown
+              y: 450
+              width: 200
+              visible: false
+              label: "MODE"
+              value: "a"
+              options: [{value:"a",label:"Alpha"},{value:"b",label:"Beta"}]
+              onChanged: root.actions++
+            }
+            Button { id: last; y: 650; focusable: true; text: "Last"; onClicked: root.actions++ }
+          }
+        }
+      }
+      Button { id: footer; y: pageViewport.y + pageViewport.height + 20; focusable: true; text: "Footer"; onClicked: root.actions++ }
+    }
+    // Unselected page dispatch targets retain the production function shape.
+    Item { id: browsePage; function ensureVisible(item) { throw new Error("inactive browse") } }
+    Item { id: queuePage; function ensureVisible(item) { throw new Error("inactive queue") } }
+    Item { id: roomsPage; function ensureVisible(item) { throw new Error("inactive rooms") } }
+    Item { id: soundPage; function ensureVisible(item) { throw new Error("inactive sound") } }
+    Item { id: systemPage; function ensureVisible(item) { throw new Error("inactive system") } }
+
+    TestCase { id: input; when: false }
+    property int phase: 0
+    property int sizeIndex: 0
+    property var heights: [100, 350]
+    function check(condition, message) {
+      if (!condition) throw new Error(message)
+    }
+    function visibleFocus(item) {
+      check(item.activeFocus, "real key did not focus expected control")
+      visibleControl(item)
+    }
+    function visibleControl(item) {
+      var point = item.mapToItem(nowFlick, 0, 0)
+      check(point.y >= 0 && point.y + item.height <= nowFlick.height,
+        "native focus clipped: y=" + point.y + " height=" + item.height + " viewport=" + nowFlick.height)
+    }
+    Timer {
+      interval: 100
+      repeat: true
+      running: true
+      onTriggered: {
+        try {
+          if (root.phase === 0) {
+            pageViewport.height = root.heights[root.sizeIndex]
+            nowFlick.contentY = 0
+            first.forceActiveFocus()
+          } else if (root.phase === 1) {
+            input.keyClick(Qt.Key_Tab)
+          } else if (root.phase === 2) {
+            root.visibleFocus(middle)
+            input.keyClick(Qt.Key_Tab)
+          } else if (root.phase === 3) {
+            root.visibleFocus(last)
+            input.keyClick(Qt.Key_Tab, Qt.ShiftModifier)
+          } else if (root.phase === 4) {
+            root.visibleFocus(middle)
+            input.keyClick(Qt.Key_Tab, Qt.ShiftModifier)
+          } else if (root.phase === 5) {
+            root.visibleFocus(first)
+            // Fixed controls must not scroll the page as a side effect.
+            nowFlick.contentY = 200
+            header.forceActiveFocus()
+          } else if (root.phase === 6) {
+            root.check(nowFlick.contentY === 200, "header focus moved page")
+            footer.forceActiveFocus()
+          } else if (root.phase === 7) {
+            root.check(nowFlick.contentY === 200, "footer focus moved page")
+            editor.forceActiveFocus()
+          } else if (root.phase === 8) {
+            root.visibleFocus(editor)
+            input.keyClick("x")
+          } else if (root.phase === 9) {
+            root.check(editor.activeFocus && editor.text === "x", "editor lost focus or input ownership")
+            editor.text = ""
+            dropdown.visible = true
+            dropdown.forceActiveFocus()
+          } else if (root.phase === 10) {
+            // Native Tab enters the actual host dropdown's inner control.
+            // Leave its inner surface visible but its owning label clipped.
+            nowFlick.contentY = dropdown.y + 10
+            input.keyClick(Qt.Key_Tab)
+          } else if (root.phase === 11) {
+            var active = dropdown.Window.activeFocusItem
+            root.check(active !== dropdown, "native Tab did not enter dropdown child")
+            var owner = active
+            while (owner && owner !== dropdown) owner = owner.parent
+            root.check(owner === dropdown, "dropdown lost child input ownership")
+            root.visibleControl(dropdown)
+            dropdown.visible = false
+            root.check(root.actions === 0, "focus traversal activated an action")
+            root.sizeIndex++
+            root.phase = -1
+            if (root.sizeIndex === root.heights.length) {
+              console.log("BAR_FOCUS_SCROLL_PASS")
+              Qt.quit()
+            }
+          }
+          root.phase++
+        } catch (error) {
+          console.log("BAR_FOCUS_SCROLL_FAIL", String(error))
+          Qt.quit()
+        }
+      }
+    }
+  }
+}

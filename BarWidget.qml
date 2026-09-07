@@ -217,6 +217,29 @@ BarWidget {
     else nowPage.ensureVisible(item)
   }
 
+  function revealActiveFocus() {
+    // Native Tab traversal bypasses moveControlFocus. Reveal its target
+    // without changing focus or taking input ownership from a child editor.
+    var focusedItem = keyCatcher.Window.activeFocusItem
+    var item = focusedItem
+    if (!popupOpen || !effectivelyUsable(item)) return
+    var ancestor = item
+    while (ancestor && ancestor !== pageViewport) {
+      if (ancestor.keyboardOwnsFocus === true) item = ancestor
+      ancestor = ancestor.parent
+    }
+    if (ancestor !== pageViewport) return
+    Qt.callLater(function() {
+      if (root.popupOpen && focusedItem === keyCatcher.Window.activeFocusItem
+          && root.effectivelyUsable(item)) root.ensureFocusedVisible(item)
+    })
+  }
+
+  Connections {
+    target: keyCatcher.Window.window
+    function onActiveFocusItemChanged() { root.revealActiveFocus() }
+  }
+
   function activateFocusedControl() {
     var current = activeControl()
     if (current && current.enabled && current.visible && activateControlOrOwner(current)) return

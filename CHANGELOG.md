@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Scroll page controls into view when native Tab/Shift+Tab traversal changes
+  focus, while preserving editor ownership and fixed header/navigation positions.
 - Keep page navigation and messages inside the fitted popup at supported narrow
   sizes by giving the scrollable page the remaining layout space.
 - Bind remaining page delegates and numeric settings to their owning page.
