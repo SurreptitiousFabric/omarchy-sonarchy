@@ -187,6 +187,20 @@ def test_named_spacing_contract_rejects_a_genuine_consumer_typo(tmp_path):
     assert warnings[0]["id"] == "missing-property" and "labelGpa" in warnings[0]["message"]
 
 
+@pytest.mark.parametrize("swapped", [False, True], ids=["duplicated-token", "swapped-tokens"])
+def test_spacing_contract_rejects_override_token_aliases(tmp_path, swapped):
+    source = (gate.SHELL / "Commons/Style.qml").read_text()
+    control = 'readonly property int controlGap: root.spacingToken("control-gap", 8)'
+    row = 'readonly property int rowGap: root.spacingToken("row-gap", 8)'
+    assert source.count(control) == source.count(row) == 1
+    source = source.replace(control, control.replace('"control-gap"', '"row-gap"'))
+    if swapped:
+        source = source.replace(row, row.replace('"row-gap"', '"control-gap"'))
+    directory = _spacing_fixture(tmp_path / "alias", source, False)
+    with pytest.raises(AssertionError, match="Spacing runtime contract failed"):
+        _check_spacing_runtime(directory)
+
+
 def test_installed_declarations_lose_static_member_information(tmp_path):
     (tmp_path / "qs").symlink_to(gate.SHELL, target_is_directory=True)
     probe = tmp_path / "Probe.qml"

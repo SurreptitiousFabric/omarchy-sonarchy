@@ -34,15 +34,19 @@ Item {
       consumer.provider.spacingOverrides = ({})
       verifyDefaults(2)
       var overrides = ({})
+      var expected = ({hairline: 2})
+      var sentinel = 100
       for (var role in consumer.defaults) {
         if (role !== "hairline") {
           var key = role.replace(/[A-Z]/g, function(letter) { return "-" + letter.toLowerCase() })
-          overrides[key] = consumer.defaults[role] + 0.6
+          overrides[key] = sentinel + 0.6
+          expected[role] = sentinel + 1
+          sentinel += 7
         }
       }
       consumer.provider.spacingOverrides = overrides
       for (var role in consumer.defaults)
-        compare(consumer[role], role === "hairline" ? 2 : consumer.defaults[role] + 1, role)
+        compare(consumer[role], expected[role], role)
       consumer.provider.spacingOverrides = ({})
       consumer.provider.spacingScale = 0
       verifyDefaults(0)

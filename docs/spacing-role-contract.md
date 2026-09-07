@@ -87,7 +87,8 @@ minimum-pixel behavior and readonly assignment rejection.
 
 The full extracted anonymous declaration fails strict consumer lint, while the
 named proposal passes it and the same runtime checks. Deliberate removed,
-mistyped, writable and frozen roles must fail the contract. A misspelled
+mistyped, writable and frozen roles must fail the contract. Distinct override
+sentinels also require duplicated or swapped token bindings to fail. A misspelled
 consumer property must still fail named-proposal lint. This is declaration and
 binding evidence, not full installed theme-reload acceptance.
 
