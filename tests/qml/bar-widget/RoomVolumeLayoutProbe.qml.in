@@ -1,0 +1,80 @@
+import QtQuick
+import Quickshell
+import qs.Commons
+
+FloatingWindow {
+  id: root
+  implicitWidth: 620
+  implicitHeight: 120
+  visible: true
+  property int panelWidth: 360
+  property int caseIndex: 0
+  property int phase: 0
+  property int actions: 0
+  property var cases: [
+    {width:360,font:12,muted:false}, {width:360,font:12,muted:true},
+    {width:360,font:14,muted:false}, {width:360,font:14,muted:true},
+    {width:620,font:12,muted:false}, {width:620,font:12,muted:true},
+    {width:620,font:14,muted:false}, {width:620,font:14,muted:true}
+  ]
+  QtObject {
+    id: service
+    property bool actionBusy: false
+    function hasCapability(name) { return true }
+    function adjustRoomVolume(uid,delta) { root.actions++ }
+    function setRoomVolume(uid,value) { root.actions++ }
+    function setRoomMute(uid,value) { root.actions++ }
+  }
+  SonarchyRoomVolumeRow {
+    id: row
+    // Actual narrow/wide card inset and Now/Rooms content-column allowance.
+    width: root.panelWidth - 2 * (16 + 2) - Style.space(6)
+    service: service
+    room: ({uid:"demo",name:"A room name long enough to require elision",room_volume:30,room_muted:false})
+  }
+  function check(condition,label) {
+    if (!condition) throw new Error("case " + caseIndex + ": " + label)
+  }
+  Timer {
+    interval: 100
+    repeat: true
+    running: true
+    onTriggered: {
+      try {
+        var data = root.cases[root.caseIndex]
+        if (root.phase === 0) {
+          root.panelWidth = data.width
+          Style.fontBaseSize = data.font
+          row.room = {uid:"demo",name:"A room name long enough to require elision",room_volume:30,room_muted:data.muted}
+          root.phase = 1
+          return
+        }
+        root.check(row.children.length === 5,"review changed row control boundary")
+        var previousRight = 0
+        for (var i=0;i<row.children.length;i++) {
+          var child = row.children[i]
+          root.check(child.x >= previousRight,"row controls overlap")
+          root.check(child.x + child.width <= row.width + 0.5,
+            "control " + i + " right=" + (child.x+child.width) + " exceeds row=" + row.width)
+          root.check(child.y >= 0 && child.y + child.height <= row.height + 0.5,"vertical bounds")
+          previousRight = child.x + child.width
+        }
+        root.check(row.children[0].width >= Style.space(60),"room label remains readable")
+        root.check(row.children[2].width >= Style.space(70),"slider retains usable width")
+        for (var j=1;j<5;j++) {
+          if (j !== 2) root.check(row.children[j].focusable && row.children[j].enabled,"button remains keyboard usable")
+        }
+        root.check(root.actions === 0,"layout triggered a speaker action")
+        root.caseIndex++
+        root.phase = 0
+        if (root.caseIndex === root.cases.length) {
+          console.log("ROOM_VOLUME_LAYOUT_PASS")
+          Qt.quit()
+        }
+      } catch (error) {
+        console.log("ROOM_VOLUME_LAYOUT_FAIL",String(error))
+        Qt.quit()
+      }
+    }
+  }
+}
