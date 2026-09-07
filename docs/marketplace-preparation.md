@@ -87,16 +87,19 @@ Recorded artifact: 1280 × 720 PNG, 63,928 bytes; SHA-256:
 Source/host references for this asset:
 
 ```text
-SonarchyQueuePage.qml       3b2e500acc62b1e5ffefb5043ca8356ef475eb195b3852942b5ed32dc88d798c
+SonarchyQueuePage.qml       b251e920d17ffe6f4032802e0eeeef4e19a786de4125202694bc4df23805a8e7
 SonarchyNavigation.qml      e1c9d43bbba40fca2332ec1e74dc3fb5d3b08ddee6619b4ad7fe9eec331aa4ed
 installed OpticalGlyph.qml  15aa7d9d7b5d574e915e6d23216df581c5e6f7a54f3ca86027f56ba873244b78
 installed font             0ec29a68b539ece7078fc714cebff0c0accb2f4948f8f7963d9f5e86633b12d9
 installed font OFL.txt      30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad
 ```
 
-Both production components are unchanged from merged main
-`5d2cab57e7ff1264d399f5704c28fa8455eeebef`. Rendering used Qt 6.11.2, offscreen
-software rendering and private HOME/runtime directories. Reproduction needs
+The original render used both components from merged main
+`5d2cab57e7ff1264d399f5704c28fa8455eeebef`. After the #88 queue binding/type
+cleanup on 2026-09-07, rendering again with the source hashes above produced
+the identical PNG bytes and was visually checked; the root asset is unchanged.
+Navigation is unchanged from the original render. Rendering used Qt 6.11.2,
+offscreen software rendering and private HOME/runtime directories. Reproduction needs
 the recorded Omarchy visual component and font; do not install them or change
 the desktop automatically. Render to a new explicit path:
 

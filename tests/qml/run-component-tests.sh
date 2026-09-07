@@ -29,7 +29,7 @@ mkdir -p "$TEST_ROOT/imports" "$TEST_ROOT/tests"
 cp -R "$PROJECT_ROOT/tests/qml/imports/." "$TEST_ROOT/imports/"
 ln -s "$OMARCHY_SLIDER" "$TEST_ROOT/imports/qs/Ui/PanelSlider.qml"
 ln -s "$OMARCHY_GLYPH" "$TEST_ROOT/imports/qs/Ui/OpticalGlyph.qml"
-for component in SonarchyAlarmDraft.qml SonarchyContentState.qml SonarchyErrorState.qml SonarchyNavigation.qml SonarchyQueuePage.qml SonarchySlider.qml; do
+for component in SonarchyAlarmDraft.qml SonarchyBrowsePage.qml SonarchyContentState.qml SonarchyDropdown.qml SonarchyErrorState.qml SonarchyNavigation.qml SonarchyQueuePage.qml SonarchySlider.qml; do
   ln -s "$PROJECT_ROOT/$component" "$TEST_ROOT/tests/$component"
 done
 for test_file in "$PROJECT_ROOT"/tests/qml/tst_*.qml; do

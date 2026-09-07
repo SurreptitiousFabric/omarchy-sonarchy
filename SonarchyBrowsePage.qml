@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls as QQC
 import qs.Commons
@@ -213,7 +215,7 @@ Item {
       Text {
         width: parent.width
         visible: root.sourceKind === "library" && root.service
-          && root.service.contentMeta.breadcrumbs
+          && Boolean(root.service.contentMeta.breadcrumbs)
           && root.service.contentMeta.breadcrumbs.length > 0
         text: {
           var crumbs = root.service && root.service.contentMeta
@@ -290,7 +292,7 @@ Item {
       Text {
         width: parent.width
         visible: root.sourceKind === "library" && root.service
-          && root.service.contentMeta.shares && root.service.contentMeta.shares.length > 0
+          && Boolean(root.service.contentMeta.shares) && root.service.contentMeta.shares.length > 0
         text: {
           var shares = root.service && root.service.contentMeta
             ? (root.service.contentMeta.shares || []) : []
@@ -348,7 +350,7 @@ Item {
                   && root.service.appleCanGoBack)
               || (root.service.contentKind === "library"
                   && (root.service.contentTerm !== ""
-                      || (root.service.contentMeta.breadcrumbs
+                      || (Boolean(root.service.contentMeta.breadcrumbs)
                           && root.service.contentMeta.breadcrumbs.length > 0))))
             text: root.service && root.service.contentKind === "library"
               && root.service.contentTerm !== "" ? "Browse" : "Back"
@@ -493,7 +495,7 @@ Item {
               anchors.top: parent.top
               anchors.bottom: parent.bottom
               width: Style.space(3)
-              color: modelData.current === true ? Color.accent : "transparent"
+              color: resultCard.modelData.current === true ? Color.accent : "transparent"
 
               Behavior on color { ColorAnimation { duration: 140 } }
             }
@@ -526,7 +528,7 @@ Item {
               Image {
                 id: resultArtwork
                 anchors.fill: parent
-                source: String(modelData.album_art || "")
+                source: String(resultCard.modelData.album_art || "")
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
                 cache: true
@@ -540,7 +542,7 @@ Item {
               Text {
                 anchors.centerIn: parent
                 visible: resultArtwork.status !== Image.Ready
-                text: modelData.browsable === true ? "󰉋"
+                text: resultCard.modelData.browsable === true ? "󰉋"
                   : (root.service && root.service.contentKind === "playlists" ? "󰒛" : "󰐊")
                 color: root.foreground
                 font.family: root.fontFamily
@@ -558,22 +560,22 @@ Item {
               spacing: Style.space(4)
 
               Button {
-                iconText: modelData.browsable === true ? "󰅂"
+                iconText: resultCard.modelData.browsable === true ? "󰅂"
                   : (root.service && root.service.contentKind === "playlists" ? "󰅂" : "󰐊")
-                tooltipText: modelData.browsable === true
-                  ? (String(modelData.media_kind || "") === "artist"
-                     ? "View artist" : (String(modelData.media_kind || "") === "album"
+                tooltipText: resultCard.modelData.browsable === true
+                  ? (String(resultCard.modelData.media_kind || "") === "artist"
+                     ? "View artist" : (String(resultCard.modelData.media_kind || "") === "album"
                         ? "View album tracks" : "Open folder"))
                   : (root.service && root.service.contentKind === "playlists"
                      ? "Open playlist" : "Play now")
                 foreground: root.foreground
                 focusable: true
-                selected: modelData.current === true
+                selected: resultCard.modelData.current === true
                 enabled: root.service && !root.service.actionBusy
                   && (((root.service.contentKind === "library"
                         || String(root.service.contentKind || "").indexOf("apple") === 0)
-                       && modelData.browsable === true && root.can("content.browse"))
-                      || (root.canPlayCurrentKind() && modelData.playable !== false))
+                       && resultCard.modelData.browsable === true && root.can("content.browse"))
+                      || (root.canPlayCurrentKind() && resultCard.modelData.playable !== false))
                 opacity: enabled ? 1.0 : 0.35
                 onClicked: {
                   if (resultCard.modelData.browsable === true) browseFlick.contentY = 0
@@ -583,20 +585,20 @@ Item {
 
               Button {
                 visible: root.service && root.service.contentKind === "library"
-                  && modelData.browsable === true && modelData.playable === true
+                  && resultCard.modelData.browsable === true && resultCard.modelData.playable === true
                 text: "Play"
                 foreground: root.foreground
                 bordered: true
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
                   && root.can("queue.content.enqueue")
-                onClicked: root.service.enqueueContent(modelData, "play")
+                onClicked: root.service.enqueueContent(resultCard.modelData, "play")
               }
 
               Button {
                 visible: root.service
                   && String(root.service.contentKind || "").indexOf("apple") === 0
-                  && String(modelData.album_url || "") !== ""
+                  && String(resultCard.modelData.album_url || "") !== ""
                 text: "Album"
                 tooltipText: "Play the whole album"
                 foreground: root.foreground
@@ -604,39 +606,39 @@ Item {
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
                   && root.can("content.apple.album.play")
-                onClicked: root.service.playAppleAlbum(modelData)
+                onClicked: root.service.playAppleAlbum(resultCard.modelData)
               }
 
               Button {
                 visible: root.service && (root.service.contentKind === "library"
                   || root.service.contentKind === "playlist")
-                  && modelData.playable === true
+                  && resultCard.modelData.playable === true
                 text: "Next"
                 foreground: root.foreground
                 bordered: true
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
-                  && root.can("queue.content.enqueue") && modelData.playable !== false
-                onClicked: root.service.enqueueContent(modelData, "next")
+                  && root.can("queue.content.enqueue") && resultCard.modelData.playable !== false
+                onClicked: root.service.enqueueContent(resultCard.modelData, "next")
               }
 
               Button {
                 visible: root.service && (root.service.contentKind === "library"
                   || root.service.contentKind === "playlist")
-                  && modelData.playable === true
+                  && resultCard.modelData.playable === true
                 text: "End"
                 foreground: root.foreground
                 bordered: true
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
-                  && root.can("queue.content.enqueue") && modelData.playable !== false
-                onClicked: root.service.enqueueContent(modelData, "end")
+                  && root.can("queue.content.enqueue") && resultCard.modelData.playable !== false
+                onClicked: root.service.enqueueContent(resultCard.modelData, "end")
               }
 
               Button {
                 visible: root.service && (root.service.contentKind === "library"
                   || root.service.contentKind === "playlist")
-                  && modelData.playable === true
+                  && resultCard.modelData.playable === true
                 iconText: "󰒭"
                 tooltipText: root.confirmation === resultCard.replaceKey
                   ? "Press again to play if queue empty" : "Play if queue empty"
@@ -644,9 +646,9 @@ Item {
                   ? Color.urgent : root.foreground
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
-                  && root.can("queue.content.enqueue") && modelData.playable !== false
+                  && root.can("queue.content.enqueue") && resultCard.modelData.playable !== false
                 onClicked: if (root.arm(resultCard.replaceKey))
-                  root.service.enqueueContent(modelData, "replace")
+                  root.service.enqueueContent(resultCard.modelData, "replace")
               }
 
               Button {
@@ -656,8 +658,8 @@ Item {
                 foreground: root.foreground
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
-                  && root.can("playlists.track.mutate") && Number(modelData.index) > 0
-                onClicked: root.service.playlistTrackAction("up", modelData)
+                  && root.can("playlists.track.mutate") && Number(resultCard.modelData.index) > 0
+                onClicked: root.service.playlistTrackAction("up", resultCard.modelData)
               }
 
               Button {
@@ -668,8 +670,8 @@ Item {
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
                   && root.can("playlists.track.mutate")
-                  && Number(modelData.index) < root.service.contentItems.length - 1
-                onClicked: root.service.playlistTrackAction("down", modelData)
+                  && Number(resultCard.modelData.index) < root.service.contentItems.length - 1
+                onClicked: root.service.playlistTrackAction("down", resultCard.modelData)
               }
 
               Button {
@@ -683,7 +685,7 @@ Item {
                   && root.can("playlists.track.mutate")
                 onClicked: {
                   if (!root.arm(resultCard.rowKey)) return
-                  root.service.playlistTrackAction("remove", modelData)
+                  root.service.playlistTrackAction("remove", resultCard.modelData)
                 }
               }
             }
@@ -700,18 +702,18 @@ Item {
 
               Text {
                 width: parent.width
-                text: String(modelData.title || "Untitled")
+                text: String(resultCard.modelData.title || "Untitled")
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
-                font.bold: modelData.current === true
+                font.bold: resultCard.modelData.current === true
                 elide: Text.ElideRight
               }
 
               Text {
                 width: parent.width
                 visible: text !== ""
-                text: String(modelData.subtitle || "")
+                text: String(resultCard.modelData.subtitle || "")
                 color: Qt.darker(root.foreground, 1.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
