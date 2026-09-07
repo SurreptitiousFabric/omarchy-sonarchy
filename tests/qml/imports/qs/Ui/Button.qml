@@ -10,6 +10,7 @@ FocusScope {
   property bool focusable: false
   property bool selected: false
   property bool bordered: false
+  property bool leftAlign: false
   property bool iconSpinning: false
   signal clicked()
   activeFocusOnTab: focusable

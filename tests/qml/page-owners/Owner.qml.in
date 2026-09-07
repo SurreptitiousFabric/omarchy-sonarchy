@@ -1,0 +1,36 @@
+import QtQuick
+import qs.Commons
+import qs.Ui
+
+// Only the page's affected components and pure owner helpers are copied here.
+// This fixture does not instantiate the full installed page or a live service.
+Item {
+  id: root
+  width: 580
+  height: 600
+  property var service: null
+  property var device: ({ uid: "room-a" })
+  property var bar: null
+  property color foreground: "#abcdef"
+  property string fontFamily: "monospace"
+  property int volumeStep: 2
+  property var models: []
+  property var stagedRoomUids: ["room-a"]
+  property bool groupingDirty: false
+  property bool groupingApplying: false
+  property string confirmation: ""
+  property var edited: null
+  readonly property var sound: service ? service.soundDetails : ({})
+  readonly property bool canSetSound: service && service.hasCapability("sound.setting.set")
+
+  Flickable { id: nowFlick; width: 580; height: 200; contentHeight: 1000 }
+  Flickable { id: roomsFlick; width: 580; height: 200; contentHeight: 1000 }
+  Flickable { id: soundFlick; width: 580; height: 200; contentHeight: 1000 }
+  Item { id: roomMixer; width: root.width }
+  QtObject { id: alarmEditor; function editAlarm(item) { root.edited = item } }
+  Timer { id: confirmTimer; interval: 5000 }
+
+  // DEFINITIONS
+  // FUNCTIONS
+  // INSTANCES
+}
