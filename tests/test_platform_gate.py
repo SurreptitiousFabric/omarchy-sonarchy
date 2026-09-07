@@ -75,9 +75,9 @@ def test_lint_default_zero_exit_cannot_mask_failed_report(tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize("addopts", ["--collect-only", "-k test_positive_probe"])
-@pytest.mark.parametrize("control_fails", [False, True])
+@pytest.mark.parametrize("failing_control", [None, "platform", "contract"])
 def test_inherited_options_cannot_skip_controls(
-    tmp_path, monkeypatch, capsys, addopts, control_fails
+    tmp_path, monkeypatch, capsys, addopts, failing_control
 ):
     """Exercise the gate's real subprocess/env path with portable pytest controls."""
     candidate = "a" * 40
@@ -91,7 +91,13 @@ def test_inherited_options_cannot_skip_controls(
         "    Path('positive-ran').touch()\n"
         "def test_negative_control():\n"
         "    Path('negative-ran').touch()\n"
-        f"    assert {not control_fails!r}\n"
+        f"    assert {failing_control != 'platform'!r}\n"
+    )
+    (test_dir / "test_qml_type_contract.py").write_text(
+        "from pathlib import Path\n"
+        "def test_type_contract():\n"
+        "    Path('contract-ran').touch()\n"
+        f"    assert {failing_control != 'contract'!r}\n"
     )
     real_run = gate.run
 
@@ -110,7 +116,8 @@ def test_inherited_options_cannot_skip_controls(
     report = json.loads(capsys.readouterr().out)
     assert (tmp_path / "positive-ran").is_file()
     assert (tmp_path / "negative-ran").is_file()
-    assert result == int(control_fails)
+    assert (tmp_path / "contract-ran").is_file()
+    assert result == int(failing_control is not None)
     assert report["stages"]["negativeControls"]["status"] == (
-        "failed" if control_fails else "passed"
+        "failed" if failing_control else "passed"
     )

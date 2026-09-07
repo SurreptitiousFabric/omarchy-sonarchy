@@ -124,7 +124,14 @@ def main():
             report["stages"]["qml"] = lint(ROOT, imports)
             report["stages"]["components"] = components(ROOT)
             controls = run(
-                [sys.executable, "-m", "pytest", "-q", "tests/test_platform_host.py"],
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "tests/test_platform_host.py",
+                    "tests/test_qml_type_contract.py",
+                ],
                 # Host selection/collection options must not bypass required controls.
                 env={**os.environ, "PYTEST_ADDOPTS": "", "SONARCHY_PLATFORM_TESTS": "1"},
             )
