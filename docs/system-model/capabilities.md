@@ -115,7 +115,10 @@ These rules apply across the capability map:
 6. **Secrets stay behind adapters.** QML receives normalized provider-neutral
    objects, never service credentials or raw exceptions. Local QML room
    snapshots include speaker IP addresses for display/artwork handling; the
-   narrow MCP projection is a different, sanitized boundary.
+   MCP room snapshots omit those fields, while shared browse results can still
+   expose local artwork locations and library-share paths. See the
+   [AI/MCP privacy boundary](../../PRIVACY.md#ai-clients-and-mcp-data); normalized
+   metadata is not anonymization.
 7. **Keyboard parity.** Every visible action has a keyboard route.
 
 ## Current implementation mapping

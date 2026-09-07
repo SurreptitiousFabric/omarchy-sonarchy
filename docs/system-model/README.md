@@ -97,8 +97,10 @@ The boundary has several consequences:
   controller helpers still use its types or duck-typed objects. See
   [ADR 0005](../adr/0005-soco-contract-and-upgrades.md).
 - QML room snapshots do contain local speaker IP addresses, used by the artwork
-  policy. The narrower MCP projection and sanitized errors do not expose those
-  raw infrastructure fields; this is not an address-free QML protocol.
+  policy. The narrower MCP room-snapshot projection omits those fields, but
+  shared browse results can contain local artwork locations and library-share
+  paths. Neither protocol is universally address-free; see the
+  [AI/MCP privacy boundary](../../PRIVACY.md#ai-clients-and-mcp-data).
 - An authoritative backend refresh wins over optimistic presentation state.
 - The MCP client uses the same serialized application/domain dispatcher and
   ticket store. It owns no controller and has no generic command, URI, shell,

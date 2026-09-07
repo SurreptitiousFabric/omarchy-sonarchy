@@ -88,6 +88,10 @@ minors or prove real OS-upgrade acceptance.
 
 ## Local AI and MCP
 
+Local MCP transport does not guarantee local AI processing or retention. Read
+the [AI/MCP privacy boundary](PRIVACY.md#ai-clients-and-mcp-data) before connecting
+a client; read-only access can still disclose household and content metadata.
+
 The [MCP setup guide](docs/mcp.md) covers connecting a client, permissions and
 removal. Quickshell owns the sole Sonos backend; a thin stdio adapter connects
 to its owner-only Unix socket. The default surface is read-only. Independent

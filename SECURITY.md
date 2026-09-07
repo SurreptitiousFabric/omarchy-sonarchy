@@ -18,6 +18,11 @@ contact. Its Unix socket requires safe owner/mode/type checks and verified Linux
 same-UID peer credentials. The backend enforces a fixed operation allowlist;
 model-visible tool annotations are not authorization.
 
+Local transport and same-user checks do not control what an allowed AI client
+does with returned data. It may process/store that data remotely. See
+[AI/MCP privacy and consent](PRIVACY.md#ai-clients-and-mcp-data) for exposed
+metadata, downstream limits and how to disable access.
+
 ## Network surface
 
 Expected traffic is limited to:
@@ -185,13 +190,21 @@ a public issue.
 
 - A second backend fails its non-blocking process lock before controller
   construction or discovery and cannot remove the active owner's socket.
-- Runtime, lock, socket, and configuration symlinks fail closed. Wrong socket
-  type, owner, mode, or unverifiable peer credentials are rejected.
+- Runtime, lock and socket symlinks fail closed. Wrong socket type, owner, mode,
+  or unverifiable peer credentials are rejected. Unsafe/unreadable configuration
+  or invalid TOML cannot grant writes but can fall back to read-only access;
+  disabling requires a valid owner-only `enabled = false` configuration and
+  backend/adapter restart, not an absent or broken file.
 - Same-user clients remain confined to the backend read allowlist plus
   independently permissioned exact playlist-create and exact playlist-play
-  writes. `playlist-create` never authorizes playback. Raw operation names,
-  URI/DIDL/SoCo objects, addresses, service metadata, credentials, and backend
-  tickets never enter the MCP contract or logs.
+  writes. `playlist-create` never authorizes playback. There is no generic raw
+  operation/URI/DIDL/SoCo execution or credential-retrieval tool. Only the stdio
+  MCP adapter replaces backend tickets with opaque handles in AI-client results;
+  direct backend Unix-socket clients receive `planToken` in preflight results.
+  Tickets are not hidden from that backend protocol. Room snapshots omit speaker IP fields,
+  but shared browse results can include local artwork addresses, library-share
+  paths and provider content identifiers. Normalized/bounded metadata is not
+  anonymous or guaranteed free of sensitive user/provider text; see [Privacy](PRIVACY.md).
 - Per-client routing prevents identical request IDs from crossing clients.
   Controller/application execution is serial, including simultaneous QML and
   MCP requests; authoritative snapshots are broadcast after accepted writes.
