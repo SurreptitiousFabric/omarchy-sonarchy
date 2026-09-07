@@ -12,6 +12,7 @@ from soco.exceptions import SoCoUPnPException
 
 import sonarchy_backend.domains.apple_playlist_transaction as apple_transaction
 import sonarchy_mcp.server as mcp_server
+from sonarchy_backend.apple_catalog import canonical_apple_song
 from sonarchy_backend.contracts import (
     MAX_PROTOCOL_LINE_BYTES,
     MAX_PROTOCOL_REQUEST_ID_BYTES,
@@ -374,6 +375,65 @@ def test_direct_adapter_fails_closed_on_soco_or_apple_contract_drift(monkeypatch
     )
     with pytest.raises(DirectAppleSavedQueueUnavailableError, match="envelope changed"):
         DirectAppleSavedQueueAdapter(speaker)
+
+
+@pytest.mark.parametrize(
+    "returned", [None, "", "album:1452806384", "song:not-an-id", "song:999", "song:1:2"]
+)
+def test_canonicalizer_return_drift_rejects_before_saved_queue_access(monkeypatch, returned):
+    speaker = FakeSpeaker()
+    playlist = add_existing_playlist(speaker, "SQ:7", "Adapter target")
+    adapter = DirectAppleSavedQueueAdapter(speaker)
+    monkeypatch.setattr(
+        "sonarchy_backend.apple_catalog.AppleMusicShare.canonical_uri",
+        lambda _self, _url: returned,
+    )
+
+    with pytest.raises(ValueError):
+        canonical_apple_song(TRACK_ONE["url"], TRACK_ONE["catalogId"])
+    with pytest.raises(ValueError):
+        adapter.add_track(playlist, TRACK_ONE)
+
+    assert speaker.browse_calls == 0
+    assert speaker.saved_queue_actions == []
+    assert speaker.forbidden_calls == []
+
+
+@pytest.mark.parametrize("field", ["prefix", "key", "class"])
+def test_each_apple_magic_field_drift_disables_adapter(monkeypatch, field):
+    speaker = FakeSpeaker()
+    expected = {"prefix": "", "key": APPLE_SONG_KEY, "class": APPLE_SONG_CLASS}
+    expected[field] = "contract-drift"
+    monkeypatch.setattr(
+        "sonarchy_backend.infrastructure.apple_saved_queue.AppleMusicShare.magic",
+        lambda _self: {"song": expected},
+    )
+
+    with pytest.raises(DirectAppleSavedQueueUnavailableError, match="envelope changed"):
+        DirectAppleSavedQueueAdapter(speaker)
+
+    assert speaker.browse_calls == 0
+    assert speaker.saved_queue_actions == []
+    assert speaker.forbidden_calls == []
+
+
+@pytest.mark.parametrize(
+    "extracted", [None, ("album", "song%3a1452806384"), ("song", "song%3a999"), ("song", "")]
+)
+def test_extract_drift_rejects_before_saved_queue_access(monkeypatch, extracted):
+    speaker = FakeSpeaker()
+    playlist = add_existing_playlist(speaker, "SQ:7", "Adapter target")
+    adapter = DirectAppleSavedQueueAdapter(speaker)
+    # Instance-only substitution leaves canonical_apple_song's separate real
+    # AppleMusicShare instance intact, reaching the adapter's extraction guard.
+    monkeypatch.setattr(adapter._apple, "extract", lambda _url: extracted)
+
+    with pytest.raises(DirectAppleSavedQueueUnavailableError, match="canonicalisation changed"):
+        adapter.add_track(playlist, TRACK_ONE)
+
+    assert speaker.browse_calls == 0
+    assert speaker.saved_queue_actions == []
+    assert speaker.forbidden_calls == []
 
 
 @pytest.mark.parametrize(

@@ -6,6 +6,13 @@ control API, install hooks, or privileged operations.
 
 ## Environment
 
+- Stable CPython 3.14.x only, with a declared 3.14.0 floor. Use the exact
+  project Mise pin for development. CI runs separate exact-floor/current jobs
+  with isolated environments, version assertions, locked imports and the suite.
+  Both jobs must pass; unavailable runtime/wheels or incompatible locks are
+  failures, not skips. Future minors and prereleases
+  require an explicit support decision, not an automatic pin bump. See
+  [ADR 0003](docs/adr/0003-python-runtime-policy.md).
 - [Mise](https://mise.jdx.dev/) with the repository's trusted `.mise.toml`
 - Current Omarchy/Quickshell for QML integration checks
 - The external Mise-managed `../.venvs/omarchy-sonarchy`; never install test
@@ -31,16 +38,26 @@ mise exec -- python -m ruff format --check .
 mise exec -- python -m coverage run -m pytest -q
 mise exec -- python -m coverage report
 omarchy plugin validate .
-bash -n sonarchy-backend.sh
+bash -n sonarchy-backend.sh sonarchy-mcp.sh tests/qml/run-component-tests.sh
 bash tests/qml/run-component-tests.sh
-mise exec -- shellcheck sonarchy-backend.sh tests/qml/run-component-tests.sh
-/usr/lib/qt6/bin/qmllint BarWidget.qml LiveService.qml Service.qml SonarchyContentState.qml SonarchyNowPage.qml SonarchyBrowsePage.qml SonarchyRoomsPage.qml SonarchySoundPage.qml SonarchySystemPage.qml
+mise exec -- shellcheck sonarchy-backend.sh sonarchy-mcp.sh tests/qml/run-component-tests.sh
+mise run validate-platform
 ```
 
-QML lint may report unresolved `qs.Commons`/`qs.Ui` imports when invoked outside
-the running shell's module context; syntax failure or a nonzero exit is not
-acceptable. After a shell restart, inspect the user journal for this plugin's
-QML/runtime errors.
+The required [platform release-host gate](docs/platform-validation.md) resolves
+real shell imports and lints every shipped root QML file with zero warnings.
+Missing imports or tooling are not acceptable success. This separate job must
+pass on the exact clean release candidate; generic Ubuntu Python CI is not
+Omarchy acceptance. After an independently authorized shell restart, inspect the
+user journal for this plugin's QML/runtime errors.
+
+CI checks every shipped shell launcher with Bash and ShellCheck. The Python
+suite also runs a temporary copy of the MCP launcher from an unrelated working
+directory, substituting only `/usr/bin/python3` with the exact test interpreter.
+It exercises real stdio and Unix-socket I/O against a fake backend, with private
+HOME/XDG directories and no runtime installation or speakers. Negative controls
+prove stdout noise and a broken adapter entry point fail the startup assertion.
+This is not evidence for the installed system-Python path or live Omarchy startup.
 
 The component interaction tests run offscreen. The slider test uses the
 installed Omarchy `PanelSlider.qml` with minimal visual-only theme stubs and
@@ -49,11 +66,41 @@ request or explicit user dismissal can clear a correlated request error.
 
 ## Dependency updates
 
+CI must complete the runtime advisory audit on both Python targets. Run locally
+with `mise exec -- python -m scripts.audit_runtime "$(git rev-parse HEAD)"`
+from a clean candidate checkout. It validates installed runtime versions against
+`requirements.lock`, then queries the public
+[OSV version API](https://google.github.io/osv.dev/post-v1-query/) for each exact
+PyPI name/version. The report identifies the candidate SHA, lock digest, query
+time, exact versions and advisory IDs. A clean result means no advisory returned
+by OSV at that time, not proof that dependencies are vulnerability-free.
+
+Only public runtime package names/versions go to OSV; no credentials, private
+configuration or device metadata are sent. Proxy environment settings and
+redirects are not used. Requests have a 15-second timeout and 1 MiB response cap;
+the workflow adds a five-minute total limit. An outage, invalid response,
+pagination/incomplete result or environment mismatch fails closed (exit 2),
+never clean. Rerun after the service recovers; do not bypass the required gate.
+Known advisories fail (exit 1); file a separately scoped dependency-upgrade issue
+with the affected version and advisory ID. There are no suppression exceptions.
+Any future exception mechanism needs separately approved scope, rationale,
+owner and expiry; do not add a permanent ignore to unblock a release.
+Development-only tooling and non-Python components are outside this runtime-lock
+audit's coverage; it also cannot detect unknown vulnerabilities or malicious code.
+
 Direct runtime requirements belong in `requirements.in`; direct development
 requirements belong in `requirements-dev.in`. Regenerate both lock files with
 a reviewed version of `pip-compile` under Python 3.14 using
 `--generate-hashes --strip-extras`, review the complete diff, run the full test
 and audit suite, and never hand-edit generated hashes.
+
+When adding a runtime distribution, review its device-free import target in
+`sonarchy_environment.py`. The bootstrap health check validates exact installed
+versions from the lock and imports every listed runtime dependency; unknown
+distributions or unsupported lock syntax fail closed until reviewed. Its
+identity intentionally excludes patch versions but includes implementation,
+major/minor, ABI and architecture. Keep the real-import no-network check and
+synthetic bootstrap failure/concurrency tests passing.
 
 ## Sonos testing
 

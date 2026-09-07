@@ -72,9 +72,13 @@ debug overlays.
 | Artwork | safe URL policy, bounded speaker-image availability probes, and optional public-catalog enrichment | transport control |
 | State | selected room, cached hosts, state revision and atomic persistence | network calls |
 
-External catalogs are adapters beneath Content. SoCo is an infrastructure
-adapter beneath the domains. Neither may leak library-specific objects into the
-protocol model.
+External catalogs are adapters beneath Content. SoCo coupling is only partly
+isolated: the direct Apple saved-queue envelope has a dedicated infrastructure
+adapter, while catalog canonicalisation, several domains and controller/event
+helpers still import SoCo or operate on duck-typed SoCo objects. Neither catalog
+nor SoCo objects may leak into the serialized protocol model. See
+[ADR 0005](docs/adr/0005-soco-contract-and-upgrades.md) for the concrete import,
+assumption and test inventory; this is not complete dependency inversion.
 
 `SonosController` is the stable composition root for those services. Its
 implementation is separated by infrastructure responsibility: discovery,
@@ -84,13 +88,17 @@ or expose SoCo objects.
 
 ## Dependency direction
 
-Dependencies point inward:
+The intended direction, with current implementation limits, is:
 
 1. QML pages depend on the QML store and reusable controls.
 2. The QML store depends only on the protocol schema.
 3. Protocol handlers depend on application/domain services.
-4. Domain services depend on narrow ports for SoCo, HTTP, time and persistence.
-5. Infrastructure adapters implement those ports.
+4. Domain orchestration uses ports for selected operations, but domain helpers
+   still import SoCo DIDL, alarm, service and exception types directly. Many
+   speaker/service values remain duck-typed rather than fully abstract ports.
+5. Infrastructure adapters implement the extracted boundaries; the remaining
+   deliberate coupling has contract evidence and explicitly tracked gaps,
+   rather than being claimed absent.
 
 Domain modules may share immutable protocol models and validation helpers. They
 must not import QML concepts, subprocess launchers, or another domain's private

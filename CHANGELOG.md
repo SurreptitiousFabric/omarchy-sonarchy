@@ -5,6 +5,19 @@
 - Expose bounded structured artist/album, exact millisecond duration and distinct
   explicitness classifications for Apple song browse results; retain unknown
   values and the existing QML subtitle and action identities.
+- Keep the navigation keyboard cursor aligned with the selected value when options
+  are replaced. If that value disappears, target the first option (or none for
+  an empty list) without changing the selection or emitting an action.
+
+- Require independent Python 3.14.0/current CI jobs with exact interpreter
+  provenance, isolated test environments, locked runtime imports and source
+  compilation; runtime/wheel/lock failures remain visible.
+- Rebuild managed environments on interpreter-identity, lock or dependency-health
+  drift. Validate replacements before promotion under the setup lock, preserve
+  the previous environment on build/install/check failure, and bound health checks.
+- Declare stable CPython 3.14.x support and guard both launchers before setup or
+  imports. Reject unvalidated future minors/prereleases with stderr diagnostics;
+  distinguish the declared 3.14.0 floor from the currently tested Mise target.
 - Add per-request Apple browse storefront selection through MCP and the private
   protocol, with effective-region results and strict malformed-input rejection.
   Omitted storefronts retain the existing backend default; no global setting changes.
