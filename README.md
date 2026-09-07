@@ -8,6 +8,11 @@ This is an independent community project. It is not made, sponsored, or
 endorsed by Sonos, Inc.; product and service names belong to their respective
 owners.
 
+Marketplace submission remains **on hold** pending the
+[release acceptance gates](ACCEPTANCE_TESTS.md) and owner sign-off. Automated
+tests and the recorded physical cases do not establish universal device or
+service coverage.
+
 ## Features
 
 - Event-driven now-playing state with bounded polling fallback
@@ -80,6 +85,28 @@ promotion attempts to restore it. An interrupted promotion may leave a
 do not delete it without inspecting which environment is usable. A successful
 promotion removes its superseded backup. This does not validate future Python
 minors or prove real OS-upgrade acceptance.
+
+## Local AI and MCP
+
+The [MCP setup guide](docs/mcp.md) covers connecting a client, permissions and
+removal. Quickshell owns the sole Sonos backend; a thin stdio adapter connects
+to its owner-only Unix socket. The default surface is read-only. Independent
+opt-in permissions enable exact reviewed Apple-song Sonos Playlist creation
+and exact native Sonos Playlist playback in an explicitly chosen room.
+
+Creation never changes the room queue or starts playback. Playback requires
+its own preflight, human approval and fresh identical preflight; it preserves
+the existing queue and appends the reviewed playlist before starting its first
+item. It is limited to an online standalone room, stopped/paused transport,
+queue or no active source, and volume at most 20. A later failure can leave
+appended items; there is no automatic retry or destructive rollback. See the
+guide for the complete bounds and partial-state policy.
+
+Sonarchy does not provide the AI model, private Apple-library access, general
+MCP transport/volume/grouping controls, or arbitrary URI/command execution.
+Apple playback requires an Apple Music service already connected in Sonos;
+public catalogue matching alone does not prove that the household can play a
+particular recording. [Playlist workflow and evidence](docs/ai-curated-sonos-playlists.md).
 
 ## Keyboard use
 
@@ -170,6 +197,10 @@ Apple storefront is Switzerland (`CH`). Set `SONARCHY_APPLE_COUNTRY` to another
 two-letter country code before the shell starts to use a different storefront.
 The legacy `OMARCHY_SONOS_APPLE_COUNTRY` name remains accepted for local
 development upgrades.
+MCP public-Apple browse requests can instead specify `storefront: "GB"` for
+the UK, independently of that configured default. The result reports the
+effective storefront. This selects a public catalogue; it neither changes nor
+detects the country of the Apple account connected to Sonos.
 
 When **Find radio track artwork** is enabled and the popup is open, a live
 radio track that has no proper album art is looked up using the title and
@@ -185,7 +216,9 @@ Sonos household. The plugin never receives their passwords or access tokens.
 ## Security and privacy
 
 There is no HTTP control API and nothing listens on port 8000. The persistent
-backend accepts commands only over its private stdin pipe. Sonos event updates
+backend accepts QML commands over its private stdin pipe and a narrow MCP
+allowlist over an owner-only Unix socket. The MCP adapter adds no HTTP or LAN
+control listener. Sonos event updates
 use a callback listener bound to the attached LAN interface on TCP 1400–1499;
 it accepts only bounded notifications from the exact private-IP speaker tied
 to a live subscription and never accepts playback commands.
@@ -196,11 +229,23 @@ marketplace capabilities. See [OFFICIAL_APP_GAPS.md](OFFICIAL_APP_GAPS.md) for
 what remains exclusive to, or safer in, the official Sonos app. The complete
 keyboard-first walkthrough is in the [user guide](USER_GUIDE.md).
 
-The runtime boundaries and refactoring target are documented in
-[ARCHITECTURE.md](ARCHITECTURE.md), with decisions and the persistent protocol
-under [`docs/`](docs/). The deterministic local-AI playlist workflow and its
-current MCP/Apple boundaries are in
-[`docs/ai-curated-sonos-playlists.md`](docs/ai-curated-sonos-playlists.md).
+## Understand the system
+
+Start at the [documentation map](docs/README.md). The system model separates
+four questions that otherwise become tangled:
+
+- [capabilities](docs/system-model/capabilities.md): what a person can do;
+- [BPMN-oriented journeys](docs/system-model/journeys.md): how important goals,
+  decisions, validation, and recovery flow;
+- [state models](docs/system-model/state-models.md): which transitions are legal
+  in the current room, source, and backend state; and
+- [architecture](ARCHITECTURE.md): which QML, protocol, domain, and adapter layer
+  owns each rule.
+
+The [AI and MCP roadmap](docs/ai-mcp-roadmap.md) separates implemented narrow
+tools from future orchestration, broader control and private-library research.
+The [architecture decisions](docs/adr/) record the supported Python runtime,
+single-backend ownership, QML platform boundary and remaining SoCo coupling.
 
 ## Remove
 
@@ -244,10 +289,3 @@ contributors. Its persistent event backend is derived from OmaSonos 0.2.1 by
 ctl0v0 and retains that project's MIT notice. SoCo and OmaSonos do not sponsor
 or endorse Sonarchy. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and
 [LICENSES/OMASONOS-MIT.txt](LICENSES/OMASONOS-MIT.txt).
-## Local Codex bridge
-
-Sonarchy can expose bounded read context and reviewed exact Apple-track Sonos
-Playlist creation to Codex through a thin stdio adapter and an owner-only Unix
-socket. Quickshell remains the sole backend owner; there is no second Sonos
-controller and no HTTP/LAN listener. Setup and removal are documented in
-[`docs/mcp.md`](docs/mcp.md).

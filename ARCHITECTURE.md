@@ -7,14 +7,16 @@ firmware/setup tool. The product boundary is recorded in
 
 ## Target runtime
 
-The target runtime has one supervised Python process and one versioned JSON-line
-protocol over its private stdin/stdout pipes:
+The runtime has one Quickshell-supervised Python process. QML uses the
+versioned JSON-line protocol over private stdin/stdout; a narrow MCP allowlist
+uses an owner-only Unix socket into the same serialized dispatcher:
 
 ```text
 QML pages -> QML store -> protocol -> application services -> SoCo adapter
                               |                  |
                               |                  +-> state/cache
                               +-> snapshots/events
+MCP client -> stdio adapter -> owner-only socket -> same application services
 ```
 
 QML owns presentation state: focus, open pages, editor drafts, pending request
@@ -163,8 +165,10 @@ would perform irrelevant queue, transport, volume, and mute reads.
 `domains/apple_playlist_transaction.py` owns the room/household anchor,
 playlist-inventory freshness, exact-ID creation ownership, ordered addition,
 and authoritative reopen verification. It has no dependency on queue backup or
-restoration. Ordinary destructive queue replacement remains unchanged and its
-broader replay defect is tracked separately by issue #19.
+restoration. The ordinary replace mode is now guarded as Play if queue empty:
+nonempty or unverifiable queues are refused before writes; an empty queue is
+appended to and played without clearing or rollback. General destructive
+queue restoration remains issue #19.
 
 The transaction creates a Sonos Playlist directly; it never constructs tracks
 in a room's playback queue. SoCo's normal `create_sonos_playlist()` creates the
@@ -204,8 +208,13 @@ while every pre-existing playlist remained unchanged and queue/playback
 mutation flags remained false. A different exact Apple item was rejected with
 an undocumented vendor code and its attributable partial playlist was removed
 through the same exact-ID cleanup boundary. These results validate the
-architecture for the tested one- and two-item cases, not universal catalogue
-acceptance or general queue restoration; issue #19 remains separate.
+architecture for those exact one- and two-item cases. The later
+[2026-09-06 record in #17](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/17)
+adds a ten-track GB plan with verified persistence, separate exact playback
+preserving the existing queue entry, and owner-confirmed audible playback.
+Neither that run nor the earlier cases prove universal catalogue acceptance,
+general queue restoration or natural transition for the ten-track playlist.
+See [acceptance evidence](ACCEPTANCE_TESTS.md); issue #19 remains separate.
 
 Failure diagnostics identify `create`, `add_track`, `verify_track`,
 `verify_playlist`, or `cleanup`. Track failures may include only the reviewed
@@ -285,6 +294,10 @@ cannot replace an error already being shown. Explicit user dismissal and
 foreground failures may replace or clear the current error regardless of owner.
 Local validation and Favorites snapshot state use stable owner keys so their
 retries can update only their own prior errors without colliding with each other.
+Request errors in `SonarchyProtocolRouter.qml` and live transient errors in
+`LiveService.qml` also expire on separate ten-second timers. Ownership prevents
+unrelated result-driven clearing, not timer dismissal; disappearance of a
+message is not evidence that the underlying failure recovered.
 
 Every snapshot exposes a canonical set of positive action capabilities such as
 `playback.seek`, `queue.item.remove`, `topology.members.set`, and
@@ -296,8 +309,11 @@ instead of relying on speaker model names or predictable command failures.
 ## Error model
 
 Backend failures have a stable machine code, a safe user message, retryability,
-and optional operation context. Raw exceptions, private addresses, service
-metadata, and credentials never cross the protocol. The initial codes are:
+and optional operation context. Error payloads do not expose raw exceptions,
+private addresses, service metadata or credentials. This is not a claim that
+the whole QML protocol is address-free: room snapshots include speaker IP
+addresses used by local state/artwork handling. MCP uses a separate narrow
+projection without those raw infrastructure fields. The initial codes are:
 
 - `invalid_request`
 - `unsupported_operation`

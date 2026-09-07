@@ -8,21 +8,40 @@ exact release commit, and explicit owner sign-off. A feature unsupported by the
 test household may be marked `not applicable` only with the product limitation
 recorded; it must not be called tested.
 
-## Completed local gates
+## Recorded local gates and historical checks
+
+Historical observations below are retained from the
+[acceptance record at `e116f898`](https://github.com/SurreptitiousFabric/omarchy-sonarchy/blob/e116f89817d6fc4aa500ceca5a29bb1e0c7e6ee2/ACCEPTANCE_TESTS.md)
+unless a later exact case is cited. They are not claims of a new run or of
+acceptance on an unspecified release candidate. The required real-device and
+final release checklists remain separate and retain their untested criteria.
+
+The later [PR #81 CI run](https://github.com/SurreptitiousFabric/omarchy-sonarchy/actions/runs/34097548397)
+passed for head `55bc4870e1a2fd9c9a1d32b7d434f453b31769f6` on both declared
+Python targets, including the locked-runtime advisory audit. That immutable
+run is automated evidence, not Omarchy release-host or physical acceptance.
 
 - [x] The complete automated Python suite passes under the checked-in branch
   coverage gate, and the complete headless QML component suite passes.
-- [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
-  protocol, security, Omarchy plugin, and standalone QML lint gates pass.
+- [x] Repository-wide Ruff, formatting, compilation, JSON, Bash/ShellCheck,
+  protocol and security checks pass in the cited automated evidence.
+- [ ] Strict all-shipped-QML validation on the exact clean Omarchy release
+  candidate. The [recorded #64 report](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/64#issuecomment-5566579718)
+  for `cd2518d498ebbc6918c8449781aed8c6ebc23e46` passed manifest/component
+  checks but failed the zero-warning QML lint gate. Generic Python CI and
+  offscreen component tests do not satisfy this gate.
 - [x] Headless real-event QML tests load Omarchy's installed `PanelSlider`,
   prove wheel input scrolls without a slider mutation, preserve intentional
-  dragging, enforce request-owned error clearing, and cover content root,
+  dragging, test request-owned result-driven clearing, and cover content root,
   nested, paging, Back, Favorites, and Apple artist/album history transitions.
+  That focused ownership test does not disable or test away the production
+  request/transient-error timers: both dismiss messages after ten seconds.
 - [x] The marketplace v3 deterministic baseline reports no findings and only
   the disclosed, non-blocking `package-manager` review capability.
-- [x] The exact 12-package runtime environment is internally consistent and a
-  current OSV batch query reports no known advisories for the installed
-  versions.
+- [x] Exact locked runtime versions passed the advisory audit in the cited CI
+  run. This means no advisory was returned by OSV for those versions at that
+  query time, not a timeless or vulnerability-free claim. Repeat the audit
+  for the exact release candidate; do not reuse an old package count/result.
 - [x] A disposable first-run bootstrap creates the hash-locked private venv,
   reaches a healthy live snapshot, and exits cleanly without using system
   Python packages.
@@ -141,6 +160,10 @@ account, licensing, provider, or universal-availability conclusion.
 
 ### Physically passed persistence matrix
 
+The checked rows describe the exact dated cases above, not every playlist or
+the current checkout. Tests A/C/D and the rejected-item cleanup remain separate
+observations; a successful create is not evidence that its failure path ran.
+
 - [x] Direct one-track Sonos Playlist creation.
 - [x] Direct creation with a second independent Apple catalogue item.
 - [x] Direct multi-track Sonos Playlist creation.
@@ -155,9 +178,12 @@ account, licensing, provider, or universal-availability conclusion.
 
 ### Deferred acceptance
 
-- [ ] Physical playlists larger than the tested two-item case.
+- [ ] Physical playlist-size coverage beyond the exact one-, two- and
+  ten-track cases recorded here, including the maximum supported plan size.
 - [ ] AI-orchestration policy for individually rejected catalogue items.
-- [ ] MCP process ownership and concurrency under issue #11.
+- [ ] Physical QML/MCP concurrency and lifecycle acceptance under #61/#68.
+  Single-authority ownership is implemented (ADR 0002); the fake-only contract
+  checks below are not a substitute for this physical gate.
 - [ ] Broader MCP transport, queue, grouping, source, and volume actions under
   issue #14.
 - [ ] General destructive queue restoration under issue #19.
@@ -167,6 +193,26 @@ Issue #19 separately owns general destructive queue rollback; this acceptance
 does not claim that issue fixed. Tests A, C, and D do physically demonstrate
 ordered direct Sonos Playlist persistence for the exact accepted items above,
 not universal acceptance of every Apple catalogue song.
+
+### Ten-track GB case — 2026-09-06
+
+The [accepted architecture/test record in #17](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/17)
+reports creation of one reviewed ten-track GB catalogue plan, with all ten
+identities, metadata and order verified. Separate playback preserved the
+existing queue entry and authoritatively started the first appended song.
+The owner confirmed audible playback.
+
+This is retained exact-case evidence, not a new physical test by this
+documentation PR. The cited record does not identify a tested software SHA or
+verification timings, so neither is inferred here. It does not establish
+automatic transition, failure cleanup, state restoration or all-device
+coverage. In particular, first-track PLAYING and audible confirmation do not
+satisfy the original natural-transition requirement:
+
+- [ ] Observe a directly created multi-track Sonos Playlist advance naturally
+  from its first track to its second without invoking Next (#17).
+
+The distinct Apple-album transition criterion below also remains unchecked.
 
 ### Physical Stage 1: read-only create preflight
 
@@ -225,7 +271,7 @@ subject to the unchanged checklist and marketplace HOLD.
 
 Physical retest on 2026-09-05, installed commit `b94a1c7`: the owner authorized
 one append-and-play of retained commissioning playlist `SQ:53` in the standalone
-Master Bedroom. The room was stopped, unmuted, at volume 8, with one existing
+room. The room was stopped, unmuted, at volume 8, with one existing
 `Just Like Heaven` queue item. Fresh preflight matched the reviewed fingerprint.
 Exactly one append and one playback-start invocation returned; queue length two
 and current position two were confirmed. Playback verification nevertheless
@@ -321,6 +367,12 @@ Until every applicable box is complete, the project remains a local beta and
 must not be submitted to the marketplace.
 ## Single-authority MCP acceptance
 
+Automated evidence is the cited PR #81 CI run and production-path tests in
+`tests/test_local_mcp.py`, `tests/test_mcp_stdio.py`,
+`tests/test_mcp_browse_contract.py` and `tests/test_mcp_playback_contract.py`.
+These checks use fake external boundaries and do not establish live household
+concurrency or current installed-system acceptance.
+
 - [x] Process ownership and socket/config symlink, owner, and mode boundaries
   are covered with fake-only tests.
 - [x] Read-only default and independent optional create/play inventories are
@@ -329,9 +381,10 @@ must not be submitted to the marketplace.
   replacement fields, fresh second-handle use, and exactly-once create/play
   dispatch are covered.
 - [x] MCP import boundaries prohibit SoCo/controller/QML imports.
-- [x] Existing protocol, Apple create, QML, plugin, and packaging gates remain
-  required.
+- [ ] Repeat existing protocol, Apple create, QML, plugin and packaging gates
+  on the exact release candidate; historical passing subsets do not waive them.
 - [x] No new real-device run was authorized or performed for this implementation.
   The merged PR #18 physical evidence remains create-only. The later separately
-  approved exact-playback case on `8d93804` is recorded above. Issue #14 remains
-  open for every broader action.
+  approved exact-playback case on `8d93804` and the later recorded ten-track GB
+  case are above. Neither was performed by this documentation update. Issue
+  #14 remains open for every broader action.

@@ -18,15 +18,18 @@ reviewed songs in order, and authoritatively reopen and verify that exact
 playlist.
 
 The prior compound `save-and-play` mode was provisional and has been removed.
-The intended future flow for issue #17 is:
+The implemented flow supporting issue #17 is:
 
 1. create the exact Sonos Playlist;
 2. report its exact `SQ:<id>` and verified contents;
 3. separately preflight and approve playback in an exact room.
 
-Playback remains the existing exact-ID Sonos Playlist action. Safe AI/MCP
-orchestration of that separate mutation belongs to issues #14 and #11; playlist
-creation does not grant playback approval.
+The current MCP surface exposes separate exact-ID playback preflight and
+execution under an independent `playlist-play` grant. Creation does not grant
+playback permission or approval. See [MCP setup](mcp.md) for the fresh-preflight
+contract, standalone-room safety policy and honest partial-failure reporting.
+Broader playback/orchestration work remains in issues #14/#15/#61; the
+single-authority process decision is accepted in [ADR 0002](adr/0002-single-authority-local-mcp.md).
 
 ## Reviewed Apple song input
 
@@ -207,24 +210,43 @@ route.
 These cases physically demonstrate one- and two-item direct persistence,
 approved ordering, authoritative verification, unchanged existing playlists,
 queue/playback isolation, no retry/substitution, and exact-ID partial cleanup.
-They do not demonstrate universal Apple-song acceptance or larger playlist
-sizes. Issue #19 separately tracks general destructive queue replacement and
-exact rollback; PR #18 neither fixes nor closes it.
+The [2026-09-06 record in #17](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/17)
+adds an exact ten-track GB catalogue plan: all identities, metadata and order
+were verified, followed by separate playback that preserved the existing queue
+entry and authoritatively started the first appended song. The owner confirmed
+audible playback. That run did not test natural transition, failure cleanup or
+state restoration; no revision or timing is inferred beyond the cited record.
+
+These exact cases do not demonstrate universal Apple-song acceptance or every
+playlist size. Issue #19 separately tracks general destructive queue
+restoration; direct persistence neither fixes nor closes it. The ordinary
+Play if queue empty action now refuses nonempty/unverifiable queues instead
+of attempting unsafe replacement.
 
 ## AI, MCP, and Apple export boundaries
 
-The AI client owns curation and review. Sonarchy owns deterministic validation,
-single-use approval binding, direct Sonos Playlist persistence, exact reopen
-verification, and exact-ID cleanup. The later local MCP bridge exposes only the
-same preflight/create services through the Quickshell-owned backend; it does
-**not** add a second Sonos controller. Playback remains separately deferred.
+The AI client owns curation, review and the human consent interaction. Sonarchy
+owns deterministic validation, permission and single-use ticket enforcement,
+direct Sonos Playlist persistence, exact reopen verification and exact-ID
+cleanup. The current MCP bridge exposes the same preflight/create services
+and separate exact-playlist playback through the Quickshell-owned backend; it
+does **not** add a second Sonos controller. A supplied `approved: true` flag
+cannot prove that the client obtained consent. Playback failure has no queue
+cleanup, reconstruction or retry; appended entries may remain.
 
 Without an explicitly supplied Apple API source, the AI cannot inspect existing
 personal playlists and cannot read private-library membership or listening
-history. A native Apple Music playlist is a separate optional **Export/Copy to Apple Music**,
-not the normal persistence target. The Apple copy and Sonos
-Playlist do not synchronize; changing one does not change the other. Sonarchy
-cannot adjust the Apple playlist after export. To play that copy through
-Sonarchy, the user must copy its Apple Music share URL and provide it for a
-separately reviewed action. Sonarchy can validate and play that share URL but
-cannot modify its contents.
+history through Sonarchy. A native Apple Music playlist would be a separate
+optional **Export/Copy to Apple Music**, not the normal persistence target.
+That user-assisted/external workflow is future work in #72, not an implemented
+Sonarchy export tool. It must not imply synchronization, private-library
+access, or permission to mutate an existing Apple playlist. Any supported
+external Apple tool and its consent requirements must be verified separately.
+
+The constraints on that future copy remain explicit: the Apple copy and Sonos
+Playlist do not synchronize. Sonarchy cannot adjust the Apple playlist after
+export and cannot modify its contents. To request a separately reviewed
+share-link handoff, the user would need to copy its Apple Music share URL;
+that is not an automatic transfer, and the current MCP allowlist does not
+expose arbitrary Apple playlist-share playback. The historical external
+handoff experiment does not grant that missing tool or waive its review.
