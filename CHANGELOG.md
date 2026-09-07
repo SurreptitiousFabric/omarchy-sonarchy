@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep page navigation and messages inside the fitted popup at supported narrow
+  sizes by giving the scrollable page the remaining layout space.
 - Bind remaining page delegates and numeric settings to their owning page.
 - Resolve Browse/Queue delegate bindings and queue-row types while preserving
   action identities; keep empty library metadata from emitting visibility warnings.

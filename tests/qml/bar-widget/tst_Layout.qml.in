@@ -1,0 +1,127 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import qs.Commons
+import qs.Ui
+
+FloatingWindow {
+  id: root
+  implicitWidth: 700
+  implicitHeight: 950
+  visible: true
+  property int configuredPanelWidth: 360
+  property int configuredPanelHeight: 520
+  property var device: ({uid:"demo",name:"Demo room"})
+  property string activePage: "now"
+  property color panelForeground: "white"
+  property string playbackLabel: "PLAYING"
+  property bool showArtwork: false
+  property int volumeStep: 2
+  property QtObject bar: QtObject { property string fontFamily: "monospace" }
+  property QtObject service: QtObject {
+    property bool loading: false
+    property bool hasDevices: true
+    property var devices: [{uid:"demo",name:"Demo room"}]
+    property string actionMessage: ""
+    property string lastError: ""
+    function roomOptions() { return [{value:"demo",label:"Demo room"}] }
+    function selectDevice(value) {}
+    function refresh() {}
+    function clearError() { lastError = "" }
+  }
+  Component { id: heroIconComponent; Item { implicitWidth: 40; implicitHeight: 40 } }
+  Component { id: refreshControlComponent; Item { implicitWidth: 38; implicitHeight: 38 } }
+
+  Item {
+    id: popup
+    width: root.configuredPanelWidth
+    height: contentHeight
+    property int padding: 16
+    property var borderSpec: Border.flat("white",2)
+    property real availableCardHeight: 900
+    // ACTUAL_HOST_INSET
+    // ACTUAL_HOST_FITTING
+    // PRODUCTION_CONTENT_HEIGHT
+    Item {
+      anchors.fill: parent
+      anchors.leftMargin: popup.padding + Border.left(popup.borderSpec)
+      anchors.rightMargin: popup.padding + Border.right(popup.borderSpec)
+      anchors.topMargin: popup.padding + Border.top(popup.borderSpec)
+      anchors.bottomMargin: popup.padding + Border.bottom(popup.borderSpec)
+      // PRODUCTION_PANEL_COLUMN
+    }
+  }
+
+  QtObject {
+    id: checks
+    property int caseIndex: 0
+    property int phase: 0
+    property var cases: [
+      {tag:"narrow",width:360,height:520,scale:1,message:false},
+      {tag:"narrow_theme",width:360,height:520,scale:1.2,message:false},
+      {tag:"narrow_messages",width:360,height:520,scale:1.2,message:true},
+      {tag:"wide",width:620,height:820,scale:1.2,message:false},
+      {tag:"wide_messages",width:620,height:820,scale:1.2,message:true},
+      {tag:"empty",width:360,height:520,scale:1.2,message:false,empty:true},
+      {tag:"empty_error",width:360,height:520,scale:1.2,message:true,empty:true}
+    ]
+    function verify(condition,label) {
+      if (!condition) throw new Error(cases[caseIndex].tag+": "+label)
+    }
+    function assertInside(item,label) {
+      var p = item.mapToItem(popup,0,0)
+      verify(p.x >= popup.padding - 1,label+" left")
+      verify(p.y >= popup.padding - 1,label+" top")
+      verify(p.x + item.width <= popup.width - popup.padding + 1,label+" right")
+      verify(p.y + item.height <= popup.height - popup.padding + 1,label+" bottom: "+(p.y+item.height)+" > "+(popup.height-popup.padding))
+    }
+    function step() {
+      var data = cases[caseIndex]
+      if (phase === 0) {
+        root.configuredPanelWidth = data.width
+        root.configuredPanelHeight = data.height
+        Style.fontBaseSize = Math.round(12 * data.scale)
+        root.device = data.empty ? null : ({uid:"demo",name:"Demo room"})
+        root.service.hasDevices = !data.empty
+        root.service.actionMessage = data.message ? "Action completed" : ""
+        root.service.lastError = data.message ? "The room is temporarily unavailable. Try refreshing in a moment." : ""
+        phase = 1
+        return
+      }
+      if (!data.empty) {
+        assertInside(roomPicker,"room picker")
+        assertInside(pageTabs,"page navigation")
+        verify(pageViewport.height > 0,"page keeps scrollable space")
+        assertInside(pageViewport,"page viewport")
+      }
+      if (data.message) assertInside(errorDismissButton,"error dismissal")
+      verify(isFinite(panelColumn.implicitHeight),"finite content height")
+      verify(popup.height <= data.height,"configured cap")
+      if (phase === 1) {
+        popup.availableCardHeight = Math.min(data.height,480)
+        phase = 2
+        return
+      }
+      verify(popup.height <= 480,"screen cap")
+      popup.availableCardHeight = 900
+      caseIndex += 1
+      phase = 0
+      if (caseIndex === cases.length) {
+        console.log("POPUP_LAYOUT_PASS")
+        Qt.quit()
+      }
+    }
+  }
+  Timer {
+    interval: 100
+    repeat: true
+    running: true
+    onTriggered: {
+      try { checks.step() }
+      catch (error) {
+        console.log("POPUP_LAYOUT_FAIL",String(error))
+        Qt.quit()
+      }
+    }
+  }
+}

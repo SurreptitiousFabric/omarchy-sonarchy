@@ -190,6 +190,62 @@ def test_bar_widget_scroll_dispatch_reaches_only_the_active_page(tmp_path, priva
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_bar_widget_layout_fits_the_real_host_content_bounds(tmp_path, imports, private_qml_env):
+    for module in ("Commons", "Ui"):
+        (tmp_path / module).symlink_to(gate.SHELL / module, target_is_directory=True)
+    source = (gate.ROOT / "BarWidget.qml").read_text()
+    columns = re.findall(
+        r"^      (?:Column|ColumnLayout) \{\n        id: panelColumn\n"
+        r".*?^      \}\n(?=    \}\n  \}\n\})",
+        source,
+        re.M | re.S,
+    )
+    assert len(columns) == 1, "Review changed production panel boundary"
+    heights = re.findall(r"^    contentHeight: (.*?)\n\n    PanelKeyCatcher", source, re.M | re.S)
+    assert len(heights) == 1
+    host = (gate.SHELL / "Ui/KeyboardPanel.qml").read_text()
+    inset = re.findall(r"^  readonly property real verticalContentInset: .*", host, re.M)
+    assert len(inset) == 1
+    fixture = (gate.ROOT / "tests/qml/bar-widget/tst_Layout.qml.in").read_text()
+    fixture = fixture.replace("// PRODUCTION_PANEL_COLUMN", columns[0])
+    fixture = fixture.replace(
+        "// PRODUCTION_CONTENT_HEIGHT", "property real contentHeight: " + heights[0]
+    )
+    fixture = fixture.replace("// ACTUAL_HOST_INSET", inset[0].replace("root.", "popup."))
+    fitting = "\n".join(
+        _bar_function(host, name) for name in ("fittedContentHeight", "cappedContentHeight")
+    )
+    fixture = fixture.replace("// ACTUAL_HOST_FITTING", fitting.replace("root.", "popup."))
+    (tmp_path / "tst_Layout.qml").write_text(fixture)
+    for name in ("SonarchyDropdown", "SonarchyNavigation"):
+        shutil.copy2(gate.ROOT / f"{name}.qml", tmp_path / f"{name}.qml")
+    # Page internals and device data are outside this geometry boundary. Keep
+    # the production viewport, all layout containers, navigation, actual host
+    # controls, insets and fitting expressions. No backend is instantiated.
+    page = """import QtQuick
+Item {
+  property var bar: null
+  property var service: null
+  property var device: null
+  property color foreground: "white"
+  property string fontFamily: "monospace"
+  property bool showArtwork: false
+  property int volumeStep: 2
+}
+"""
+    for name in ("Now", "Browse", "Queue", "Rooms", "Sound", "System"):
+        (tmp_path / f"Sonarchy{name}Page.qml").write_text(page)
+    result = gate.run(
+        ["/usr/bin/qs", "--no-color", "-p", str(tmp_path / "tst_Layout.qml")],
+        cwd=tmp_path,
+        env={**private_qml_env, "QML_IMPORT_PATH": str(imports)},
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0 and "POPUP_LAYOUT_PASS" in output, output
+    assert "POPUP_LAYOUT_FAIL" not in output and "ERROR" not in output, output
+    assert "Binding loop" not in output and "WARN qml:" not in output, output
+
+
 @pytest.mark.parametrize("page", ["SonarchyBrowsePage.qml", "SonarchyQueuePage.qml"])
 def test_content_page_delegate_bindings_are_statically_resolved(imports, page):
     result = gate.run(

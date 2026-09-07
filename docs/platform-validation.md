@@ -43,6 +43,11 @@ no platform pass implied by skipped host tests in generic Python CI.
   manifest/QML, missing import and an intentionally failing component to fail.
   The control subprocess clears inherited `PYTEST_ADDOPTS` so host collection
   or selection preferences cannot skip these required checks.
+  The popup layout regression runs the production container in a real Quickshell
+  window with installed host controls, content insets and fitting functions.
+  Page bodies and device data are fixtures; private HOME/XDG paths isolate theme
+  reads, and no backend is created. It checks narrow/wide geometry, visible
+  messages, empty state and a smaller available screen height.
   It also requires the ADR 0004 type-contract probes: actual declaration lint,
   live font-role bindings and readonly behavior, popup text existence/live
   updates/writability with drift negative controls, and the named-role prototype.

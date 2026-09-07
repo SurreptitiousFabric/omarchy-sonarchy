@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 
@@ -322,7 +323,8 @@ BarWidget {
     open: root.popupOpen
     focusTarget: keyCatcher
     contentWidth: popup.fittedContentWidth(root.configuredPanelWidth)
-    contentHeight: popup.fittedContentHeight(panelColumn.implicitHeight, root.configuredPanelHeight)
+    contentHeight: root.device ? popup.cappedContentHeight(root.configuredPanelHeight)
+      : popup.fittedContentHeight(panelColumn.implicitHeight, root.configuredPanelHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -355,13 +357,13 @@ BarWidget {
         else if (key === "6") root.activePage = "system"
       }
 
-      Column {
+      ColumnLayout {
         id: panelColumn
         anchors.fill: parent
         spacing: Style.space(10)
 
         PanelHero {
-          width: parent.width
+          Layout.fillWidth: true
           iconComponent: heroIconComponent
           title: root.device ? String(root.device.name || "Sonos") : "Sonarchy"
           meta: {
@@ -377,16 +379,17 @@ BarWidget {
           trailingControl: refreshControlComponent
         }
 
-      PanelSeparator { foreground: root.panelForeground }
+      PanelSeparator { Layout.fillWidth: true; foreground: root.panelForeground }
 
-      Column {
-        width: parent.width
+      ColumnLayout {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
         spacing: Style.space(9)
         visible: root.device !== null
 
         SonarchyDropdown {
           id: roomPicker
-          width: parent.width
+          Layout.fillWidth: true
           label: "ROOM"
           value: root.device ? String(root.device.uid) : ""
           options: root.service ? root.service.roomOptions() : []
@@ -397,8 +400,9 @@ BarWidget {
 
         Item {
           id: pageViewport
-          width: parent.width
-          implicitHeight: Math.max(300, root.configuredPanelHeight - Style.space(258))
+          Layout.fillWidth: true
+          Layout.fillHeight: true
+          Layout.minimumHeight: 0
           clip: true
 
           SonarchyNowPage {
@@ -519,11 +523,11 @@ BarWidget {
           }
         }
 
-        PanelSeparator { foreground: root.panelForeground; strength: 0.1 }
+        PanelSeparator { Layout.fillWidth: true; foreground: root.panelForeground; strength: 0.1 }
 
         SonarchyNavigation {
           id: pageTabs
-          width: parent.width
+          Layout.fillWidth: true
           options: [
             { value: "now", label: "Now", icon: "󰐊" },
             { value: "browse", label: "Browse", icon: "󰍉" },
@@ -540,7 +544,7 @@ BarWidget {
         }
 
         Text {
-          width: parent.width
+          Layout.fillWidth: true
           visible: root.service && root.service.actionMessage !== ""
           text: root.service ? root.service.actionMessage : ""
           color: Qt.darker(root.panelForeground, 1.25)
@@ -552,7 +556,7 @@ BarWidget {
       }
 
       Column {
-        width: parent.width
+        Layout.fillWidth: true
         spacing: Style.space(10)
         visible: !root.device
 
@@ -606,7 +610,7 @@ BarWidget {
       }
 
       BorderSurface {
-        width: parent.width
+        Layout.fillWidth: true
         visible: root.service && root.service.lastError !== ""
         implicitHeight: errorRow.implicitHeight + Style.space(12)
         radius: Style.cornerRadius
