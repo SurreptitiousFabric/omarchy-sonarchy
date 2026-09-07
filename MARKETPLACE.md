@@ -6,6 +6,11 @@ actions that require every applicable gate in
 [`ACCEPTANCE_TESTS.md`](ACCEPTANCE_TESTS.md) plus the maintainer's explicit
 approval.
 
+The [owner-reviewable preparation package](docs/marketplace-preparation.md)
+contains the proposed title, exact-format draft body, demo preview and dated
+rules/ID checks. Every submission attestation remains unchecked pending owner
+confirmation. Preparation is not publication or a release-gate waiver.
+
 ## Repository contract
 
 - Public GitHub repository with this directory at its root
@@ -15,7 +20,8 @@ approval.
   changelog
 - Globally unique, lowercase plugin ID `io.github.surreptitiousfabric.sonarchy`
 - No symlinks, bundled binaries, submodules, install hooks, or privileged files
-- Optional root preview image only if one is later created and reviewed
+- Optional root `preview.png`: isolated demo data and test visuals; provenance
+  and owner-review limits are recorded in the preparation package
 
 The public source repository is
 <https://github.com/SurreptitiousFabric/omarchy-sonarchy>. Re-check the live
@@ -24,12 +30,12 @@ acceptance makes the ID effectively permanent.
 
 ## Declared review outcome
 
-The current v3 deterministic security baseline requires human review for
-`package-manager`: the non-interactive, hash-locked pip download from PyPI. A
-local scan reports no findings and no other automated capabilities. Reviewers
-should additionally inspect the declared installer-like first-run private venv
-creation even though the scanner does not currently emit `installer` for the
-root launcher.
+The declared `package-manager` capability is the non-interactive, hash-locked
+pip download from PyPI and requires review under the recorded baseline policy.
+Run a fresh exact-commit baseline before submission; a historical local scan is
+not current verification. Reviewers should also inspect the installer-like
+first-run private venv creation independently of which capabilities that scan
+emits for the root launcher.
 
 There should be no blocking finding for curl-pipe-shell, remote git execution,
 unhashed runtime packages, shared `/tmp` privilege state, sudoers changes,
