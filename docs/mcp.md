@@ -2,8 +2,20 @@
 
 Sonarchy exposes local AI access without creating another Sonos controller.
 Quickshell owns the backend; `sonarchy-mcp.sh` is a thin stdio adapter to the
-owner-only `${XDG_RUNTIME_DIR}/sonarchy/control.sock`. There is no LAN, TCP, or
-HTTP listener, and the adapter never starts a fallback backend.
+owner-only `${XDG_RUNTIME_DIR}/sonarchy/control.sock`. The MCP bridge has no LAN,
+TCP or HTTP listener, and the adapter never starts a fallback backend. The
+backend's separate Sonos event listener is described in [Security](../SECURITY.md).
+
+## AI data and privacy
+
+Local stdio/socket transport does not imply a locally running model or local-only
+retention. The connected client can receive household/room/group identities,
+state and requested catalog, library, queue and playlist metadata, and may send
+or retain it elsewhere. Room snapshots omit speaker IP fields, but shared browse
+results can include local artwork locations and library-share paths. Read-only
+means no speaker mutation, not no data disclosure. Sonarchy does not control
+client/provider retention or independently prove human consent. Read
+[Privacy](../PRIVACY.md#ai-clients-and-mcp-data) before connecting a client.
 
 ## Permissions
 
@@ -36,8 +48,12 @@ expose playback; both writes require listing both optional permissions.
 
 Set `enabled = false` to disable socket operations, or remove the file to return
 to the read-only default. Reject symlinks and do not make the file group/world
-accessible. Permission changes take effect only after the Quickshell-owned
-backend restarts.
+accessible. Restart both the Quickshell-owned backend and the MCP adapter after
+permission changes; each loads its permissions at startup. Removing/disabling a
+client's Sonarchy connection disconnects that client, not every same-user client.
+Missing, unreadable, unsafe or invalid-TOML configuration can fall back to the
+read-only default; do not use those conditions as a disable mechanism. Disabling
+access does not erase client/provider copies or undo accepted writes.
 
 ## Codex configuration
 
