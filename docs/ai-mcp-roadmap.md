@@ -68,15 +68,17 @@ each issue's individual scope and acceptance contract.
 | Broader room-targeted transport, volume and queue actions | [#14](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/14), [#69](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/69), [#70](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/70), [#71](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/71) | Separate designs, grants, review and physical approval, not implied by playlist playback. |
 | General destructive queue restoration | [#19](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/19) | Play if queue empty refuses nonempty/unverifiable queues; direct persistence does not solve restoration. |
 | Private Apple-library feasibility | [#12](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/12) | Investigate supported authentication, consent, privacy and provider capabilities first; no extraction of Sonos-held credentials. |
-| Optional one-way Apple Music export | [#72](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/72) | Future separately reviewed external/user-assisted copy, not synchronization or private-library proof. |
+| Optional one-way Apple Music export | [#72](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/72), [feasibility result](apple-music-export-feasibility.md) | Documented current identity/read-back limits; no exact-plan export tool implemented. |
 | AI/MCP privacy disclosure | [#53](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/53) | Local transport does not imply a local model; clients may send tool context to their model provider. |
 | Release-host, installation and physical acceptance | [#48](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/48) and children | Exact-candidate evidence and owner sign-off remain required; marketplace HOLD is unchanged. |
 
 Optional export must remain **Export/Copy**, never Move: it would create a
 separate native Apple playlist and leave the Sonos Playlist intact. Neither copy
 should be described as synchronized. Any external client's actual Apple
-permissions and supported workflow must be verified when that issue is taken
-up; this roadmap promises no ability to inspect or edit an existing private playlist.
+permissions and supported workflow must be verified before a future
+implementation. The #72 feasibility result distinguishes title-matched drafts
+from exact-plan reuse and authoritative account verification; this roadmap
+promises no ability to inspect or edit an existing private playlist.
 
 ## Evidence limits
 

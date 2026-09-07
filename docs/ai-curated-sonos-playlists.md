@@ -238,9 +238,10 @@ Without an explicitly supplied Apple API source, the AI cannot inspect existing
 personal playlists and cannot read private-library membership or listening
 history through Sonarchy. A native Apple Music playlist would be a separate
 optional **Export/Copy to Apple Music**, not the normal persistence target.
-That user-assisted/external workflow is future work in #72, not an implemented
-Sonarchy export tool. It must not imply synchronization, private-library
-access, or permission to mutate an existing Apple playlist. Any supported
+The [#72 feasibility assessment](apple-music-export-feasibility.md) records the
+selected integration's title-matching and identity/read-back limits; there is
+no implemented Sonarchy exact-plan export tool. It must not imply synchronization,
+private-library access, or permission to mutate an existing Apple playlist. Any supported
 external Apple tool and its consent requirements must be verified separately.
 
 The constraints on that future copy remain explicit: the Apple copy and Sonos
