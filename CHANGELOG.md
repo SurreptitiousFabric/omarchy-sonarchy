@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Return event-handler capacity when worker construction or startup fails;
+  preserve normal request cleanup and the existing bounded listener limit.
 - Expose bounded structured artist/album, exact millisecond duration and distinct
   explicitness classifications for Apple song browse results; retain unknown
   values and the existing QML subtitle and action identities.
