@@ -30,9 +30,10 @@ The views deliberately overlap, but they are not interchangeable:
 4. [`ARCHITECTURE.md`](../../ARCHITECTURE.md) maps the behavior to QML,
    protocol, application/domain services, adapters, and Sonos.
 
-The future local-AI surface is described separately in
-[`../ai-mcp-roadmap.md`](../ai-mcp-roadmap.md), because planned behavior must not
-be confused with the current application.
+The current narrow AI surface is documented in [MCP setup](../mcp.md) and
+[AI-curated Sonos Playlists](../ai-curated-sonos-playlists.md). The
+[AI and MCP roadmap](../ai-mcp-roadmap.md) marks remaining work separately;
+an implemented tool is not evidence that every AI workflow or device is tested.
 
 ## Status language
 
@@ -73,11 +74,15 @@ flowchart LR
     QML[Sonarchy QML]
     Store[Store and protocol router]
     Backend[Python application/domain services]
-    Adapters[SoCo and bounded HTTP adapters]
+    Adapters[SoCo integration and bounded HTTP adapters]
+    AI[AI client]
+    MCP[Thin stdio MCP adapter]
+    Socket[Owner-only Unix socket and allowlist]
     Speakers[Sonos household]
     Providers[Music providers]
 
     User --> QML --> Store --> Backend --> Adapters --> Speakers
+    User <--> AI <--> MCP <--> Socket <--> Backend
     Adapters <--> Providers
     Speakers --> Backend --> Store --> QML --> User
 ```
@@ -87,11 +92,17 @@ The boundary has several consequences:
 - QML presents state and collects intent; it does not infer speaker support from
   model names or construct low-level Sonos commands.
 - Python validates exact identities, capabilities, values, and mutations.
-- Providers and SoCo remain adapters; their private objects and credentials do
-  not cross into QML or future MCP schemas.
+- Provider/SoCo objects and credentials are not serialized into QML or MCP.
+  SoCo coupling is only partially isolated internally; several domains and
+  controller helpers still use its types or duck-typed objects. See
+  [ADR 0005](../adr/0005-soco-contract-and-upgrades.md).
+- QML room snapshots do contain local speaker IP addresses, used by the artwork
+  policy. The narrower MCP projection and sanitized errors do not expose those
+  raw infrastructure fields; this is not an address-free QML protocol.
 - An authoritative backend refresh wins over optimistic presentation state.
-- A future AI client must call the same application/domain rules rather than
-  gaining a generic command, URI, shell, or UPnP escape hatch.
+- The MCP client uses the same serialized application/domain dispatcher and
+  ticket store. It owns no controller and has no generic command, URI, shell,
+  or UPnP escape hatch.
 
 ## Review questions
 

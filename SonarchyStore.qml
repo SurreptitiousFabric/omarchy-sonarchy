@@ -31,6 +31,7 @@ Item {
   property alias contentPath: contentState.path
   property alias contentOffset: contentState.offset
   readonly property alias appleCanGoBack: contentState.appleCanGoBack
+  readonly property alias libraryCanGoBack: contentState.libraryCanGoBack
   property var alarms: []
   property bool alarmsLoading: false
 
@@ -152,6 +153,7 @@ Item {
 
   onSelectedIpChanged: {
     details = ({})
+    contentState.resetLibraryHistory()
     if (contentKind === "library") {
       contentItems = []
       contentTotal = 0
@@ -415,6 +417,8 @@ Item {
     playContent(item)
   }
   function libraryPage(offset) { contentState.libraryPage(offset) }
+  function libraryNext(offset) { contentState.libraryNext(offset) }
+  function libraryPrevious() { contentState.libraryPrevious() }
   function contentContextKey() { return contentState.currentContextKey() }
 
   function optimisticDevicePatch(ip, patch) {

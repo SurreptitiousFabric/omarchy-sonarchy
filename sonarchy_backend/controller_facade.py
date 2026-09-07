@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from .controller_common import ControllerError
 from .domains.alarms import delete_alarm, project_alarms, save_alarm, toggle_alarm
+from .domains.apple_playlist_transaction import (
+    create_preflighted_apple_playlist,
+    inspect_apple_playlist_target,
+)
 from .domains.browse import browse_content
 from .domains.content import play_apple, play_apple_album, play_global, start_library_update
 from .domains.devices import project_device_details
+from .domains.errors import PlanConflictError, PlaylistPlayTransactionError
+from .domains.playlist_playback import (
+    execute_preflighted_playlist_play,
+    inspect_playlist_play_target,
+)
 from .domains.playlists import playlist_action, playlist_track_action
 from .domains.queue import enqueue_content_item, move_queue_item, queue_action
 from .domains.settings import rename_room as rename_sonos_room
@@ -28,12 +38,17 @@ class DomainFacadeMixin:
         term: str,
         limit: int,
         context: dict[str, Any] | None = None,
+        storefront: str | None = None,
     ) -> dict[str, Any]:
+        if not room_uid:
+            if kind not in {"apple", "apple-artist", "apple-album"}:
+                raise ValueError("roomUid is required for Sonos-backed content")
+            return browse_content(None, kind, term, limit, context, storefront)
         speaker = self._zone(room_uid)
         coordinator = self._safe(
             lambda: speaker.group.coordinator if speaker.group else speaker, speaker
         )
-        return browse_content(coordinator, kind, term, limit, context)
+        return browse_content(coordinator, kind, term, limit, context, storefront)
 
     def list_alarms(self, room_uid: str) -> dict[str, Any]:
         return project_alarms(self._zone(room_uid))
@@ -106,6 +121,55 @@ class DomainFacadeMixin:
         self, room_uid: str, action: str, playlist_id: str, index: int, item_id: str
     ) -> dict[str, Any]:
         return playlist_track_action(self._zone(room_uid), action, playlist_id, index, item_id)
+
+    def inspect_apple_playlist_target(self, room_uid: str, playlist_name: str) -> dict[str, Any]:
+        try:
+            speaker = self._zone(room_uid)
+        except ControllerError as exc:
+            raise PlanConflictError("The exact Sonos room is unavailable") from exc
+        return inspect_apple_playlist_target(speaker, playlist_name)
+
+    def create_preflighted_apple_playlist(self, plan: dict[str, Any]) -> dict[str, Any]:
+        room_uid = str(plan.get("roomUid", ""))
+        try:
+            speaker = self._zone(room_uid)
+        except ControllerError as exc:
+            raise PlanConflictError("The exact Sonos room is unavailable") from exc
+        return create_preflighted_apple_playlist(speaker, plan)
+
+    def inspect_playlist_play_target(self, room_uid: str, playlist_id: str) -> dict[str, Any]:
+        try:
+            speaker = self._zone(room_uid)
+        except ControllerError as exc:
+            raise PlanConflictError("The exact Sonos room is unavailable") from exc
+        return inspect_playlist_play_target(speaker, playlist_id)
+
+    def execute_preflighted_playlist_play(
+        self,
+        plan: dict[str, Any],
+        mutation_started_callback: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        room_uid = str(plan.get("roomUid", ""))
+        try:
+            speaker = self._zone(room_uid)
+        except ControllerError as exc:
+            raise PlaylistPlayTransactionError(
+                phase="preflight_revalidation",
+                diagnostics={
+                    "appendState": "absent",
+                    "playbackStarted": False,
+                    "queueRollbackAttempted": False,
+                    "appendInvocationCount": 0,
+                    "playbackStartInvocationCount": 0,
+                    "retryCount": 0,
+                    "succeeded": False,
+                },
+            ) from exc
+        return execute_preflighted_playlist_play(
+            speaker,
+            plan,
+            mutation_started_callback=mutation_started_callback,
+        )
 
     def play_apple(self, room_uid: str, url: str) -> dict[str, Any]:
         return play_apple(self._zone(room_uid), url)

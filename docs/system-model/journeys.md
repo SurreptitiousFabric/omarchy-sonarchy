@@ -10,11 +10,11 @@ tasks/gateways while remaining directly renderable in GitHub Markdown.
 |---|---|---|
 | Start, discover, and select a room | Current | Cached discovery, SSDP fallback, no-room recovery, stable selection |
 | Find and play content | Current | Source capability, nested browse, exact item identity, provider failure |
-| Safely replace a queue | Current | Confirmation, complete backup, stale-item check, rollback |
+| Play only if the queue is empty | Current | Confirmation, exact identity, authoritative empty guard, honest partial failure |
 | Stage and apply grouping | Current | No mutation while staged, same-household validation, topology convergence |
 | Create or edit an alarm | Current | Authoritative room/program options, local validation, save refresh |
 | Recover from an action or backend failure | Current | Error ownership, dismiss/refresh, automatic backend restart |
-| Draft and play a bespoke playlist through MCP | Planned | Permission, exact room/items, review, deterministic validation, execution |
+| Create and separately play an exact playlist through MCP | Current narrow tools; curation is external | Independent permissions and approvals, exact room/items, fresh preflights, authoritative results |
 
 The complete release checklist remains in
 [`ACCEPTANCE_TESTS.md`](../../ACCEPTANCE_TESTS.md). These models explain the
@@ -37,30 +37,42 @@ flowchart LR
         Q1[Start or supervise the persistent backend]
         Q2[Apply newest authoritative snapshot]
         Q3[Show no-room recovery state]
-        Q4[Persist selected room UID]
+        Q4[Send exact room selection]
     end
 
     subgraph Backend
         B1[Load bounded state and cached hosts]
         B2[Probe cached private-LAN hosts]
-        B3[Run bounded SSDP and attached-network discovery]
+        G0{Cache found a reachable zone?}
+        B3[Run bounded SSDP]
+        G3{SSDP found a zone?}
+        G4{Network fallback rate limit permits scan?}
+        B6[Run bounded attached-network fallback]
         G1{Reachable rooms found?}
         G2{Saved room UID still visible?}
         B4[Select safe fallback room]
         B5[Emit versioned snapshot and capabilities]
+        B7[Validate and persist selected room UID]
     end
 
     subgraph Sonos
         S1[Return households, rooms, groups, and state]
     end
 
-    U1 --> Q1 --> B1 --> B2 --> B3 --> S1 --> G1
-    G1 -- No --> Q3 --> U4 --> B3
+    U1 --> Q1 --> B1 --> B2 --> G0
+    G0 -- Yes, skip SSDP --> S1
+    G0 -- No --> B3 --> G3
+    G3 -- Yes --> S1
+    G3 -- No --> G4
+    G4 -- Yes --> B6 --> S1
+    G4 -- No --> G1
+    S1 --> G1
+    G1 -- No --> Q3 --> U4 --> B2
     G1 -- Yes --> G2
     G2 -- Yes --> B5
     G2 -- No --> B4 --> B5
     B5 --> Q2
-    Q2 --> U2 --> Q4 --> B5 --> Q2 --> U3
+    Q2 --> U2 --> Q4 --> B7 --> B5 --> Q2 --> U3
 ```
 
 **Invariant:** room display names may change or collide; authoritative selection
@@ -80,7 +92,7 @@ flowchart LR
         U1[Choose Browse source]
         U2[Search or open a container]
         U3[Choose a playable item]
-        U4([Hear the selected content])
+        U4([Inspect resulting playback state])
         U5[Refresh, go Back, or choose another item]
     end
 
@@ -120,22 +132,25 @@ flowchart LR
 
 **Invariant:** QML-supplied titles, artists, URLs, and positions are not treated
 as authoritative provider objects. The backend resolves and validates the exact
-item again.
+item again. Device state is not itself a measurement of audible playback or
+natural transition to the next track; physical acceptance records those
+observations separately.
 
 ---
 
-## 3. Safely replace a queue
+## 3. Play only if the queue is empty
 
-Queue replacement is not modeled as ordinary playback because it destroys the
-existing queue and therefore needs stronger preconditions and recovery.
+The former replace mode is now exposed as **Play if queue empty**. It does not
+provide general replacement or restoration of an existing provider queue.
 
 ```mermaid
 flowchart LR
     subgraph User
-        U1[Choose Replace queue]
+        U1[Choose Play if queue empty]
         U2[Press the same focused action again within five seconds]
         U3([New queue plays])
-        U4([Old queue preserved or restored])
+        U4([Refused without writes])
+        U6([Inspect reported partial state])
         U5([Cancel or confirmation expires])
     end
 
@@ -149,12 +164,10 @@ flowchart LR
 
     subgraph Backend
         B1[Re-resolve room, source path, absolute index, and item ID]
-        G2{Current queue at most 100 restorable items?}
-        B2[Read complete queue backup and verifiable source position]
-        G3{Backup complete and restorable?}
-        B3[Clear queue, add replacement, and start it]
+        G2{Queue authoritatively empty?}
+        B3[Append exact item and start without clearing]
         G4{All required steps succeeded?}
-        B4[Attempt exact queue and position restoration]
+        B4[Report failure without cleanup or rollback]
         B5[Refresh authoritative queue and playback]
     end
 
@@ -166,16 +179,15 @@ flowchart LR
     G1 -- No --> Q3 --> U5
     G1 -- Yes --> Q2 --> B1 --> G2
     G2 -- No --> Q4 --> U4
-    G2 -- Yes --> B2 --> S1 --> G3
-    G3 -- No --> Q4 --> U4
-    G3 -- Yes --> B3 --> S1 --> G4
+    G2 -- Yes --> B3 --> S1 --> G4
     G4 -- Yes --> B5 --> Q3 --> Q4 --> U3
-    G4 -- No --> B4 --> S1 --> B5 --> Q3 --> Q4 --> U4
+    G4 -- No --> B4 --> B5 --> Q3 --> Q4 --> U6
 ```
 
-**Invariant:** a queue that cannot be backed up completely is left untouched.
-A restoration attempt is reported honestly; it is not described as successful
-unless the authoritative state proves it.
+**Invariant:** nonempty or unverifiable queues are refused before clear, add or
+play calls. Even on the empty path there is no clear call. A successful append
+may remain after a later failure. Use Next or End to retain an existing queue
+without starting playback; general restoration remains issue #19.
 
 ---
 
@@ -202,7 +214,7 @@ flowchart LR
     subgraph Backend
         B1[Resolve current household and topology]
         G1{All members visible, eligible, and in one household?}
-        B2[Apply one topology mutation]
+        B2[Apply the approved membership request]
         B3[Wait for bounded topology convergence]
         G2{Observed membership matches request?}
         B4[Refresh and classify failure]
@@ -219,8 +231,9 @@ flowchart LR
     G2 -- No --> B4 --> Q4 --> U6
 ```
 
-**Invariant:** checking boxes changes only the draft. Sonos topology changes
-once, after review and Apply.
+**Invariant:** checking boxes changes only the draft. Review and Apply send one
+application request, which may require multiple Sonos join/unjoin calls. This
+is not an atomic single-device mutation or a promise of rollback.
 
 ---
 
@@ -233,7 +246,7 @@ flowchart LR
         U2[Choose room, schedule, volume, recurrence, and sound]
         U3[Choose Save]
         U4([Alarm list shows saved result])
-        U5[Correct fields or cancel]
+        U5[Correct fields or choose New to reset]
     end
 
     subgraph QML
@@ -263,12 +276,14 @@ flowchart LR
     G1 -- Yes --> Q3 --> B1 --> G2
     G2 -- No --> Q4 --> U5
     G2 -- Yes --> B2 --> B3 --> S1 --> G3
-    G3 -- Yes --> B5 --> Q1 --> U4
+    G3 -- Yes --> B5 --> U4
     G3 -- No --> B4 --> B5 --> Q4 --> U5
 ```
 
 **Invariant:** the visual form does not invent room or sound options and does
-not partially project an invalid draft.
+not partially project an invalid draft. New resets the editor immediately;
+there is no dirty-draft detection or confirmation dialog before discarding its
+unsaved edits.
 
 ---
 
@@ -288,8 +303,10 @@ flowchart LR
         Q2[Show the foreground error]
         G1{Unrelated background result arrives?}
         Q3[Keep current foreground error]
-        Q4[Clear only by allowed owner, dismissal, or newer foreground action]
+        Q4[Clear by allowed owner or explicit dismissal]
         Q5[Detect backend exit and restart it]
+        Q6[Request or transient error timer expires after ten seconds]
+        Q7[Dismiss message without proving recovery]
     end
 
     subgraph Backend
@@ -305,68 +322,70 @@ flowchart LR
     G2 -- No --> B2 --> Q2 --> G1
     G1 -- Yes --> Q3 --> U2
     G1 -- No --> U2
+    Q2 --> Q6 --> Q7
     U2 --> U3 --> Q4 --> B1
     G3 -- No --> Q5 --> B3 --> U4
 ```
 
 **Invariant:** a successful background refresh cannot erase a foreground action
 failure merely because it happened later. Backend restart proves recovery only
-after a healthy snapshot.
+after a healthy snapshot. New foreground failures can replace the displayed
+error. Request and live transient-error timers also clear their messages after
+ten seconds; the ownership rule does not prevent expiry. Dismissing an error
+does not fix its underlying cause.
 
 ---
 
-## 7. Planned: bespoke playlist through MCP
+## 7. Create and separately play an exact playlist through MCP
 
-This is a target journey, not current behavior. Its implementation is tracked by
-[#10](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/10) and
-children [#11–#15](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/11).
+These narrow tools are implemented. The AI client owns curation, chart/source
+research, recording ambiguity and the human approval interaction; Sonarchy
+does not supply an AI model. Broader orchestration evaluation remains #15/#61.
 
 ```mermaid
-flowchart LR
-    subgraph User
-        U1[Ask local AI for a playlist and named room]
-        U2[Review exact tracks, versions, source, duration, and action]
-        G1{Approve?}
-        U3([Hear approved sequence in the named room])
-        U4([Nothing changed])
+flowchart TD
+    subgraph Client_and_person[AI client and person]
+        A1[Resolve exact Apple recordings and explicit catalogue storefront]
+        A2[Review create plan and obtain human approval]
+        A3[Compare fresh preflight with approved plan]
+        A4[Review separate exact playlist and room playback plan]
+        A5[Obtain playback approval and compare fresh preflight]
+        Stop([Stop and report; no automatic retry or substitution])
     end
-
-    subgraph AI_Client[Local AI client]
-        A1[Interpret mood, duration, inclusion, exclusion, and ordering constraints]
-        A2[Call read-only Sonarchy MCP tools]
-        A3[Propose ordered exact-item draft]
-        A4[Revise unresolved or rejected items]
-        A5[Call one permitted execution tool]
+    subgraph Same_backend[Thin MCP client to the single Sonarchy backend]
+        C1[Read-only Apple create preflight]
+        C2[Create once using only the fresh handle]
+        C3[Verify exact saved playlist; no queue or playback changes]
+        P1[Read-only exact playlist playback preflight]
+        P2[Append once and start first appended item once]
+        P3[Verify queue, position, transport, playlist and unchanged room state]
+        Done([Return authoritative result])
     end
-
-    subgraph Sonarchy_MCP[Sonarchy MCP adapter and domains]
-        M1[Resolve exact room or return ambiguity]
-        M2[Return bounded authorized candidates with provenance]
-        M3[Revalidate every item and complete draft]
-        G2{Room, items, source, duration, and permissions valid?}
-        M4[Return reviewable execution plan]
-        M5[Require confirmation for the selected mutation]
-        M6[Execute queue or supported playlist action]
-        M7[Return authoritative result]
-    end
-
-    subgraph Apple_Sonos[Apple or Sonos-mediated source and speakers]
-        P1[Return authorized content]
-        P2[Accept or reject exact playback or playlist operation]
-    end
-
-    U1 --> A1 --> A2 --> M1 --> M2 --> P1 --> A3 --> M3 --> G2
-    G2 -- No --> A4 --> A2
-    G2 -- Yes --> M4 --> U2 --> G1
-    G1 -- No --> U4
-    G1 -- Yes --> M5 --> A5 --> M6 --> P2
-    P2 -- Rejected --> M7 --> A4
-    P2 -- Accepted --> M7 --> U3
+    A1 --> C1 --> A2 --> A3
+    A3 -- Unchanged and permitted --> C2 --> C3
+    A3 -- Changed or declined --> Stop
+    C2 -- Failure or partial result --> Stop
+    C3 -- Save only --> Done
+    C3 -- Playback separately requested --> P1 --> A4 --> A5
+    A5 -- Unchanged and permitted --> P2 --> P3 --> Done
+    A5 -- Changed or declined --> Stop
+    P2 -- Failure or partial result --> Stop
+    P3 -- Inconclusive or mismatched --> Stop
 ```
 
-**Required distinctions:**
+Each preflight failure is read-only and must be reported before seeking a new
+review. Creation and playback require independent optional permissions on top
+of `read`; approving creation never approves playback. Execute only with the
+second, freshly compared handle. Handles are short-lived and single-use;
+`approved: true` is not proof that a person actually consented.
 
-- public Apple catalogue is not described as the user's private library;
-- a temporary Sonos queue is not a Sonos playlist;
-- a Sonos playlist is not a native Apple Music library playlist;
-- the AI proposes; Sonarchy resolves, validates, authorizes, mutates, and reports.
+Create failure permits only the defined exact-ID partial-playlist cleanup.
+Playback failure never clears, reconstructs or removes queue entries; an
+append can remain even if start or verification fails. Device PLAYING alone
+is insufficient: the exact fresh-state verification must also pass. Audible
+playback and natural track transition remain separate physical observations.
+
+A Sonos Playlist is neither a temporary queue nor a native Apple Music
+playlist. Private Apple-library access and one-way Apple export remain outside
+this implemented workflow. See [MCP setup](../mcp.md) for exact tools, bounds,
+permissions and failure semantics.

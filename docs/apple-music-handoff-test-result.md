@@ -1,8 +1,18 @@
 # Apple Music playlist handoff test result
 
-**Status: PASS**  
-**Observed:** 2026-08-28  
+**Status: historical two-track Apple-share-link handoff PASS**
+
+**Observed:** 2026-08-28
+
 **Tracked by:** [#12](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/12), [#14](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/14), and [#15](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/15)
+
+This is a dated observation, not a claim about a current external plugin or
+the current MCP tool inventory. The architecture proposals and remaining-work
+list below reflect that experiment. See the [current MCP contract](mcp.md)
+and [roadmap](ai-mcp-roadmap.md) for implemented direct Sonos Playlist creation
+and separately approved exact-playlist playback. The observed transition here
+was for a user-created Apple playlist share link; it does not pass the separate
+directly-created Sonos Playlist or Apple-album transition gates.
 
 This records the first complete proof that an AI-curated Apple Music catalogue playlist can be created in the user's Apple Music account and then played on a real Sonos room through Sonarchy's existing application/domain path.
 
@@ -40,7 +50,9 @@ Sonos queues the two tracks and advances naturally
 
 ## Apple plugin result
 
-The connected Apple Music plugin does not expose reads of the user's private library, existing personal playlists, or listening history. It does support:
+At the time of this test, the connected Apple Music plugin did not expose reads
+of the user's private library, existing personal playlists, or listening
+history. The observed supported actions were:
 
 - model-selected catalogue playlist drafting;
 - exact matching to canonical Apple Music song records;
@@ -106,7 +118,7 @@ This does not invalidate the playback result: the decisive evidence was captured
 
 The MCP result should report the observed playing item before stopping, followed by the independently verified stopped transport state.
 
-## Architectural conclusion
+## Historical architectural proposal
 
 For **AI-curated catalogue playlists**, Sonarchy does not need Apple credentials, private-library search, or personal-playlist lookup by name.
 
@@ -132,7 +144,7 @@ A separate Apple Music MCP or Apple authorization path is still required for req
 
 The connected ChatGPT Apple Music plugin cannot currently perform those reads. That limitation does not block the now-proven catalogue-curation and share-link playback workflow.
 
-## Remaining product work
+## Remaining product work proposed at the time
 
 - Implement the accepted Sonarchy MCP process/permission boundary from #11.
 - Expose bounded read-only room, queue, and playback context from #13.

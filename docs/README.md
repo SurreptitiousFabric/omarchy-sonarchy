@@ -14,11 +14,15 @@ of them less useful.
 | What can happen from the system's current state? | [System model: states](system-model/state-models.md) |
 | Which software part owns the behavior? | [Architecture](../ARCHITECTURE.md) |
 | What crosses the QML/backend boundary? | [Persistent protocol v1](protocol-v1.md) |
-| How could a local AI control Sonarchy through MCP? | [AI and MCP roadmap](ai-mcp-roadmap.md) |
+| How do I connect an AI client to the current narrow MCP surface? | [MCP setup and contract](mcp.md) |
+| How are reviewed Apple songs saved and separately played? | [AI-curated Sonos Playlists](ai-curated-sonos-playlists.md) |
+| What AI functionality remains planned or unproven? | [AI and MCP roadmap](ai-mcp-roadmap.md) |
 | Why was an architectural choice made? | [Architecture decisions](adr/) |
 | What must pass before release? | [Acceptance tests](../ACCEPTANCE_TESTS.md) |
+| What does the exact-candidate Omarchy gate require? | [Platform validation](platform-validation.md) |
 | How does a user operate the current application? | [User guide](../USER_GUIDE.md) |
 | What machine and network privileges does the plugin use? | [Declared capabilities](../CAPABILITIES.md) |
+| What did the early external Apple-plugin experiment establish? | [Historical test plan](apple-music-plugin-test.md) and [2026-08-28 result](apple-music-handoff-test-result.md), not current MCP instructions |
 
 The [system-model index](system-model/README.md) explains how the capability,
 journey, state, and architecture views relate to one another.

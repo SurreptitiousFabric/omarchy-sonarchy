@@ -11,7 +11,8 @@ changes.
 stateDiagram-v2
     [*] --> Stopped
     Stopped --> Starting: QML starts launcher
-    Starting --> Setup: private environment missing or hash changed
+    Starting --> Setup: environment health or lock/runtime identity requires rebuild
+    Starting --> SetupError: unsupported system interpreter
     Starting --> Discovering: runtime ready
     Setup --> Discovering: dependencies verified
     Setup --> SetupError: bootstrap or verification fails
@@ -30,6 +31,8 @@ stateDiagram-v2
 A process restart resets process-local snapshot revisions. QML treats a healthy
 snapshot from the replacement process as recovery; merely starting a new PID is
 not sufficient.
+The launcher supports stable CPython 3.14.x only; setup/restart does not make
+an unsupported interpreter compatible. See [ADR 0003](../adr/0003-python-runtime-policy.md).
 
 ## 2. Authoritative versus optimistic state
 
@@ -41,6 +44,7 @@ stateDiagram-v2
     OptimisticPending --> ActionError: matching request fails
     ActionError --> Authoritative: allowed retry or refresh succeeds
     ActionError --> Dismissed: user dismisses message
+    ActionError --> Dismissed: ten-second request or transient-error timer expires
     Dismissed --> Authoritative: later healthy snapshot
 ```
 
@@ -50,7 +54,8 @@ Rules:
 - a newer authoritative snapshot wins over an older optimistic value;
 - an unrelated background success cannot clear a foreground action error;
 - an unrelated background failure cannot replace an error already being shown;
-- dismissal removes the message, not the underlying network or setup problem.
+- timers can clear errors even without a successful owning request;
+- dismissal or expiry removes the message, not the underlying problem.
 
 ## 3. Playback transport and source capability
 
@@ -88,7 +93,7 @@ authoritative for the current source.
 | Shuffle/repeat/crossfade | Queue only, when supported | Disabled | Disabled | Disabled | Enabled only after queue becomes active |
 | Queue edit | Yes | Edits queue but does not necessarily replace active radio until played | Edits queue but TV Autoplay can reclaim source | Edits queue but line-in remains source until changed | Depends on exact insertion path |
 
-No UI or future MCP client should infer these rows from a speaker model name or
+No UI or MCP client should infer these rows from a speaker model name or
 from stale values left over from an earlier source.
 
 ## 4. Selected room, playback group, and exact-room controls
@@ -114,8 +119,9 @@ Target rules:
 - selecting another playback session changes what is controlled but does not
   itself move audio;
 - handoff is a separate validated mutation;
-- a future AI call must carry an explicit room identity rather than relying only
-  on mutable QML selection.
+- room-targeted MCP calls require an explicit room UID rather than mutable QML
+  selection; public Apple browsing alone can omit the room. Supplying an
+  invalid room is still an error, not permission to fall back silently.
 
 ## 5. Content navigation
 
@@ -158,93 +164,99 @@ The confirmation identity includes the action and target. A first press on one
 queue item cannot confirm deletion of another item, and a drag/drop or keyboard
 move cannot inherit an unrelated pending destructive action.
 
-## 7. Queue replacement transaction
+## 7. Guarded empty-queue playback
 
 ```mermaid
 stateDiagram-v2
     [*] --> Unchecked
     Unchecked --> Revalidated: room, path, index, item, and mode match current state
     Unchecked --> Refused: stale or invalid identity
-    Revalidated --> BackedUp: complete queue and source position are restorable
-    Revalidated --> Refused: queue exceeds bounded backup or source cannot be restored
-    BackedUp --> Replacing: clear and add exact replacement
-    Replacing --> Completed: add and start succeed
-    Replacing --> Restoring: required step fails
-    Restoring --> Restored: old queue and position confirmed
-    Restoring --> RecoveryFailed: restoration cannot be proven
+    Revalidated --> EmptyConfirmed: authoritative queue response proves empty and source is verifiable
+    Revalidated --> Refused: queue nonempty or cannot be verified empty
+    EmptyConfirmed --> Appending: add exact item without clearing
+    Appending --> Starting: append returned a position
+    Starting --> Completed: play call succeeds
+    Appending --> PartialFailure: add raises or result invalid
+    Starting --> PartialFailure: start raises
     Completed --> [*]
-    Restored --> [*]
     Refused --> [*]
-    RecoveryFailed --> [*]
+    PartialFailure --> [*]
 ```
 
-`RecoveryFailed` must be visible and actionable. It must never be collapsed into
-a generic success message.
+This is the confirmed **Play if queue empty** action, not general replacement.
+Refusal happens before writes. Partial failure is reported without clearing,
+removing, reconstructing or replaying queue entries. Issue #19 remains open;
+no arbitrary-provider restoration guarantee is made.
 
 ## 8. Alarm draft
 
 ```mermaid
 stateDiagram-v2
-    [*] --> CleanDraft
-    CleanDraft --> DirtyDraft: user edits a field
-    DirtyDraft --> InvalidDraft: local validation fails
-    InvalidDraft --> DirtyDraft: user corrects field
-    DirtyDraft --> Saving: exact projection submitted
-    Saving --> CleanDraft: authoritative alarm refresh confirms result
-    Saving --> SaveError: target/program changed or speaker rejects update
-    SaveError --> DirtyDraft: correct and retry
-    CleanDraft --> [*]: cancel/close
-    DirtyDraft --> [*]: confirmed cancel
+    [*] --> Editing
+    Editing --> Editing: edit a field or load an existing alarm
+    Editing --> Editing: New immediately resets fields
+    Editing --> InvalidDraft: local validation fails
+    InvalidDraft --> Editing: correct fields or New resets them
+    Editing --> Submitted: valid exact projection sent
+    Submitted --> Editing: result and authoritative alarm list refresh
+    Submitted --> SaveError: target/program changed or speaker rejects update
+    SaveError --> Editing: correct and retry or New resets fields
 ```
 
 The draft owns presentation edits. The backend owns household membership,
 program identity, and the mutation. A rejected update restores locally cached
-alarm fields before authoritative refresh.
+alarm fields before authoritative refresh. These labels describe the flow,
+not a dirty-state flag in QML: there is no dirty-draft tracking or confirmed
+cancel. The editor's New action calls `resetAlarm()` immediately, discarding
+unsaved edits without a dialog; saving refreshes the list, not an implicit
+reset of all editor fields.
 
-## 9. Planned MCP permission states
+## 9. Current MCP permissions
 
-This model is a design constraint for issues #11–#15, not current behavior.
+Permissions are independent configuration grants, not a hierarchy of transport,
+queue and playlist authority. Changes take effect when the backend restarts.
 
-```mermaid
-stateDiagram-v2
-    [*] --> Disabled
-    Disabled --> ReadOnly: owner enables bounded inspection
-    ReadOnly --> PlaybackAllowed: owner grants transport permission
-    PlaybackAllowed --> QueueAllowed: owner grants queue mutation permission
-    QueueAllowed --> PlaylistAllowed: owner grants playlist-write permission
-    PlaylistAllowed --> ReadOnly: owner revokes write permissions
-    QueueAllowed --> ReadOnly: owner revokes write permissions
-    PlaybackAllowed --> ReadOnly: owner revokes write permissions
-    ReadOnly --> Disabled: owner disables MCP
-```
+| Configuration | Authority |
+|---|---|
+| `enabled = false` | MCP disabled |
+| `permissions = ["read"]` | Default bounded reads and read-only preflights |
+| `read` plus `playlist-create` | Reads and exact reviewed Apple Sonos Playlist creation; no playback |
+| `read` plus `playlist-play` | Reads and exact reviewed native Sonos Playlist playback; no creation |
+| `read` plus both optional grants | Both narrow writes, each with its own approval and preflight |
 
-Speaker settings, topology, alarms, source switching, room rename, arbitrary
-volume, and generic protocol passthrough remain outside these initial states.
-They require separate design and grants rather than being implicitly included in
-“control Sonos.”
+Speaker settings, topology, alarms, source switching, room rename, general
+transport/volume/queue editing and generic protocol passthrough are absent.
+Neither a QML capability nor one playlist grant authorizes another MCP action.
+See [MCP setup](../mcp.md) for private configuration validation and exact bounds.
 
-## 10. Planned bespoke-playlist plan
+## 10. Current exact-plan lifecycle
 
 ```mermaid
 stateDiagram-v2
     [*] --> Requested
-    Requested --> ResolvingRoom
-    ResolvingRoom --> NeedsClarification: room ambiguous or unavailable
-    NeedsClarification --> ResolvingRoom: exact room chosen
-    ResolvingRoom --> GatheringCandidates
-    GatheringCandidates --> Drafted: bounded authorized candidates returned
-    Drafted --> Validating: AI submits exact ordered identities
-    Validating --> Drafted: unresolved, stale, duplicate, wrong-version, or unplayable item
+    Requested --> Drafted: client resolves exact items and target
+    Drafted --> Validating: read-only preflight
+    Validating --> NeedsReview: invalid or unresolved plan
+    NeedsReview --> Drafted: person reviews a revised proposal
     Validating --> ReviewReady: deterministic validation succeeds
     ReviewReady --> Cancelled: user declines
     ReviewReady --> Approved: user approves exact plan and action
-    Approved --> Executing: permitted tool called
-    Executing --> Completed: authoritative queue/playlist/playback confirms result
-    Executing --> Failed: provider or Sonos rejects and recovery is reported
+    Approved --> Revalidating: repeat read-only preflight
+    Revalidating --> NeedsReview: material facts changed
+    Revalidating --> Executing: identical plan and independent permission; use fresh handle once
+    ReviewReady --> Invalidated: expiry or backend restart
+    Approved --> Invalidated: expiry or backend restart
+    Executing --> Completed: complete authoritative verification succeeds
+    Executing --> Failed: conflict, write failure or inconclusive verification
     Cancelled --> [*]
     Completed --> [*]
     Failed --> [*]
+    Invalidated --> [*]
 ```
 
-The AI client owns interpretation and proposal. Sonarchy owns exact resolution,
-validation, permission, confirmation, mutation, and authoritative reporting.
+This lifecycle applies separately to creation and playback. The AI client owns
+interpretation, proposal and human consent; Sonarchy validates the exact plan,
+enforces permissions and single-use tickets, executes, and reports verified or
+partial results. `approved: true` cannot establish that the client actually
+obtained consent. Failure never implies an automatic execution retry. Creating
+a playlist ends that plan; playing it needs a new, separately approved plan.

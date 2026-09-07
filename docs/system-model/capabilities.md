@@ -26,7 +26,7 @@ mindmap
     Queue
       Inspect and play exact item
       Insert next or at end
-      Safe replacement
+      Confirmed play if queue empty
       Reorder and remove
       Confirmed clear
     Rooms
@@ -66,10 +66,10 @@ mindmap
 | Browse | Search and play Global Player content through the service attached to Sonos | Current | Returned service items are re-read and matched by identity before play. |
 | Queue | Read the current queue and identify the active item | Current | Results are authoritative for the selected room at the returned revision. |
 | Queue | Play, move, remove, or clear exact queue items | Current | Identity and destination are checked again; destructive operations are confirmed. |
-| Queue | Play now, play next, add to end, or safely replace from supported browse items | Current | Replace requires a complete bounded backup and attempts restoration on failure. |
+| Queue | Play now, play next, add to end, or Play if queue empty from supported browse items | Current | The confirmed empty-queue path refuses nonempty or unverifiable queues before writes. It appends/starts without clearing or rollback; a failed write can leave partial state. |
 | Rooms | Select an exact room or independent playback session | Current | Selecting a session does not itself move audio. |
 | Rooms | Rename an exact room | Current | The new name is confirmed with the speaker and may precede topology-cache convergence. |
-| Rooms | Stage and apply group membership | Current | Staging changes nothing; apply performs one validated topology mutation. |
+| Rooms | Stage and apply group membership | Current | Staging changes nothing; one validated application request can require multiple Sonos topology calls and bounded convergence checks. |
 | Rooms | Move a playback session to a safe standalone room | Capability-dependent | Moves that would silently tear apart another group are blocked. |
 | Sound | Change bass, treble, loudness, balance, night mode, speech enhancement, Sub, surround, and TV settings | Capability-dependent | Controls appear only from positive or nullable backend projections; model names are not treated as proof. |
 | System | List, create, edit, enable/disable, and delete alarms | Current | Alarm room and sound choices are validated against the current household. |
@@ -104,12 +104,17 @@ These rules apply across the capability map:
    and alarm items are revalidated before acting.
 3. **Authoritative state wins.** Bounded optimistic QML values can improve
    responsiveness, but a newer backend snapshot replaces them.
-4. **Destructive intent is explicit.** Queue clearing/replacement and playlist,
-   alarm, or item deletion require confirmation.
+4. **Destructive intent is explicit.** Queue clearing and playlist, alarm, or
+   item deletion require confirmation. Play if queue empty remains confirmed
+   but cannot replace a nonempty queue.
 5. **Errors remain scoped.** An unrelated background success or failure cannot
-   silently erase or replace the current foreground action error.
+   silently erase or replace the current foreground action error. Separate
+   ten-second timers dismiss request/transient errors; visibility is not
+   indefinite and dismissal is not proof of recovery.
 6. **Secrets stay behind adapters.** QML receives normalized provider-neutral
-   objects, never service credentials, raw exceptions, or private addresses.
+   objects, never service credentials or raw exceptions. Local QML room
+   snapshots include speaker IP addresses for display/artwork handling; the
+   narrow MCP projection is a different, sanitized boundary.
 7. **Keyboard parity.** Every visible action has a keyboard route.
 
 ## Current implementation mapping
@@ -131,17 +136,20 @@ The mapping is directional: a protocol operation can support a user capability,
 but merely registering an operation does not prove it is available for every
 speaker, source, or state.
 
-## Planned local-AI capabilities
+## Current and future local-AI capabilities
 
-The following are **not current Sonarchy features**:
+The [MCP contract](../mcp.md) is authoritative for tool names, permissions and
+limits. QML capabilities do not imply equivalent MCP authority.
 
 | Desired outcome | Status | Tracking |
 |---|---|---|
-| Let a local AI inspect bounded Sonarchy state through MCP | Planned | [#13](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/13) |
-| Let a local AI play exact content in an explicit room through narrow tools | Planned | [#14](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/14) |
-| Draft, review, save, and play a bespoke AI-assisted playlist | Planned | [#15](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/15) |
-| Access the user's private Apple Music library or create a native Apple playlist | Investigation | [#12](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/12) |
-| Decide the MCP transport, process, permission, and consent boundary | Investigation | [#11](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/11) |
+| Inspect bounded rooms, room state and content through MCP | Current, read-only by default | [MCP setup](../mcp.md) |
+| Create one exact reviewed Apple-song Sonos Playlist | Current, independent `playlist-create` opt-in; never starts playback | [Direct persistence](../ai-curated-sonos-playlists.md) |
+| Append and play one exact native Sonos Playlist in an explicit room | Current, independent `playlist-play` opt-in and separate approval; standalone/stopped-or-paused/low-volume policy | [MCP setup](../mcp.md) |
+| General transport, volume, queue editing and other broader AI control | Planned, not granted by either playlist permission | [#14](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/14) |
+| Reliably curate and resolve ambiguous/rejected recordings across AI workflows | Remaining orchestration/evaluation work; curation belongs to the client | [#15](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/15), [#61](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/61) |
+| Access private Apple-library data / optionally export a native Apple playlist | Investigation / future external workflow, not current Sonarchy features | [#12](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/12), [#72](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/72) |
+| Share one backend between QML and MCP | Current, accepted single-authority design | [ADR 0002](../adr/0002-single-authority-local-mcp.md) |
 
-See the [AI and MCP roadmap](../ai-mcp-roadmap.md) for the proposed boundary and
-sequence.
+See the [AI and MCP roadmap](../ai-mcp-roadmap.md) for the remaining boundaries
+and evidence gaps.

@@ -2,6 +2,79 @@
 
 ## Unreleased
 
+- Expose bounded structured artist/album, exact millisecond duration and distinct
+  explicitness classifications for Apple song browse results; retain unknown
+  values and the existing QML subtitle and action identities.
+- Keep the navigation keyboard cursor aligned with the selected value when options
+  are replaced. If that value disappears, target the first option (or none for
+  an empty list) without changing the selection or emitting an action.
+
+- Require independent Python 3.14.0/current CI jobs with exact interpreter
+  provenance, isolated test environments, locked runtime imports and source
+  compilation; runtime/wheel/lock failures remain visible.
+- Rebuild managed environments on interpreter-identity, lock or dependency-health
+  drift. Validate replacements before promotion under the setup lock, preserve
+  the previous environment on build/install/check failure, and bound health checks.
+- Declare stable CPython 3.14.x support and guard both launchers before setup or
+  imports. Reject unvalidated future minors/prereleases with stderr diagnostics;
+  distinguish the declared 3.14.0 floor from the currently tested Mise target.
+- Add per-request Apple browse storefront selection through MCP and the private
+  protocol, with effective-region results and strict malformed-input rejection.
+  Omitted storefronts retain the existing backend default; no global setting changes.
+- Permit public Apple MCP browsing without a room UID, without selecting a
+  room. Sonos-backed kinds still require an exact room; supplied stale or
+  malformed room IDs are rejected rather than ignored.
+- Refuse replacement of every nonempty or unverifiable queue before mutation.
+  The confirmed empty-queue action appends and plays without clearing or
+  replay-based rollback; failed operations preserve the resulting state.
+- Allow exact-playlist playback transport to settle through at most 20 read-only
+  observations on fixed 250 ms slots within a five-second latest-start window.
+  Skip missed slots and reject late wakeups; `PLAYING` triggers fresh complete
+  verification. Append and playback remain single-execution, and an exhausted
+  convergence window reports non-retryable `verification_inconclusive`.
+- Added a single-authority, Quickshell-owned local MCP bridge over an owner-only
+  Unix socket, with read-only room/content tools and independently permissioned
+  exact Apple-track playlist creation and exact native Sonos Playlist playback.
+- Added the narrow first issue #14 slice: read-only exact room/playlist/queue
+  preflight plus explicit `playlist-play` permission for append-and-play in one
+  online standalone room at volume 20 or below. It accepts only stopped/paused
+  queue or no-source state, preserves the existing queue, starts the first
+  appended item once, revalidates and verifies authoritative state, never
+  retries or rolls back a partial append, and leaves broader issue #14 actions
+  open.
+- Added read-only exact Apple-song playlist preflight and an explicitly
+  approved, single-use-token create-only Sonos Playlist operation. It creates
+  an empty saved playlist, adds exact songs directly without reading or
+  changing the room queue/playback state, and authoritatively verifies every
+  addition and the final order.
+- Added one Apple-only saved-queue adapter pinned to SoCo 0.31.2. It reuses
+  Apple canonicalisation, constructs escaped DIDL with fixed internal service
+  assumptions, exposes no generic execution path, and fails closed on version
+  or contract drift.
+- Recognize the complete Apple HLS-static resource returned by an authoritative
+  saved-playlist browse after direct one-track physical creation. The matcher
+  requires the pinned Apple service and protocol shape, rejects query-only or
+  other-provider identities, and handles the one observed bounded Sonos album
+  display normalization without weakening catalogue identity.
+- Record physical acceptance of a second independent one-track Apple item and
+  an exact two-item direct Sonos Playlist with preserved order, authoritative
+  reopen, unchanged pre-existing playlists, and no queue or playback mutation.
+  Also record safe exact-ID cleanup after one different exact item was rejected;
+  the undocumented vendor code is not assigned a semantic cause.
+- Removed the provisional `save-and-play` mode and all AI playlist dependencies
+  on queue backup/restoration. Playback is a separate exact-ID action; issue
+  #19 continues to track destructive queue replacement rollback.
+- Reserve bounded Sonos Playlist inventory capacity for create verification and
+  enforce the 64 KiB UTF-8 protocol limit before publishing a plan ticket.
+- Keep the persistent backend alive when authoritative state exceeds that
+  protocol limit by emitting a fixed bounded, write-disabled degraded snapshot.
+- Bound maximal successful playlist responses by returning full verified
+  metadata once with explicit false queue/playback mutation flags.
+- Require a create-returned new `SQ:<id>` plus authoritative exact-ID/title
+  resolution before partial cleanup; cleanup never guesses from title.
+- Keep pre-claim playlist execution rejections from advancing backend revision,
+  and require Apple identity evidence to use complete canonical or expected
+  Sonos item/resource tokens rather than arbitrary metadata substrings.
 - Replaced every one-shot QML command with one canonical versioned persistent
   backend protocol and removed the 1,000-line compatibility bridge.
 - Split backend behavior into device, settings, queue, playlist, content,
@@ -12,7 +85,8 @@
 - Split the QML service into a 76-line public facade, cohesive store, protocol
   router, artwork owner, and the single process-owning live protocol client.
 - Added exact operation inventory tests, correlated result handling, stable
-  capabilities/errors, destructive identity checks, and an 80% coverage gate.
+  capabilities/errors, destructive identity checks, and an overall 80%
+  branch-coverage target alongside the checked-in automated gate.
 - Gated controls at both page and Store boundaries, projected line-in support
   through bounded, quiet AudioIn probes, and removed model-name-based TV
   visibility.

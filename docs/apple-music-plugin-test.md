@@ -1,8 +1,16 @@
 # Apple Music plugin test protocol
 
-This is the first experiment for the local-AI playlist roadmap.
+**Historical experiment plan, preceding the 2026-08-28 test.** This document
+preserves the original questions and conditional proposals; it is not current
+MCP documentation, proof of Apple-library access, or authorization to run a
+test. Read the [observed result](apple-music-handoff-test-result.md),
+[current MCP contract](mcp.md) and [remaining roadmap](ai-mcp-roadmap.md).
+Current Sonarchy persistence creates a Sonos Playlist directly and playback
+requires its own exact-plan approval. The general transport/volume and private
+library branches below were hypotheses, not implemented grants.
 
-The preferred architecture is now to let the AI client orchestrate two specialised integrations:
+The experiment proposed testing whether the AI client could orchestrate two
+specialised integrations:
 
 ```text
 Person

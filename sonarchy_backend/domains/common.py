@@ -2,24 +2,53 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
+
+
+@dataclass(frozen=True)
+class RequestContext:
+    """Process-owned request facts that clients cannot provide or replace."""
+
+    backend_revision: int = 0
+    mutation_started_callback: Callable[[], None] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    def mark_mutation_started(self) -> None:
+        if self.mutation_started_callback is not None:
+            self.mutation_started_callback()
 
 
 @dataclass(frozen=True)
 class DomainService:
     handlers: dict[str, Callable[[dict[str, Any]], Any]]
     mutates: bool = True
+    conditional_mutation: bool = False
+    refresh_after_mutation: bool = True
+    contextual_handlers: dict[str, Callable[[dict[str, Any], RequestContext], Any]] = field(
+        default_factory=dict
+    )
 
     @property
     def operations(self) -> frozenset[str]:
-        return frozenset(self.handlers)
+        return frozenset(self.handlers) | frozenset(self.contextual_handlers)
 
-    def execute(self, operation: str, args: dict[str, Any]) -> Any:
+    def execute(
+        self,
+        operation: str,
+        args: dict[str, Any],
+        context: RequestContext | None = None,
+    ) -> Any:
         handler = self.handlers.get(operation)
-        if handler is None:
-            raise KeyError(operation)
-        return handler(args)
+        if handler is not None:
+            return handler(args)
+        contextual_handler = self.contextual_handlers.get(operation)
+        if contextual_handler is not None:
+            return contextual_handler(args, context or RequestContext())
+        raise KeyError(operation)
 
 
 def clean(value: Any) -> str:

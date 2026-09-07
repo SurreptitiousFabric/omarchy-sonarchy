@@ -42,22 +42,26 @@ bundled executables, privilege escalation, or system-service management. See
 Run from the repository root:
 
 ```bash
-omarchy plugin validate .
-bash -n sonarchy-backend.sh
+mise run validate-platform
+bash -n sonarchy-backend.sh sonarchy-mcp.sh tests/qml/run-component-tests.sh
 bash tests/qml/run-component-tests.sh
-mise exec -- shellcheck sonarchy-backend.sh tests/qml/run-component-tests.sh
+mise exec -- shellcheck sonarchy-backend.sh sonarchy-mcp.sh tests/qml/run-component-tests.sh
 mise exec -- python -m pytest -q
 mise exec -- python -m ruff check .
 mise exec -- python -m ruff format --check .
 mise exec -- python -m coverage run -m pytest -q
 mise exec -- python -m coverage report
-/usr/lib/qt6/bin/qmllint BarWidget.qml LiveService.qml Service.qml SonarchyAlarmDraft.qml SonarchyAlarmEditor.qml SonarchyNowPage.qml SonarchyBrowsePage.qml SonarchyQueuePage.qml SonarchyRoomsPage.qml SonarchySoundPage.qml SonarchySystemPage.qml
 ```
 
 Also run the marketplace's deterministic baseline against the exact release
 commit, audit Python dependencies, check file modes/symlinks, and perform only
 read-only Sonos smoke checks unless the test household owner explicitly
 authorizes mutations.
+
+The [platform validation job](docs/platform-validation.md) must report `passed`
+for the exact clean candidate. Attach its JSON output to the release-readiness
+issue/PR before owner approval. A failed or incomplete report keeps release on
+HOLD, even when GitHub's generic Python CI is green.
 
 ## Submission guardrail
 

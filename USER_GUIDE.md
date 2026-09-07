@@ -116,6 +116,65 @@ Library navigation is revalidated against the speaker on every request. If the
 Sonos index changes while a folder or page is open, Sonarchy asks you to return
 to the library root or refresh instead of opening or playing a different item.
 
+## AI-curated Sonos Playlists
+
+Sonarchy's persistent backend can accept a reviewed ordered plan of one to 25
+exact Apple catalogue songs and persist it as a new Sonos Playlist. This is a
+protocol and local MCP capability for an integrated local AI client; there is
+no QML authoring form.
+
+Each reviewed song includes its exact Apple catalogue ID and copied
+`https://music.apple.com/...` song link plus bounded title, artist, album, and
+duration evidence. Sonarchy validates the link independently through its Apple
+URL policy and pinned SoCo integration. It never creates a link from a title or
+ID, searches for a substitute, or accepts an album/playlist/artist link as one
+song.
+
+The read-only preflight shows the exact room/coordinator anchor, a hashed
+household identity, complete Sonos Playlist inventory fingerprint and count,
+new playlist name, ordered songs, total known duration, and expected side
+effects. It states both `catalogueIdentityValidated: true` and
+`sonosAcceptance: unproven_until_create`. It returns a memory-only single-use
+token valid for no more than two minutes. The token is a freshness ticket, not
+approval; the client must still request explicit approval immediately before
+creation. A backend restart or material playlist/anchor change requires a new
+preflight.
+
+Creation is save-only. Sonarchy creates a new empty Sonos Playlist, adds the
+reviewed Apple songs directly to that saved playlist, and authoritatively
+reopens it after every addition and at completion. It does not read or change
+the current room queue, source, position, transport, volume, mute, or topology,
+and it never starts playback.
+
+Existing exact-name Sonos Playlists are never overwritten. A failed track is
+never retried or silently substituted. Failure cleanup targets only the exact
+new `SQ:<id>` returned by this invocation after that ID is proven new and
+reopens with the invocation-bound title. If exact cleanup cannot be verified,
+the result returns that attributable partial ID and requests later reviewed
+cleanup; every unrelated playlist is left untouched.
+
+Playback is a separate exact-ID action after creation. With the independent
+`playlist-play` MCP permission, Sonarchy can review one existing exact
+`SQ:<id>` for one exact room UID, obtain separate approval, repeat an identical
+fresh preflight, append that complete playlist to the existing room queue, and
+start its first appended item.
+
+This first playback slice accepts only online standalone rooms at volume 20 or
+below. Transport must be stopped or paused and source must be confirmed as the
+Sonos queue or no active source. The playlist must contain 1–25 completely
+readable items and the complete queue plus playlist may contain at most 100.
+All existing queue entries remain; playback moves away from the paused/stopped
+context. Volume, mute, topology, source settings, and playlist contents remain
+unchanged. There is no automatic retry. If append succeeds but playback start
+or verification fails, appended entries may remain and Sonarchy will report
+the partial state without clearing, rebuilding, removing, or rolling back the
+queue. Broader issue #14 actions and issue #19 rollback remain deferred.
+
+A native Apple Music playlist is a separate optional **Export/Copy**, not the
+normal persistence target and not a synchronized object. See
+[`docs/ai-curated-sonos-playlists.md`](docs/ai-curated-sonos-playlists.md) for
+the complete current workflow, MCP status, and Apple export limitations.
+
 ## Queue page
 
 The dedicated Queue page shows the current Sonos queue for the selected room.
@@ -243,3 +302,11 @@ The event backend is derived from
 [OmaSonos](https://github.com/ctl0v0/omasonos) by ctl0v0 under the MIT License.
 Full notices and dependency licences are in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+## Codex and local MCP
+
+See [`docs/mcp.md`](docs/mcp.md) for read-only setup, independent optional
+`playlist-create` and `playlist-play` permissions, exact tools, fresh-preflight
+consent flows, restart behavior, and safe diagnostics. Playlist creation never
+starts playback or alters a room queue. Exact playlist playback is limited to
+the standalone-room append-and-play slice above; general transport, queue,
+volume, grouping, and source actions are not exposed through MCP.

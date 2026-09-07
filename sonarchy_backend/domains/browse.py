@@ -4,9 +4,21 @@ import ipaddress
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
+from sonarchy_mcp_contract import (
+    MCP_BACKEND_FIELDS,
+    MCP_OPERATION_CONTENT_BROWSE,
+    normalize_browse_storefront,
+)
+
+from ..apple_catalog import default_country
 from .apple_browse import browse_apple_album, browse_apple_artist, search_apple
 from .common import DomainService, number_arg, string_arg
-from .library import is_library_container, resolve_library_path, validate_library_context
+from .library import (
+    MAX_LIBRARY_INDEX,
+    is_library_container,
+    resolve_library_path,
+    validate_library_context,
+)
 from .media import (
     PLAYLIST_ID_PATTERN,
     clean,
@@ -196,6 +208,7 @@ def library_content(
         "current_title": current_title,
         "offset": offset,
         "page_size": limit,
+        "next_offset": min(total, MAX_LIBRARY_INDEX, offset + len(items)),
         "has_previous": offset > 0,
         "has_next": offset + len(items) < total,
     }
@@ -267,16 +280,21 @@ def browse_content(
     term: str,
     limit: int,
     context: dict[str, Any] | None = None,
+    storefront: str | None = None,
 ) -> dict[str, Any]:
     if kind not in CONTENT_KINDS:
         raise ValueError(f"Unsupported content kind: {kind}")
     bounded_limit = max(1, min(int(limit), 100))
-    if kind == "apple":
-        return search_apple(term, bounded_limit)
-    if kind == "apple-artist":
-        return browse_apple_artist(term, bounded_limit)
-    if kind == "apple-album":
-        return browse_apple_album(term, bounded_limit)
+    if storefront is not None:
+        storefront = normalize_browse_storefront(kind, storefront)
+    if kind in {"apple", "apple-artist", "apple-album"}:
+        country = storefront if storefront is not None else default_country()
+        handler = {
+            "apple": search_apple,
+            "apple-artist": browse_apple_artist,
+            "apple-album": browse_apple_album,
+        }[kind]
+        return {**handler(term, bounded_limit, country=country), "storefront": country}
     if coordinator is None:
         raise ValueError("A Sonos room is required for this content source")
     if kind == "queue":
@@ -291,15 +309,27 @@ def browse_content(
 
 
 def browse_service(backend: BrowsePort) -> DomainService:
-    return DomainService(
-        {
-            "content.browse": lambda args: backend.browse_content(
-                string_arg(args, "roomUid"),
-                string_arg(args, "kind"),
-                str(args.get("term", "")),
-                int(number_arg(args, "limit")),
-                args.get("context"),
+    def browse(args: dict[str, Any]) -> dict[str, Any]:
+        if not MCP_BACKEND_FIELDS[MCP_OPERATION_CONTENT_BROWSE].accepts(args):
+            raise ValueError("Content browse contains unsupported or missing arguments")
+        room_uid = args["roomUid"]
+        if not isinstance(room_uid, str) or (room_uid and not room_uid.strip()):
+            raise ValueError("roomUid must be an exact room UID or empty")
+        options = {}
+        if "storefront" in args:
+            options["storefront"] = normalize_browse_storefront(
+                string_arg(args, "kind"), args["storefront"]
             )
-        },
+        return backend.browse_content(
+            room_uid,
+            string_arg(args, "kind"),
+            str(args.get("term", "")),
+            int(number_arg(args, "limit")),
+            args.get("context"),
+            **options,
+        )
+
+    return DomainService(
+        {MCP_OPERATION_CONTENT_BROWSE: browse},
         mutates=False,
     )

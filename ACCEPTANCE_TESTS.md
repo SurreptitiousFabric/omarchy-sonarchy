@@ -8,27 +8,58 @@ exact release commit, and explicit owner sign-off. A feature unsupported by the
 test household may be marked `not applicable` only with the product limitation
 recorded; it must not be called tested.
 
-## Completed local gates
+## Recorded local gates and historical checks
 
-- [x] All 301 automated Python tests pass with 84% branch coverage, alongside
-  27 headless QML runtime checks.
-- [x] Repository-wide Ruff, formatting, compilation, JSON, Bash syntax,
-  Omarchy manifest, and standalone QML lint gates pass.
+Historical observations below are retained from the
+[acceptance record at `e116f898`](https://github.com/SurreptitiousFabric/omarchy-sonarchy/blob/e116f89817d6fc4aa500ceca5a29bb1e0c7e6ee2/ACCEPTANCE_TESTS.md)
+unless a later exact case is cited. They are not claims of a new run or of
+acceptance on an unspecified release candidate. The required real-device and
+final release checklists remain separate and retain their untested criteria.
+
+The later [PR #81 CI run](https://github.com/SurreptitiousFabric/omarchy-sonarchy/actions/runs/34097548397)
+passed for head `55bc4870e1a2fd9c9a1d32b7d434f453b31769f6` on both declared
+Python targets, including the locked-runtime advisory audit. That immutable
+run is automated evidence, not Omarchy release-host or physical acceptance.
+
+- [x] The complete automated Python suite passes under the checked-in branch
+  coverage gate, and the complete headless QML component suite passes.
+- [x] Repository-wide Ruff, formatting, compilation, JSON, Bash/ShellCheck,
+  protocol and security checks pass in the cited automated evidence.
+- [ ] Strict all-shipped-QML validation on the exact clean Omarchy release
+  candidate. The [recorded #64 report](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/64#issuecomment-5566579718)
+  for `cd2518d498ebbc6918c8449781aed8c6ebc23e46` passed manifest/component
+  checks but failed the zero-warning QML lint gate. Generic Python CI and
+  offscreen component tests do not satisfy this gate.
 - [x] Headless real-event QML tests load Omarchy's installed `PanelSlider`,
   prove wheel input scrolls without a slider mutation, preserve intentional
-  dragging, enforce request-owned error clearing, and cover content root,
+  dragging, test request-owned result-driven clearing, and cover content root,
   nested, paging, Back, Favorites, and Apple artist/album history transitions.
+  That focused ownership test does not disable or test away the production
+  request/transient-error timers: both dismiss messages after ten seconds.
 - [x] The marketplace v3 deterministic baseline reports no findings and only
   the disclosed, non-blocking `package-manager` review capability.
-- [x] The exact 12-package runtime environment is internally consistent and a
-  current OSV batch query reports no known advisories for the installed
-  versions.
+- [x] Exact locked runtime versions passed the advisory audit in the cited CI
+  run. This means no advisory was returned by OSV for those versions at that
+  query time, not a timeless or vulnerability-free claim. Repeat the audit
+  for the exact release candidate; do not reuse an old package count/result.
 - [x] A disposable first-run bootstrap creates the hash-locked private venv,
   reaches a healthy live snapshot, and exits cleanly without using system
   Python packages.
 - [x] Live read-only checks pass for discovery, every visible room's details,
   Favorites, queue, Sonos Playlists and playlist contents, local-library
   access, alarms, Global Player, and Apple catalog search.
+- [x] Fake-only automated AI-curated playlist tests cover exact Apple song URL
+  and identity validation, 25-track bounds, duplicate review, plan expiry and
+  replay, stale inventory/anchor state, direct saved-playlist construction,
+  exact per-add/final reopen verification, code-800 failures, bounded visibility
+  retry, and exact-ID cleanup/cleanup failure. The redesigned direct operation
+  has also passed the bounded physical cases recorded below.
+- [x] Fake-only exact-playlist playback tests cover independent permissions,
+  exact UID targeting, standalone/online/source/transport/volume/size policy,
+  complete fingerprints, fresh-state conflicts, single-use handles/tickets,
+  exact append order/start position, authoritative verification, partial
+  append/start/verification failure, no retry/rollback, and QML snapshot
+  broadcast after a post-append failure.
 - [x] Live idempotent writes pass for same-name rename, same-volume write,
   every speaker-reported sound/device setting, and current shuffle, repeat,
   and crossfade values. No effective setting or playback change was requested.
@@ -65,6 +96,216 @@ These products do not expose Trueplay or Sub crossover through SoCo, so those
 two controls are not applicable to this household. They remain covered by
 automated capability/visibility tests and must be tested on supporting hardware
 before Sonarchy claims real-device coverage for them.
+
+## AI-curated Sonos Playlist physical acceptance — direct ordered persistence passed
+
+The old queue-staging design was rejected after two owner-approved physical
+failures:
+
+1. On 2026-08-28, no playlist was created and rollback recreated 36 queue slots
+   without complete title, artist, album, or provider identity. Exact queue
+   restoration was false and the original contents/order became undetermined.
+2. On 2026-08-29, a known stopped one-track **Wish You Were Here — Pink Floyd**
+   baseline was established first. Track 1 (`song:1452806384`) staged
+   successfully; track 2 (`song:1443065566`) failed with Sonos code 800. No
+   playlist was created. Rollback recreated one stopped active queue slot but
+   failed resource verification, and the Pink Floyd metadata/stable identity
+   were not restored.
+
+The redesign creates an empty Sonos Playlist and adds exact Apple songs directly
+to that saved playlist. On 2026-08-29, an owner-approved one-track run created
+and retained `SQ:49` (`Sonarchy Direct Test A 2026-08-29`). The owner manually
+confirmed **Just Like Heaven — The Cure**, album **Kiss Me, Kiss Me, Kiss Me**.
+It was not played, edited, renamed, or deleted, and no queue or playback
+operation was issued.
+
+The automated verifier nevertheless returned a false negative because Sonos
+browsed the saved item as a queue-local `DidlMusicTrack` with an Apple
+HLS-static resource instead of one of the previously accepted forms. Read-only
+inspection confirmed one stable catalogue identity backed by the pinned Apple
+service and HLS protocol type. A read-only run of the corrected verifier against
+the retained item then accepted `song:1452806384` and its reviewed metadata.
+`SQ:49` remains retained and untouched.
+
+On 2026-08-30, Test C created and retained `SQ:51` (`Sonarchy Direct Test C
+2026-08-30`) with exact canonical identity `song:1551800724`, **Don't Start Now
+— Dua Lipa**, album **Future Nostalgia (The Moonlight Edition)**. Direct
+creation and authoritative verification succeeded without album normalization.
+No queue operation or playback mutation occurred.
+
+Test D then created and retained `SQ:52` (`Sonarchy Direct Test D 2026-08-30`)
+with exactly two authoritatively reopened items in approved order:
+
+1. `song:1452806384` — **Just Like Heaven — The Cure**, reviewed album
+   **Kiss Me, Kiss Me, Kiss Me**, accepted under the already bounded observed
+   Sonos display normalization; and
+2. `song:1551800724` — **Don't Start Now — Dua Lipa**, album **Future Nostalgia
+   (The Moonlight Edition)**, with no normalization required.
+
+Both canonical identities and supporting metadata were verified. `SQ:49`,
+`SQ:51`, and every other pre-existing Sonos Playlist remained unchanged. The
+transaction reported `queueMutation: false` and `playbackMutation: false`,
+issued no queue operation, did not start playback, executed create exactly
+once, and performed no retry or substitution. `SQ:52` remains retained without
+playback or editing.
+
+A separate direct attempt for `song:1443065566`, **Life's What You Make It —
+Talk Talk**, was rejected during saved-playlist addition with undocumented
+Sonos vendor code `814`. Sonarchy stopped without retry or substitution and
+removed attributable partial playlist `SQ:50` through exact-ID automatic
+cleanup. Pre-existing playlists, queue, and playback remained unchanged. Code
+`814` has no assigned semantic meaning here: this evidence establishes only
+that this exact item was rejected through this exact route, not a territory,
+account, licensing, provider, or universal-availability conclusion.
+
+### Physically passed persistence matrix
+
+The checked rows describe the exact dated cases above, not every playlist or
+the current checkout. Tests A/C/D and the rejected-item cleanup remain separate
+observations; a successful create is not evidence that its failure path ran.
+
+- [x] Direct one-track Sonos Playlist creation.
+- [x] Direct creation with a second independent Apple catalogue item.
+- [x] Direct multi-track Sonos Playlist creation.
+- [x] Exact two-item count and exact approved order.
+- [x] Authoritative reopen and strong canonical identity verification.
+- [x] Supporting title, artist, and album verification.
+- [x] Unchanged pre-existing Sonos Playlist inventory.
+- [x] Zero queue mutation and zero playback mutation.
+- [x] Zero retry and zero substitution.
+- [x] Exact-ID cleanup after one rejected item.
+- [x] Normal restoration of the installed sole backend after each staged test.
+
+### Deferred acceptance
+
+- [ ] Physical playlist-size coverage beyond the exact one-, two- and
+  ten-track cases recorded here, including the maximum supported plan size.
+- [ ] AI-orchestration policy for individually rejected catalogue items.
+- [ ] Physical QML/MCP concurrency and lifecycle acceptance under #61/#68.
+  Single-authority ownership is implemented (ADR 0002); the fake-only contract
+  checks below are not a substitute for this physical gate.
+- [ ] Broader MCP transport, queue, grouping, source, and volume actions under
+  issue #14.
+- [ ] General destructive queue restoration under issue #19.
+- [ ] Apple private-library access or Apple/Sonos playlist synchronization.
+
+Issue #19 separately owns general destructive queue rollback; this acceptance
+does not claim that issue fixed. Tests A, C, and D do physically demonstrate
+ordered direct Sonos Playlist persistence for the exact accepted items above,
+not universal acceptance of every Apple catalogue song.
+
+### Ten-track GB case — 2026-09-06
+
+The [accepted architecture/test record in #17](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/17)
+reports creation of one reviewed ten-track GB catalogue plan, with all ten
+identities, metadata and order verified. Separate playback preserved the
+existing queue entry and authoritatively started the first appended song.
+The owner confirmed audible playback.
+
+This is retained exact-case evidence, not a new physical test by this
+documentation PR. The cited record does not identify a tested software SHA or
+verification timings, so neither is inferred here. It does not establish
+automatic transition, failure cleanup, state restoration or all-device
+coverage. In particular, first-track PLAYING and audible confirmation do not
+satisfy the original natural-transition requirement:
+
+- [ ] Observe a directly created multi-track Sonos Playlist advance naturally
+  from its first track to its second without invoking Next (#17).
+
+The distinct Apple-album transition criterion below also remains unchecked.
+
+### Physical Stage 1: read-only create preflight
+
+1. Resolve one exact room UID as the household anchor and confirm the exact
+   coordinator/household binding. Do not inspect queue contents, playback
+   source/position, transport, volume, or mute merely for playlist creation.
+2. Read the complete bounded Sonos Playlist inventory. Require one free slot
+   and an unused exact disposable name.
+3. Submit `playlist_plan.apple.validate` with `mode: save-only`, the reviewed
+   exact Apple songs, and duplicate policy. Confirm exact ordered canonical
+   identities, duration, inventory fingerprint/count, direct capability,
+   `catalogueIdentityValidated: true`,
+   `sonosAcceptance: unproven_until_create`, `queueMutation: false`,
+   `playbackMutation: false`, expiry, and approval requirement.
+4. Confirm the review explains that one playlist is created on success, no
+   queue changes and no playback start occur, and an exact-ID partial playlist
+   may briefly exist with cleanup attempted on failure. Confirm the complete
+   result is below 64 KiB and contains no raw infrastructure metadata.
+5. Stop and obtain explicit owner approval for exactly one token-only create.
+
+### Physical Stage 2: direct create only
+
+1. Invoke `playlists.apple.create` exactly once with only `planToken` and
+   `approved: true`. Never retry a consumed token.
+2. Verify the create-returned attributable `SQ:<id>`, exact name, item count,
+   exact order/canonical identities, and title/artist/album after authoritative
+   reopen.
+3. Verify every pre-existing Sonos Playlist is unchanged and the result reports
+   `queueMutation: false` and `playbackMutation: false`. Read-only observation
+   may confirm no unexpected playback, but no queue backup/restoration action
+   belongs to this transaction.
+4. On a track failure, require immediate stop with no retry or substitution.
+   Accept only bounded `playlistConstructionStep`, reviewed failed
+   position/identity, trusted UPnP code, exact attributable partial ID, cleanup
+   booleans, and queue/playback unchanged booleans.
+5. Cleanup may delete only the exact create-returned new ID after exact-ID and
+   invocation-bound-title verification. A cleanup failure must leave every
+   unrelated playlist untouched and return that exact ID with
+   `playlistCleanupRequired: true`.
+6. Retain any successful disposable playlist until separately approved
+   exact-ID cleanup. Do not play it during this acceptance.
+
+### Separately reviewed exact-playlist playback
+
+Playback is not a stage of creation. The implemented first issue #14 slice
+requires a verified `SQ:<id>`, exact standalone room UID, volume at most 20,
+stopped/paused transport, confirmed queue/no source, complete playlist/queue
+reads, explicit approval, and a fresh identical preflight. It appends the
+playlist and starts its first appended item without retry or queue replacement.
+If a later phase fails, appended entries may remain and no issue #19 rollback
+is attempted. Never infer playback approval from successful playlist creation.
+
+Automated tests use fake speakers/controllers only. The narrow physical case
+below passed under separate owner approval; broader physical acceptance remains
+subject to the unchanged checklist and marketplace HOLD.
+
+Physical retest on 2026-09-05, installed commit `b94a1c7`: the owner authorized
+one append-and-play of retained commissioning playlist `SQ:53` in the standalone
+room. The room was stopped, unmuted, at volume 8, with one existing
+`Just Like Heaven` queue item. Fresh preflight matched the reviewed fingerprint.
+Exactly one append and one playback-start invocation returned; queue length two
+and current position two were confirmed. Playback verification nevertheless
+reported `speaker_rejected` in `verify_playback`: both observations reported
+`TRANSITIONING`, completing at 157 ms and 1144 ms (second start at 1000 ms).
+The only failed predicate was `transportIsPlaying`. A subsequent read reported
+`PLAYING` at volume 8; a separate queue read confirmed both items with the second
+current. No write retry or cleanup was performed. The running backend started
+after the installed verification files were updated. This reproduces a false
+negative with those timing fixes installed; exact-playback acceptance remained
+open at that revision. These are device-reported observations, not a claim of
+audible acceptance or a measurement of the precise time playback began.
+
+Physical acceptance passed on 2026-09-05 with tested software revision
+`8d938043caaf625992bdae071a43aab1ab5c4664` (PR #46), distinct from this later
+documentation update. Retained evidence confirmed installed/backend/MCP
+provenance and a fresh owner-approved plan for one standalone room, initially
+stopped, queue source, volume 8, unmuted. Retained playlist `SQ:53` contained one
+`Just Like Heaven` by The Cure. One append and one playback-start invocation
+both returned, with zero retries. Public MCP returned `ok: true` and
+`verification.authoritative: true`: queue length grew from 2 to 3, original
+entries were preserved, and position 3 was verified as the first appended item
+using positional evidence, not matching titles. Fresh complete verification
+confirmed the exact state, including unchanged playlist, volume, mute and
+topology.
+
+Six transport observations were made; `PLAYING` returned at 1593 ms. Fresh
+complete verification ran from 1594 to 2587 ms with no failed predicates, under
+the existing 250 ms / maximum 20 observations / 5000 ms latest-start policy.
+These are post-write verification timings, not audible-onset measurements.
+The owner separately confirmed audible playback in the intended room. No
+cleanup, restoration, replay or second test occurred. This accepts only this
+exact case, not every playlist, device or playback scenario. See the
+[sanitized physical evidence on #14](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/14#issuecomment-5553308423).
 
 ## Required real-device acceptance
 
@@ -124,3 +365,26 @@ before Sonarchy claims real-device coverage for them.
 
 Until every applicable box is complete, the project remains a local beta and
 must not be submitted to the marketplace.
+## Single-authority MCP acceptance
+
+Automated evidence is the cited PR #81 CI run and production-path tests in
+`tests/test_local_mcp.py`, `tests/test_mcp_stdio.py`,
+`tests/test_mcp_browse_contract.py` and `tests/test_mcp_playback_contract.py`.
+These checks use fake external boundaries and do not establish live household
+concurrency or current installed-system acceptance.
+
+- [x] Process ownership and socket/config symlink, owner, and mode boundaries
+  are covered with fake-only tests.
+- [x] Read-only default and independent optional create/play inventories are
+  contract tested; `playlist-create` does not authorize playback.
+- [x] Backend token hiding, opaque single-use handles, restart invalidation, no
+  replacement fields, fresh second-handle use, and exactly-once create/play
+  dispatch are covered.
+- [x] MCP import boundaries prohibit SoCo/controller/QML imports.
+- [ ] Repeat existing protocol, Apple create, QML, plugin and packaging gates
+  on the exact release candidate; historical passing subsets do not waive them.
+- [x] No new real-device run was authorized or performed for this implementation.
+  The merged PR #18 physical evidence remains create-only. The later separately
+  approved exact-playback case on `8d93804` and the later recorded ten-track GB
+  case are above. Neither was performed by this documentation update. Issue
+  #14 remains open for every broader action.

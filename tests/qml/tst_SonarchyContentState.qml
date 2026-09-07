@@ -106,6 +106,84 @@ TestCase {
     compare(fakeLive.calls[1].context.path.length, 0)
   }
 
+  function test_truncated_library_pages_use_exact_forward_and_backward_offsets() {
+    subject.load("library", "", [], 0)
+    subject.requestId = ""
+
+    subject.libraryNext(20)
+    compare(fakeLive.calls[1].context.offset, 20)
+    compare(subject.libraryOffsetHistory.length, 1)
+    compare(subject.libraryOffsetHistory[0], 0)
+    subject.requestId = ""
+
+    subject.libraryNext(37)
+    compare(fakeLive.calls[2].context.offset, 37)
+    compare(subject.libraryOffsetHistory.length, 2)
+    compare(subject.libraryOffsetHistory[0], 0)
+    compare(subject.libraryOffsetHistory[1], 20)
+    subject.requestId = ""
+
+    subject.libraryPrevious()
+    compare(fakeLive.calls[3].context.offset, 20)
+    compare(subject.libraryOffsetHistory.length, 1)
+    compare(subject.libraryOffsetHistory[0], 0)
+    subject.requestId = ""
+
+    subject.libraryPrevious()
+    compare(fakeLive.calls[4].context.offset, 0)
+    compare(subject.libraryOffsetHistory.length, 0)
+  }
+
+  function test_library_history_resets_on_context_changes_but_not_refresh() {
+    subject.kind = "library"
+    subject.offset = 20
+    subject.libraryOffsetHistory = [0]
+
+    subject.reload()
+    compare(subject.libraryOffsetHistory.length, 1)
+    compare(subject.libraryOffsetHistory[0], 0)
+    subject.requestId = ""
+
+    subject.load("library", "", [{ id: "A:ARTIST", index: 2 }], 0)
+    compare(subject.libraryOffsetHistory.length, 0)
+    subject.requestId = ""
+
+    subject.libraryOffsetHistory = [0, 20]
+    subject.search("library", "track")
+    compare(subject.libraryOffsetHistory.length, 0)
+    subject.requestId = ""
+
+    subject.libraryOffsetHistory = [0]
+    subject.load("queue", "", [], 0)
+    compare(subject.libraryOffsetHistory.length, 0)
+  }
+
+  function test_non_progressing_library_continuation_is_ignored() {
+    subject.kind = "library"
+    subject.offset = 20
+    subject.libraryNext(20)
+
+    compare(fakeLive.calls.length, 0)
+    compare(subject.libraryOffsetHistory.length, 0)
+  }
+
+  function test_empty_omission_page_can_advance_and_return_without_a_loop() {
+    subject.kind = "library"
+    subject.offset = 0
+
+    subject.libraryNext(1)
+    compare(fakeLive.calls.length, 1)
+    compare(fakeLive.calls[0].context.offset, 1)
+    compare(subject.libraryOffsetHistory.length, 1)
+    compare(subject.libraryOffsetHistory[0], 0)
+    subject.requestId = ""
+
+    subject.libraryPrevious()
+    compare(fakeLive.calls.length, 2)
+    compare(fakeLive.calls[1].context.offset, 0)
+    compare(subject.libraryOffsetHistory.length, 0)
+  }
+
   function test_favorites_are_projected_without_a_browse_request() {
     subject.load("favorites", "", [], 0)
 
@@ -165,5 +243,21 @@ TestCase {
     subject.requestId = ""
     compare(subject.openItem({ id: "30", browsable: false, playable: true }), false)
     compare(subject.openItem({ id: "40", browsable: true, browse_kind: "bad" }), false)
+  }
+
+  function test_structured_song_fields_preserve_existing_playable_row_contract() {
+    subject.kind = "apple"
+    var song = {
+      id: "123", title: "Song", subtitle: "Song · Artist · Album · 3:00",
+      url: "https://music.apple.com/gb/album/album/456?i=123",
+      media_kind: "song", playable: true, browsable: false,
+      artist: "Artist", album: "Album", durationMs: 180123, explicitness: "cleaned"
+    }
+    subject.items = [song]
+    compare(subject.items[0].title, "Song")
+    compare(subject.items[0].subtitle, "Song · Artist · Album · 3:00")
+    compare(subject.openItem(song), false) // Remains a play action, not navigation.
+    compare(fakeLive.calls.length, 0)
+    compare(subject.kind, "apple")
   }
 }

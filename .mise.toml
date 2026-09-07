@@ -4,3 +4,7 @@ shellcheck = "0.11.0"
 
 [env]
 _.python.venv = { path = "../.venvs/omarchy-sonarchy", create = true }
+
+[tasks.validate-platform]
+description = "Run required Omarchy release-host validation on a clean exact candidate"
+run = 'python -m scripts.validate_platform "$(git rev-parse HEAD)"'

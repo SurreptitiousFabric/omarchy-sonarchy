@@ -8,6 +8,11 @@ This is an independent community project. It is not made, sponsored, or
 endorsed by Sonos, Inc.; product and service names belong to their respective
 owners.
 
+Marketplace submission remains **on hold** pending the
+[release acceptance gates](ACCEPTANCE_TESTS.md) and owner sign-off. Automated
+tests and the recorded physical cases do not establish universal device or
+service coverage.
+
 ## Features
 
 - Event-driven now-playing state with bounded polling fallback
@@ -15,8 +20,10 @@ owners.
 - Playback-session selection, safe handoff, per-room mixer, and staged grouping
 - Real room rename
 - Sonos Favorites and current-queue playback, drag/keyboard reordering, removal,
-  clearing, and safe replacement
+  clearing, and non-destructive insertion
 - Sonos Playlist create, save-queue, browse, play, reorder, and delete actions
+- Exact Apple-song plans that create and verify a Sonos Playlist directly,
+  without changing a room queue or starting playback
 - Hierarchical, paged local Sonos music-library browsing, track search, and index refresh
 - Public Apple Music catalog and Global Player station search
 - Confidence-checked album artwork for radio tracks, with a station-logo fallback
@@ -33,9 +40,11 @@ Queue moves re-check both the moved item and destination item. Drag the handle
 onto another row, use the row's arrow buttons, or press **Alt+Up/Alt+Down**
 while one of that row's controls is focused.
 Library and playlist rows offer **Play now**, **Next**, **End**, and a confirmed
-**Replace queue** action. Replace first verifies a bounded backup and restores
-the previous queue if the new item cannot be added; queues over 100 items are
-left untouched because Sonarchy cannot back them up completely.
+**Play if queue empty** action. Nonempty or unverifiable queues are refused
+without clearing, adding or playing. An empty queue is appended to without
+clearing; a failed append/play is reported without destructive cleanup.
+Sonarchy cannot guarantee exact restoration of arbitrary provider queues.
+Use **Next** or **End** to preserve an existing queue without starting playback.
 
 ## Install
 
@@ -55,7 +64,49 @@ versions and file hashes recorded in `requirements.lock`, directly from PyPI.
 It does not install into system Python or the user's global Python environment,
 never requests administrator privileges, and does not run an installer hook
 during `plugin add`.
-Python 3.14 or newer is required and is included with current Omarchy.
+Stable CPython 3.14.x is required (declared floor: 3.14.0). Development and
+current CI use the exact version pinned in `.mise.toml`, currently 3.14.7.
+CI requires separate passing jobs for 3.14.0 and that current target, including
+exact-version provenance, locked imports, compilation and the Python suite.
+Python 3.13, prereleases, other
+implementations and future minors are rejected before setup. See the
+[runtime policy](docs/adr/0003-python-runtime-policy.md) for support and test
+evidence; do not assume an Omarchy upgrade preserves a supported interpreter.
+
+The launcher reuses its environment only when the lock hash, Python
+major/minor/ABI/architecture identity and locked dependency imports agree.
+Compatible patch updates do not by themselves trigger installation. Missing
+metadata on an older installation triggers a one-time validated rebuild.
+Health checks have a ten-second deadline and one-second forced-stop grace.
+Replacements are built and checked before promotion under the setup lock;
+download/install/check failures leave the old environment intact. A failed
+promotion attempts to restore it. An interrupted promotion may leave a
+`venv.previous.*` directory in the private Sonarchy data directory for recovery;
+do not delete it without inspecting which environment is usable. A successful
+promotion removes its superseded backup. This does not validate future Python
+minors or prove real OS-upgrade acceptance.
+
+## Local AI and MCP
+
+The [MCP setup guide](docs/mcp.md) covers connecting a client, permissions and
+removal. Quickshell owns the sole Sonos backend; a thin stdio adapter connects
+to its owner-only Unix socket. The default surface is read-only. Independent
+opt-in permissions enable exact reviewed Apple-song Sonos Playlist creation
+and exact native Sonos Playlist playback in an explicitly chosen room.
+
+Creation never changes the room queue or starts playback. Playback requires
+its own preflight, human approval and fresh identical preflight; it preserves
+the existing queue and appends the reviewed playlist before starting its first
+item. It is limited to an online standalone room, stopped/paused transport,
+queue or no active source, and volume at most 20. A later failure can leave
+appended items; there is no automatic retry or destructive rollback. See the
+guide for the complete bounds and partial-state policy.
+
+Sonarchy does not provide the AI model, private Apple-library access, general
+MCP transport/volume/grouping controls, or arbitrary URI/command execution.
+Apple playback requires an Apple Music service already connected in Sonos;
+public catalogue matching alone does not prove that the household can play a
+particular recording. [Playlist workflow and evidence](docs/ai-curated-sonos-playlists.md).
 
 ## Keyboard use
 
@@ -146,6 +197,10 @@ Apple storefront is Switzerland (`CH`). Set `SONARCHY_APPLE_COUNTRY` to another
 two-letter country code before the shell starts to use a different storefront.
 The legacy `OMARCHY_SONOS_APPLE_COUNTRY` name remains accepted for local
 development upgrades.
+MCP public-Apple browse requests can instead specify `storefront: "GB"` for
+the UK, independently of that configured default. The result reports the
+effective storefront. This selects a public catalogue; it neither changes nor
+detects the country of the Apple account connected to Sonos.
 
 When **Find radio track artwork** is enabled and the popup is open, a live
 radio track that has no proper album art is looked up using the title and
@@ -161,7 +216,9 @@ Sonos household. The plugin never receives their passwords or access tokens.
 ## Security and privacy
 
 There is no HTTP control API and nothing listens on port 8000. The persistent
-backend accepts commands only over its private stdin pipe. Sonos event updates
+backend accepts QML commands over its private stdin pipe and a narrow MCP
+allowlist over an owner-only Unix socket. The MCP adapter adds no HTTP or LAN
+control listener. Sonos event updates
 use a callback listener bound to the attached LAN interface on TCP 1400–1499;
 it accepts only bounded notifications from the exact private-IP speaker tied
 to a live subscription and never accepts playback commands.
@@ -185,12 +242,10 @@ four questions that otherwise become tangled:
 - [architecture](ARCHITECTURE.md): which QML, protocol, domain, and adapter layer
   owns each rule.
 
-The proposed local-AI and bespoke-playlist direction is documented separately
-in the [AI and MCP roadmap](docs/ai-mcp-roadmap.md) and tracked by
-[roadmap issue #10](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/10).
-It is not a current feature. In particular, an Apple Music account connected to
-Sonos does not currently grant Sonarchy access to the user's private Apple
-library.
+The [AI and MCP roadmap](docs/ai-mcp-roadmap.md) separates implemented narrow
+tools from future orchestration, broader control and private-library research.
+The [architecture decisions](docs/adr/) record the supported Python runtime,
+single-backend ownership, QML platform boundary and remaining SoCo coupling.
 
 ## Remove
 

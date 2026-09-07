@@ -6,9 +6,10 @@ import os
 import re
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import requests
+from soco.plugins.sharelink import AppleMusicShare
 
 from .artwork import select_artwork_match
 
@@ -16,6 +17,9 @@ APPLE_SEARCH_URL = "https://itunes.apple.com/search"
 APPLE_LOOKUP_URL = "https://itunes.apple.com/lookup"
 APPLE_RESPONSE_LIMIT = 1024 * 1024
 APPLE_ALBUM_PATH_PATTERN = re.compile(r"/[A-Za-z]{2}/album/[^/]+/(\d+)/?")
+APPLE_CATALOG_ID_PATTERN = re.compile(r"[1-9]\d{0,19}")
+APPLE_SONG_PATH_PATTERN = re.compile(r"/[A-Za-z]{2}/album/[^/]+/[1-9]\d{0,19}/?")
+MAX_APPLE_URL_LENGTH = 1024
 
 
 def default_country() -> str:
@@ -54,6 +58,47 @@ def public_apple_music_url(value: Any) -> str:
     except ValueError:
         return ""
     return url if port in (None, 443) else ""
+
+
+def canonical_apple_song(
+    value: Any,
+    catalog_id: Any,
+    *,
+    canonicalizer: Callable[[str], str | None] | None = None,
+) -> tuple[str, str]:
+    """Validate one exact Apple song share URL through Sonarchy and SoCo.
+
+    The original public URL is retained. It is never synthesized from an ID.
+    """
+
+    url = public_apple_music_url(value)
+    identifier = clean(catalog_id)
+    if not url or len(url.encode("utf-8")) > MAX_APPLE_URL_LENGTH:
+        raise ValueError("Expected a bounded Apple Music song link")
+    if not APPLE_CATALOG_ID_PATTERN.fullmatch(identifier):
+        raise ValueError("Invalid Apple catalogue song identifier")
+    parsed = urlparse(url)
+    if not APPLE_SONG_PATH_PATTERN.fullmatch(parsed.path) or parsed.fragment:
+        raise ValueError("Expected an Apple Music song link")
+    try:
+        song_ids = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True).get("i", [])
+    except ValueError as exc:
+        raise ValueError("The Apple Music song link has a malformed query") from exc
+    if len(song_ids) != 1 or not APPLE_CATALOG_ID_PATTERN.fullmatch(song_ids[0]):
+        raise ValueError("The Apple Music link has a missing or malformed song identifier")
+    if song_ids[0] != identifier:
+        raise ValueError("The Apple song link does not match its catalogue identifier")
+    canonical_uri = (canonicalizer or AppleMusicShare().canonical_uri)(url)
+    if not canonical_uri:
+        raise ValueError("SoCo does not recognise this Apple Music link")
+    content_type, separator, canonical_id = canonical_uri.partition(":")
+    if separator != ":" or content_type != "song":
+        raise ValueError("The Apple Music link must identify one song")
+    if not APPLE_CATALOG_ID_PATTERN.fullmatch(canonical_id):
+        raise ValueError("SoCo returned an invalid Apple song identity")
+    if canonical_id != identifier:
+        raise ValueError("The Apple song link does not match its catalogue identifier")
+    return url, canonical_id
 
 
 def public_apple_album_url(value: Any, collection_id: Any = "") -> str:

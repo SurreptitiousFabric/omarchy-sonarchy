@@ -31,6 +31,38 @@ bounded, and the backend re-reads each segment before returning a page. The
 result includes authoritative breadcrumbs, page flags, and `browsable` and
 `playable` item capabilities. Existing non-library requests may omit context.
 
+Every `content.browse` result is measured as a complete UTF-8 protocol
+envelope, including the largest valid request ID and revision. Provider display
+text has deterministic byte bounds and a trailing `…` when shortened;
+artwork is returned only as a complete policy-approved URL or as an empty
+field. Exact item, playlist, library-path, and Apple catalogue identities are
+never shortened. If the bounded fields still do not fit, the backend removes
+items from the end and returns the largest exact prefix that fits.
+`returned_count` always equals the item-list length, `requested_limit` records
+the requested page size, and `result_truncated` reports protocol-budget or
+identity-safe reduction. `total` remains the provider's authoritative total;
+library `offset` is retained and `next_offset` is the authoritative first
+provider position not consumed by the response. Clients must continue from
+`next_offset`, not `offset + requested_limit`, when a page is reduced. An
+invalid identity is omitted whole and counted by `omitted_count`; continuation
+advances past that provider position so later valid items remain reachable.
+`has_next` is true only when that continuation makes forward progress and
+provider content remains.
+
+Non-library browse results have no continuation offset. They scan the complete
+provider page, omit every identity-invalid item, and retain all later valid
+items in their original relative order. Their `omitted_count` is the exact
+number filtered before deterministic end-only wire-budget reduction.
+
+Browse identities are complete-or-omit under explicit UTF-8 byte limits:
+opaque item and library navigation IDs are at most 512 bytes, Apple action
+`url`/`album_url` values are at most 1,024 bytes, and Sonos Playlist IDs are at
+most 32 bytes. These are separate from display bounds and are never shortened.
+Breadcrumbs and their path segments are retained only as one matching exact
+safe prefix. The limits keep a fully populated maximum-identity item—and all
+eight bounded library navigation levels—well below the complete 64 KiB result
+envelope even with maximally escaped values.
+
 `queue.content.enqueue` accepts an optional `libraryPath` with the same bounded
 segments. The backend re-resolves that path and verifies the selected absolute
 index and item ID before mutation; QML-supplied metadata is never treated as an
@@ -41,6 +73,184 @@ confirmed by the UI. Before clearing, the backend requires a complete backup
 of at most 100 restorable items and a verifiable playback source/position; if
 adding or starting the replacement fails, it attempts to restore the previous
 queue and queue playback position.
+
+### Exact Apple-song Sonos Playlist plans
+
+`playlist_plan.apple.validate` is read-only. It accepts an exact `roomUid`, a
+new `playlistName`, `mode: "save-only"`, optional Boolean `allowDuplicates`,
+and one to 25 reviewed tracks. `save-and-play` is not accepted. Each track has
+exactly these fields:
+
+```json
+{
+  "catalogId": "1452806384",
+  "url": "https://music.apple.com/ch/album/kiss-me-kiss-me-kiss-me/1452806377?i=1452806384",
+  "title": "Just Like Heaven",
+  "artist": "The Cure",
+  "album": "Kiss Me, Kiss Me, Kiss Me",
+  "durationMs": 212000
+}
+```
+
+The URL must pass Sonarchy's exact public-Apple HTTPS policy and pinned SoCo
+0.31.2 must canonicalise it specifically as `song:<catalogId>`. Album,
+playlist, artist, radio, arbitrary-host, credential-bearing, non-standard-port,
+and unknown links are rejected. Sonarchy never constructs a URL from the ID or
+substitutes a catalogue result based on display metadata.
+
+Preflight authoritatively checks the exact room UID used as household anchor,
+coordinator and hashed household identity, required direct saved-playlist
+capability, complete Sonos Playlist inventory fingerprint/count, name
+collision, ordered identities, duplicate policy, and total duration. It does
+not read or bind queue contents, source/position, media identity, transport,
+volume, mute, or room topology. The response includes the exact bounded review,
+expected side effects, and a random opaque plan token that expires after at
+most 120 seconds. Reviewed URLs remain backend-only and are not echoed.
+The bounded inventory admits at most 100 Sonos Playlists and preflight requires
+one free verification slot. Post-create verification and owned cleanup may
+read exactly one bounded transaction extra so a concurrent create cannot make
+the transaction's attributable ID unreachable.
+
+The token is memory-only, process-local, single-use, and atomically consumed
+before the first playlist mutation. It binds the operation, exact
+room/household anchor, capabilities, playlist inventory and name, create-only
+mode, duplicate policy, ordered reviewed songs, expiry, and random nonce. It
+proves recent validation, not human approval. A backend restart, replay,
+expiry, or changed authoritative target state requires a new preflight. The
+general snapshot revision is deliberately not bound because unchanged
+background polls advance it; execution re-captures every material target fact.
+Requests rejected before a ticket is claimed, including missing approval,
+replacement arguments, and unavailable tokens, do not emit a mutation refresh
+or advance the backend revision. A still-valid ticket therefore remains usable
+after an unrelated pre-claim rejection. Once a valid ticket is atomically
+claimed, every accepted execution attempt consumes it. Create-only
+intentionally does not request the general playback
+snapshot after execution because that would perform irrelevant queue,
+transport, volume, and mute reads.
+The complete result envelope is serialized as unescaped UTF-8 JSON and measured
+against the 64 KiB protocol-line limit before the review is returned. Request
+IDs and operation names are byte-bounded. If a review does not fit, its
+unpublished ticket is discarded and validation fails safely.
+Every authoritative snapshot is measured against the same complete UTF-8 line
+limit. A snapshot that does not fit is neither cached nor partially emitted;
+the server emits a fixed bounded degraded snapshot without target-derived write
+capabilities, preserves the monotonic revision, and continues serving startup,
+polling, and mutation-refresh traffic.
+The successful create result is bounded too. `playlist.items` contains the one
+full sequence of reviewed metadata after authoritative reopen comparison.
+Provider-returned text, URLs, and optional Sonos item IDs are not echoed. A
+maximal 25-track result, including the worst bounded request ID, must fit the
+same 64 KiB line.
+
+`playlists.apple.create` is the corresponding write. Its arguments are exactly:
+
+```json
+{ "planToken": "opaque-process-local-token", "approved": true }
+```
+
+It rejects replacement tracks, URLs, room IDs, names, or modes. `approved`
+must be explicitly `true` immediately before the call. The backend claims the
+token even when the subsequent mutation fails, so a failed attempt cannot be
+retried without a fresh preflight and approval.
+
+Execution revalidates the exact anchor, inventory, unused name, capacity,
+ordered tracks, and direct capability. It creates one empty Sonos Playlist
+through SoCo's normal API, validates the create-returned new `SQ:<id>`, and
+reopens that exact ID. One private Apple-only adapter then appends each exact
+song directly to the saved playlist. The adapter fixes every provider-specific
+field internally and uses SoCo data structures for escaped XML; none of its
+URI, DIDL, service, account, flag, or SOAP fields can be supplied through the
+protocol.
+
+After every add, bounded authoritative reopen verifies expected count, exact
+new position, canonical identity, and reviewed title/artist/album. Final reopen
+verifies the complete sequence, exact name, and unchanged pre-existing
+playlist inventory. Identity evidence is accepted only as a complete canonical
+`song:<id>`, complete pinned Apple Sonos item ID, or leading song token of the
+expected Sonos Apple resource form. A saved-playlist browse may instead return
+the pinned Apple HLS-static form observed during the one-track physical test;
+that form is accepted only as one complete resource with the Apple service
+identity derived from the pinned service type, bounded saved-resource fields,
+and the exact HLS protocol type. Arbitrary substrings, another provider, and
+catalogue IDs present only in query parameters cannot satisfy verification.
+Verified items retain `album` as the reviewed Apple-plan value and add
+`albumVerification`: its `kind` is `exact` when the complete observed album
+matches under the existing case/whitespace-only comparison, or
+`evidence_bound` for one explicit complete sanitized physical observation.
+`reviewedAlbum` is the complete bounded plan value and `observedAlbum` is the
+complete bounded Sonos display value. The evidence-bound observation requires
+the exact catalogue identity, title, artist, reviewed album, and observed album;
+it is not a general Deluxe, punctuation, provider, or edition equivalence and
+does not prove byte identity or universal interchangeability between editions.
+Success returns `queueMutation: false` and `playbackMutation: false`; no queue
+or playback method is invoked.
+
+Catalogue validation reports `catalogueIdentityValidated: true` and
+`sonosAcceptance: "unproven_until_create"`. A direct add may still be rejected
+by Sonos. Execution stops at the first failure, never retries the track, and
+never substitutes another catalogue ID or recording.
+
+Cleanup targets a partial playlist only when the exact create-returned ID is a
+validated new `SQ:<id>` and that exact ID authoritatively resolves to the
+invocation-bound title. Title alone never establishes ownership. One deletion
+is attempted and verified; no title fallback or second-ID guess is allowed. If
+exact deletion fails, the attributable ID is returned with
+`playlistCleanupRequired: true` and every unrelated playlist remains untouched.
+
+Playback of the new exact `SQ:<id>` is a separate operation and approval. The
+create token does not approve it, and the create transaction never starts
+playback.
+
+### Exact native Sonos Playlist playback plans
+
+`playlists.play.validate` is read-only and accepts exactly:
+
+```json
+{ "roomUid": "RINCON_…", "playlistId": "SQ:53" }
+```
+
+It resolves the exact UID without room-name fallback and binds supporting room
+name, coordinator, hashed household, complete standalone topology, online
+state, volume/mute, transport/source, relevant capabilities, exact playlist ID
+and title, complete 1–25 item fingerprint, bounded five-item preview, first
+item, complete queue fingerprint/length/current position, and expected first
+append position. Item/resource/provider identities remain private and are
+represented by bounded SHA-256 identities.
+
+Preflight rejects grouped or offline rooms; transport outside `STOPPED` or
+`PAUSED_PLAYBACK`; source other than a confirmed Sonos queue or no active
+source; volume over 20; missing, ambiguous, empty, over-25, or incompletely
+readable playlists; incompletely readable queues; and a combined size over
+100. Its review states that all existing entries remain, the complete playlist
+is appended, playback moves to the first appended item and interrupts the
+stopped/paused context, source becomes the queue, controls/topology/playlist
+contents do not change, no retry occurs, and a successful append may remain
+after a later failure without destructive rollback.
+
+`playlists.play.execute` accepts exactly:
+
+```json
+{ "planToken": "opaque-process-local-token", "approved": true }
+```
+
+The shared ticket store atomically consumes the short-lived single-use token.
+The backend re-resolves the exact room and playlist and re-reads every bound
+fact immediately before the first mutation. It then calls the shared existing
+playlist play path once: append the exact playlist, then start the returned
+first appended queue position. It never substitutes, retries, clears,
+replaces, removes, moves, reconstructs, or rolls back queue entries.
+
+Success re-reads and verifies exact room/playlist identity, unchanged playlist
+fingerprint, queue length increase by the approved count, preserved old prefix,
+exact appended order, current first-appended position/item, `PLAYING` transport,
+`QUEUE` source, and unchanged volume, mute, and topology. Results report one
+append invocation and one start invocation plus zero destructive queue,
+control, topology, source-switch, playlist, retry, or substitution operations.
+
+The MCP adapter exposes the backend token only through a random short-lived
+`planHandle`. Clients must show one review, obtain explicit approval, run a
+fresh identical preflight, compare every fact except handle/expiry, and execute
+only the fresh handle. `approved: true` is not independent human-consent proof.
 
 `alarms.save` carries both the selected anchor `roomUid` and the requested
 `alarmRoomUid`. The backend accepts the target only when it is currently
@@ -89,6 +299,37 @@ A failed result contains an error object:
 
 Messages are safe for direct display. They never contain raw exceptions,
 private addresses, credentials, or service metadata.
+Transactional failures may additionally contain a bounded `details` object,
+with `phase: "playlist_creation"` plus:
+
+- `playlistConstructionStep`: `create`, `add_track`, `verify_track`,
+  `verify_playlist`, or `cleanup`;
+- `failedTrackPosition`: integer 1–25 for a track-owned step;
+- `failedCanonicalIdentity`: exact bounded `song:<catalogId>` for that track;
+- `sonosErrorCode`: a strictly bounded numeric or symbolic value read only
+  from pinned `SoCoUPnPException.error_code`;
+- `partialPlaylistId`: only a validated, invocation-attributable `SQ:<id>`;
+- `playlistRemoved`, `playlistCleanupRequired`,
+  `preExistingPlaylistsUnchanged`, `queueUnchanged`, `playbackUnchanged`, and
+  `succeeded`: bounded Booleans.
+
+Optional fields are omitted when unavailable. They are typed at the failure
+site and never inferred by parsing exception text. Exception messages,
+descriptions, XML, arguments, URIs, DIDL, addresses, credentials, and raw
+service metadata are not included.
+
+Exact-playback failures instead use phase `preflight_revalidation`,
+`append_playlist`, `start_playback`, `verify_queue`, or `verify_playback` plus
+bounded `appendState`, `playbackStarted`, expected/observed positions, queue
+length/fingerprint, transport/source, append/start counts, retry count,
+`queueRollbackAttempted: false`, and `succeeded: false`. `appendState` is
+`confirmed` only when authoritative recapture proves the exact original queue
+prefix followed by the exact appended playlist segment, `absent` only when it
+proves the queue is unchanged, and `unknown` otherwise. `queueAppended` is
+present as `true` for `confirmed` and `false` for `absent`; it is omitted for
+`unknown` rather than falsely reporting that no append occurred. A later
+failure reports the partial append accurately and never triggers issue #19
+rollback logic.
 
 ## Snapshot
 
@@ -130,3 +371,23 @@ ID. QML must not derive speaker state solely from an event.
   possible and otherwise terminates before executing the request.
 - The protocol inventory is tested for exact agreement with registered
   handlers.
+## Local socket transport
+
+The same version-1 bounded JSON-lines envelopes are used on the owner-only
+`${XDG_RUNTIME_DIR}/sonarchy/control.sock`. This is an internal transport, not
+an MCP or generic public protocol endpoint. Linux same-UID peer credentials and
+the backend startup permission snapshot constrain socket clients to:
+
+- read: `state.refresh`, `content.browse`, `playlist_plan.apple.validate`, and
+  `playlists.play.validate`;
+- playlist-create: additionally `playlists.apple.create`;
+- playlist-play: additionally `playlists.play.execute`.
+
+The two write permissions are independent. Direct socket clients cannot invoke
+playback with `playlist-create` alone or bypass the MCP tool inventory.
+
+`session.panel_open.set` is stdin/QML-only. Results go only to the requesting
+transport even when request IDs collide; snapshots are broadcast. Lines and
+incomplete/pending buffers and client count are bounded. A backend restart
+closes the socket and invalidates tickets; clients must reconnect and revalidate
+without replaying a write.

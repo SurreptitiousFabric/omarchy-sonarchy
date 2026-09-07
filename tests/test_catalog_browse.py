@@ -33,6 +33,7 @@ from sonarchy_backend.domains.browse import (
     queue_content,
     validate_playlist_id,
 )
+from sonarchy_backend.domains.browse_bounds import bounded_metadata_text
 from sonarchy_backend.domains.library import validate_library_context
 
 
@@ -257,6 +258,7 @@ def test_library_browse_discovers_root_and_pages_nested_containers():
     assert nested["items"][0]["index"] == 40
     assert nested["has_previous"] is True
     assert nested["has_next"] is True
+    assert nested["next_offset"] == 41
     assert library.browse.call_args_list[0].kwargs == {
         "ml_item": None,
         "start": 0,
@@ -344,6 +346,83 @@ def test_apple_and_global_content_normalize_provider_results():
     ) == [station]
     with patch("sonarchy_backend.domains.browse.global_results", return_value=Result([station])):
         assert global_content(coordinator, "news", 5)["items"][0]["playable"] is True
+
+
+@pytest.mark.parametrize(
+    "rating,expected",
+    [
+        ("cleaned", "cleaned"),
+        ("explicit", "explicit"),
+        ("notExplicit", "notExplicit"),
+        (None, "unknown"),
+        ("other", "unknown"),
+        ([], "unknown"),
+    ],
+)
+def test_song_explicitness_is_not_collapsed(rating, expected):
+    raw = {
+        "trackId": 1,
+        "trackName": "Song",
+        "trackViewUrl": "https://music.apple.com/gb/song/song/1",
+        "trackExplicitness": rating,
+    }
+    song = search_apple(
+        "song", 1, request_get=lambda *_args, **_kwargs: Response({"results": [raw]})
+    )["items"][0]
+    assert song["explicitness"] == expected
+    assert song["artist"] is None
+    assert song["album"] is None
+    assert song["durationMs"] is None
+
+
+@pytest.mark.parametrize(
+    "duration,expected",
+    [
+        (180123, 180123),
+        (0, 0),
+        ((1 << 53) - 1, (1 << 53) - 1),
+        (1 << 53, None),
+        (-1, None),
+        (True, None),
+        (1.5, None),
+        ("180123", None),
+        (None, None),
+    ],
+)
+def test_song_duration_preserves_exact_integers_without_coercion(duration, expected):
+    raw = {
+        "trackId": 1,
+        "trackName": "Song",
+        "trackViewUrl": "https://music.apple.com/gb/song/song/1",
+        "trackTimeMillis": duration,
+        "artistName": {},
+        "collectionName": "",
+    }
+    song = search_apple(
+        "song", 1, request_get=lambda *_args, **_kwargs: Response({"results": [raw]})
+    )["items"][0]
+    assert song["durationMs"] == expected
+    assert song["artist"] is None
+    assert song["album"] is None
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("NOT_IMPLEMENTED", None),
+        (" \tNOT_IMPLEMENTED \n", None),
+        ("", None),
+        ("   ", None),
+        (None, None),
+        ({}, None),
+        (123, None),
+        (" Artist ", "Artist"),
+        ("not_implemented", "not_implemented"),
+        ("NOT_IMPLEMENTED LIVE", "NOT_IMPLEMENTED LIVE"),
+    ],
+)
+def test_metadata_sentinel_normalization_preserves_unknown_and_valid_text(raw, expected):
+    assert bounded_metadata_text(raw) == expected
 
 
 def test_apple_search_groups_artists_albums_and_songs():

@@ -15,8 +15,6 @@ from .media import (
 )
 from .ports import QueuePort
 
-MAX_REPLACE_BACKUP_ITEMS = 100
-
 
 def queue_action(
     speaker: Any,
@@ -116,60 +114,25 @@ def find_library_item(
     )
 
 
-def _replace_backup(coordinator: Any) -> tuple[list[Any], bool, int, bool]:
-    result = coordinator.get_queue(
-        max_items=MAX_REPLACE_BACKUP_ITEMS,
-        full_album_art_uri=False,
-    )
-    items = list(result)
-    total = safe_index(item_attr(result, "total_matches", len(items)), len(items))
-    if total != len(items) or total > MAX_REPLACE_BACKUP_ITEMS:
-        raise ValueError("The queue is too large to replace safely")
-    if any(not item_attr(item, "resources", []) for item in items):
-        raise ValueError("The current queue cannot be backed up safely")
-
+def _replace_queue(coordinator: Any, item: Any) -> int:
+    # Resource metadata is not proof that a provider queue can be replayed.
+    # Until exact restoration is proven, never clear an existing queue.
+    result = coordinator.get_queue(max_items=1, full_album_art_uri=False)
+    total = item_attr(result, "total_matches", None)
+    if list(result):
+        raise ValueError(
+            "Cannot replace a nonempty queue safely; use Play now, Next or End instead"
+        )
+    if type(total) is not int or total != 0:
+        raise ValueError("The current queue could not be verified as empty")
     active = queue_transport_active(coordinator)
     if active is None:
         raise ValueError("The current playback source could not be verified")
-    track = safe_call(coordinator.get_current_track_info, {}) or {}
-    position = safe_index(track.get("playlist_position"), 0) - 1
-    if active and items and not 0 <= position < len(items):
-        raise ValueError("The current queue position could not be verified")
-    transport = safe_call(coordinator.get_current_transport_info, {}) or {}
-    was_playing = clean(transport.get("current_transport_state")).upper() == "PLAYING"
-    return items, active, position, was_playing
-
-
-def _restore_replaced_queue(
-    coordinator: Any,
-    items: list[Any],
-    active: bool,
-    position: int,
-    was_playing: bool,
-) -> None:
-    coordinator.clear_queue()
-    if not items:
-        return
-    coordinator.add_multiple_to_queue(items)
-    if active:
-        coordinator.play_from_queue(position, start=was_playing)
-
-
-def _replace_queue(coordinator: Any, item: Any) -> int:
-    backup, active, position, was_playing = _replace_backup(coordinator)
-    try:
-        coordinator.clear_queue()
-        queue_position = int(coordinator.add_to_queue(item))
-        coordinator.play_from_queue(max(0, queue_position - 1))
-        return queue_position
-    except Exception:
-        try:
-            _restore_replaced_queue(coordinator, backup, active, position, was_playing)
-        except Exception as recovery_error:
-            raise RuntimeError(
-                "Queue replacement failed and the previous queue could not be restored"
-            ) from recovery_error
-        raise
+    # Append only, even if another controller fills the queue after the read.
+    # On failure preserve the resulting state; cleanup could erase concurrent work.
+    queue_position = int(coordinator.add_to_queue(item))
+    coordinator.play_from_queue(max(0, queue_position - 1))
+    return queue_position
 
 
 def enqueue_content_item(
@@ -194,7 +157,7 @@ def enqueue_content_item(
         raise ValueError("Unsupported queue position")
     if mode == "replace":
         _replace_queue(coordinator, item)
-        message = "Replaced the queue and started playback"
+        message = "Added to the empty queue and started playback"
     elif mode in {"play", "next"}:
         current = safe_call(coordinator.get_current_track_info, {}) or {}
         current_position = max(0, safe_index(current.get("playlist_position"), 0))

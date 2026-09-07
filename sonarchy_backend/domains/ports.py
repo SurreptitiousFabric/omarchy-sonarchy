@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any, Protocol
 
 
@@ -76,6 +76,7 @@ class BrowsePort(Protocol):
         term: str,
         limit: int,
         context: dict[str, Any] | None = None,
+        storefront: str | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -151,6 +152,24 @@ class PlaylistsPort(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class ApplePlaylistPlansPort(Protocol):
+    def inspect_apple_playlist_target(
+        self, room_uid: str, playlist_name: str
+    ) -> dict[str, Any]: ...
+
+    def create_preflighted_apple_playlist(self, plan: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class PlaylistPlayPlansPort(Protocol):
+    def inspect_playlist_play_target(self, room_uid: str, playlist_id: str) -> dict[str, Any]: ...
+
+    def execute_preflighted_playlist_play(
+        self,
+        plan: dict[str, Any],
+        mutation_started_callback: Callable[[], None] | None = None,
+    ) -> dict[str, Any]: ...
+
+
 class SonarchyBackendPort(
     StatePort,
     PlaybackPort,
@@ -163,6 +182,8 @@ class SonarchyBackendPort(
     SettingsPort,
     QueuePort,
     PlaylistsPort,
+    ApplePlaylistPlansPort,
+    PlaylistPlayPlansPort,
     Protocol,
 ):
     """Temporary adapter port implemented by the legacy controller."""
