@@ -33,6 +33,7 @@ from sonarchy_backend.domains.browse import (
     queue_content,
     validate_playlist_id,
 )
+from sonarchy_backend.domains.browse_bounds import bounded_metadata_text
 from sonarchy_backend.domains.library import validate_library_context
 
 
@@ -403,6 +404,25 @@ def test_song_duration_preserves_exact_integers_without_coercion(duration, expec
     assert song["durationMs"] == expected
     assert song["artist"] is None
     assert song["album"] is None
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("NOT_IMPLEMENTED", None),
+        (" \tNOT_IMPLEMENTED \n", None),
+        ("", None),
+        ("   ", None),
+        (None, None),
+        ({}, None),
+        (123, None),
+        (" Artist ", "Artist"),
+        ("not_implemented", "not_implemented"),
+        ("NOT_IMPLEMENTED LIVE", "NOT_IMPLEMENTED LIVE"),
+    ],
+)
+def test_metadata_sentinel_normalization_preserves_unknown_and_valid_text(raw, expected):
+    assert bounded_metadata_text(raw) == expected
 
 
 def test_apple_search_groups_artists_albums_and_songs():

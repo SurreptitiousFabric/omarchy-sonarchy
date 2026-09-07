@@ -96,7 +96,9 @@ only to stderr and never include the raw input.
   with an ellipsis on truncation), `durationMs` (exact nonnegative integer up to
   the JSON/JavaScript safe-integer limit, otherwise `null`), and `explicitness`
   (`cleaned`, `explicit`, `notExplicit`, or `unknown`). Missing or malformed
-  metadata is not inferred from titles or the subtitle. These are public
+  metadata is not inferred from titles or the subtitle. A whitespace-trimmed
+  `NOT_IMPLEMENTED` artist or album is `null`, not literal metadata or subtitle
+  text. These are public
   provider claims, not independent verification of a recording's content.
 - `apple_playlist_preflight`: exact 1–25 track review and opaque `planHandle`.
 - `sonos_playlist_play_preflight`: read-only review of one exact existing

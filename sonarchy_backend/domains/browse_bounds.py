@@ -9,6 +9,7 @@ from ..contracts import (
     protocol_line,
     result_payload,
 )
+from .common import clean
 from .library import MAX_LIBRARY_INDEX
 
 DISPLAY_TEXT_BYTES = 512
@@ -55,7 +56,7 @@ def _complete_identity(raw: Any, maximum_bytes: int) -> str | None:
 def bounded_metadata_text(raw: Any) -> str | None:
     if not isinstance(raw, str):
         return None
-    return bounded_display_text(raw) or None
+    return bounded_display_text(clean(raw)) or None
 
 
 def _bounded_artwork(raw: Any) -> str:

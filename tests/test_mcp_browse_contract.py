@@ -296,3 +296,36 @@ def test_structured_song_metadata_survives_real_socket(browse_contract, kind):
     assert song["durationMs"] == 180123
     assert song["explicitness"] == "cleaned"
     assert song["subtitle"] == "Song · Artist · Album · 3:00"
+
+
+@pytest.mark.parametrize("kind", ("apple", "apple-artist", "apple-album"))
+@pytest.mark.parametrize(
+    "fields", [("artistName",), ("collectionName",), ("artistName", "collectionName")]
+)
+@pytest.mark.parametrize("sentinel", ["NOT_IMPLEMENTED", " \tNOT_IMPLEMENTED \n"])
+def test_metadata_sentinel_is_unknown_across_real_socket(browse_contract, kind, fields, sentinel):
+    mcp, _, state, discovery, http = browse_contract
+    response = http.return_value
+    payload = json.loads(b"".join(response.iter_content(chunk_size=65536)))
+    for field in fields:
+        payload["results"][0][field] = sentinel
+    encoded = json.dumps(payload).encode()
+    response.iter_content = lambda **_kwargs: iter([encoded])
+
+    result = mcp.call_tool(
+        "content_browse", {"kind": kind, "term": "123", "limit": 1, "context": {}}
+    )
+    song = result["items"][0]
+    artist = None if "artistName" in fields else "Artist"
+    album = None if "collectionName" in fields else "Album"
+    assert song["artist"] == artist
+    assert song["album"] == album
+    assert song["subtitle"] == " · ".join(part for part in ("Song", artist, album, "3:00") if part)
+    assert song["id"] == "123"
+    assert song["url"] == "https://music.apple.com/gb/album/album/456?i=123"
+    assert song["durationMs"] == 180123
+    assert song["explicitness"] == "cleaned"
+    assert http.called
+    discovery.assert_not_called()
+    assert state.selected_room_uid == "selected-room"
+    state.save.assert_not_called()
