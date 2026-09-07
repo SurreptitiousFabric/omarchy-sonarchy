@@ -191,6 +191,44 @@ def make_controller(tmp_path):
     return controller, living, kitchen, group
 
 
+def test_nonempty_replacement_refuses_resource_present_but_unreplayable_queue(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from sonarchy_backend.domains.queue import queue_service
+
+    controller, living, _, _ = make_controller(tmp_path)
+    controller.refresh()
+    selected = SimpleNamespace(item_id="L:new", resources=[FakeResource("x-test:new")])
+    old = SimpleNamespace(item_id="Q:0", resources=[FakeResource("x-sonosapi-hls:opaque")])
+    queue = FakeSearchResult([old])
+    queue.total_matches = 1
+    living.get_queue = Mock(return_value=queue)
+    living.music_library.browse = Mock(return_value=[selected])
+    living.clear_queue = Mock()
+    living.add_to_queue = Mock(return_value=1)
+    living.add_multiple_to_queue = Mock(side_effect=RuntimeError("resource cannot be replayed"))
+    living.play_from_queue = Mock()
+
+    with pytest.raises(ValueError, match="nonempty queue"):
+        queue_service(controller).execute(
+            "queue.content.enqueue",
+            {
+                "roomUid": "R2",
+                "kind": "library",
+                "context": "",
+                "itemId": "L:new",
+                "index": 0,
+                "mode": "replace",
+            },
+        )
+
+    living.clear_queue.assert_not_called()
+    living.add_to_queue.assert_not_called()
+    living.add_multiple_to_queue.assert_not_called()
+    living.play_from_queue.assert_not_called()
+
+
 def test_refresh_builds_target_and_playback(tmp_path):
     controller, living, _, _ = make_controller(tmp_path)
     living._transport = "PLAYING"

@@ -94,3 +94,43 @@ def test_launcher_stops_before_setup_or_application_on_unsupported_runtime(
     assert result.stdout == b""
     assert b"CPython 3.14.x" in result.stderr
     assert not data.exists()
+
+
+@pytest.mark.parametrize("unsafe_path", ("plugin", "requirements", None))
+def test_backend_rejects_plugin_symlinks_before_running_guard(tmp_path, unsafe_path):
+    plugin = tmp_path / "plugin"
+    plugin.mkdir()
+    script = plugin / "sonarchy-backend.sh"
+    script.write_text((ROOT / script.name).read_text().replace("/usr/bin/python3", sys.executable))
+    requirements = plugin / "requirements.lock"
+    if unsafe_path == "requirements":
+        target = tmp_path / "requirements.lock"
+        target.write_text("")
+        requirements.symlink_to(target)
+    else:
+        requirements.write_text("")
+    marker = tmp_path / "guard-executed"
+    (plugin / "sonarchy_runtime.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).touch()\nraise SystemExit(41)\n"
+    )
+    if unsafe_path == "plugin":
+        alias = tmp_path / "plugin-link"
+        alias.symlink_to(plugin, target_is_directory=True)
+        script = alias / script.name
+    data = tmp_path / "data"
+    result = subprocess.run(  # noqa: S603 - real copied launcher, disposable guard sentinel
+        ["/bin/bash", str(script)],
+        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "XDG_DATA_HOME": str(data)},
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    assert result.returncode != 0
+    assert result.stdout == b""
+    assert not data.exists()
+    if unsafe_path is None:
+        assert marker.exists()  # Valid-path control proves the guard can actually execute.
+        assert b"CPython 3.14.x" in result.stderr
+    else:
+        assert not marker.exists()
+        assert b"Refusing to start from symbolic-link plugin files" in result.stderr
