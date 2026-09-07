@@ -66,37 +66,41 @@ The source determines which transitions are legal.
 ```mermaid
 stateDiagram-v2
     [*] --> NoTarget
-    NoTarget --> Stopped: selected target reports STOPPED
-    NoTarget --> Playing: selected target reports PLAYING
-    NoTarget --> Paused: selected target reports PAUSED_PLAYBACK
-    NoTarget --> OtherObserved: target projection is transitional or unknown
-    OtherObserved --> Stopped: later projection reports STOPPED
-    OtherObserved --> Playing: later projection reports PLAYING
-    OtherObserved --> Paused: later projection reports PAUSED_PLAYBACK
-    OtherObserved --> NoTarget: selected room disappears
-    Stopped --> Playing: play exact supported item
-    Playing --> Paused: pause supported
-    Paused --> Playing: play
-    Playing --> Stopped: stop
-    Paused --> Stopped: stop
-    Playing --> Playing: next / previous / seek / play-mode change when supported
-    Paused --> Paused: seek when supported
-    Stopped --> NoTarget: selected room disappears
-    Playing --> NoTarget: selected room disappears
-    Paused --> NoTarget: selected room disappears
+    NoTarget --> ObserveSnapshot: apply snapshot
+    Stopped --> ObserveSnapshot: apply snapshot
+    Playing --> ObserveSnapshot: apply snapshot
+    Paused --> ObserveSnapshot: apply snapshot
+    OtherObserved --> ObserveSnapshot: apply snapshot
+    ObserveSnapshot --> NoTarget: snapshot has no playback target
+    ObserveSnapshot --> Stopped: target projection is STOPPED
+    ObserveSnapshot --> Playing: target projection is PLAYING
+    ObserveSnapshot --> Paused: target projection is PAUSED_PLAYBACK
+    ObserveSnapshot --> OtherObserved: target projection is any other state
 ```
 
-Target acquisition is observation, not a stop/play/pause command. Selecting a
-different room likewise projects that coordinator's existing state without
-changing its group or transport. The command-labelled arrows above require
-separate user actions and the corresponding capability.
+Every arrow here is observation, not a device command. `ObserveSnapshot` is a
+logical mapping step, not an extra backend transport state or a visible loading
+state. The same path applies to initial acquisition, a refreshed room selection,
+and later snapshots of the current target. From any displayed state it can
+project any other state, or the same state again, without a local playback action.
+
+Selecting a different room projects that coordinator's existing state without
+changing its group or transport. If the remembered room disappears, refresh can
+select an available fallback; `NoTarget` applies only when the resulting snapshot
+has no playback target, not to every room switch or lost remembered room.
+
+User commands are separate inputs: play an exact supported item or resume,
+pause, stop, next/previous, seek and play-mode changes require their corresponding
+capabilities. A requested outcome is not an observed transition: a command may
+be rejected or leave partial state, and subsequent snapshots determine what is
+displayed. Another controller's actions can also change that projection.
 
 This is a simplified projection model, not an exhaustive device transport
 enum. `TRANSITIONING`, `UNKNOWN` and other nonsettled observations are not
 coerced to Stopped. The backend can retain last-known playback with a stale
 marker when fresh evidence is unavailable or uncertain; freshness is separate
-from the displayed transport state. Later snapshots or another controller's
-actions can update the projection without a local transport command.
+from the displayed transport state. The diagram branches on the resulting
+snapshot projection, which can be cached, not necessarily a fresh device report.
 
 ### Typical source capability matrix
 
