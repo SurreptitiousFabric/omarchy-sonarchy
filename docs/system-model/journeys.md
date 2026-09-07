@@ -71,20 +71,23 @@ flowchart LR
     G1 -- Yes --> G2
     G2 -- Yes --> B5
     G2 -- No --> B4 --> B5
-    B5 --> Q2
-    Q2 --> U2 --> Q4 --> B7 --> B5 --> Q2 --> U3
+    B5 --> Q2 --> U3
+    Q2 -- Optional explicit room change --> U2 --> Q4 --> B7 --> B5
 ```
 
 **Invariant:** room display names may change or collide; authoritative selection
 uses a stable room identity rather than silently choosing by label.
+The saved or fallback selection reaches ready without a new user action.
+Choosing another room is optional and does not itself change its playback.
 
 ---
 
 ## 2. Find and play content
 
-This generic journey covers Favorites, Sonos playlists, the local library,
-public Apple catalogue, and supported music services. Individual adapters can
-add provider-specific validation, but they do not change the trust boundary.
+The diagram covers Sonos playlists, the local library, the public Apple
+catalogue and supported music services. Lookup and validation are specific to
+the source; they are not a promise that every activation re-reads a provider.
+Favorites use the cached variant described immediately below the diagram.
 
 ```mermaid
 flowchart LR
@@ -105,8 +108,9 @@ flowchart LR
 
     subgraph Backend
         B1[Validate source, query, path, page, and limits]
-        B2[Re-read authoritative container or provider result]
-        G1{Item still exists at the claimed identity?}
+        B2[Normalize returned browse data]
+        B6[Resolve or validate the requested identity for this source]
+        G1{Source-specific lookup or validation succeeds?}
         G2{Playable in the current source and room?}
         B3[Build provider-specific safe playback request]
         G3{Home-theatre TV Autoplay conflict?}
@@ -119,7 +123,7 @@ flowchart LR
         P2[Accept or reject playback]
     end
 
-    U1 --> U2 --> Q1 --> B1 --> P1 --> B2 --> Q2 --> U3 --> Q3 --> G1
+    U1 --> U2 --> Q1 --> B1 --> P1 --> B2 --> Q2 --> U3 --> Q3 --> B6 --> G1
     G1 -- No --> Q4 --> U5
     G1 -- Yes --> G2
     G2 -- No --> Q4 --> U5
@@ -130,11 +134,22 @@ flowchart LR
     P2 -- Accepted --> B5 --> Q2 --> U4
 ```
 
-**Invariant:** QML-supplied titles, artists, URLs, and positions are not treated
-as authoritative provider objects. The backend resolves and validates the exact
-item again. Device state is not itself a measurement of audible playback or
-natural transition to the next track; physical acceptance records those
+**Invariant:** QML-supplied titles, artists, URLs and positions are not
+authoritative provider objects. The backend applies the source's actual
+contract: for example, library item/path revalidation, a fresh Global Player
+lookup, or Apple share-link validation. Device state is not itself a measurement
+of audible playback or natural transition; physical acceptance records those
 observations separately.
+
+**Favorites variant:** QML displays the cached Favorites snapshot and activation
+sends its Favorite ID to the existing backend. `play_favorite()` looks up that
+ID in `_favorite_objects`; an absent entry is rejected. Direct mode uses cached
+URI/metadata, while queue mode appends the cached item and starts it. TuneIn
+podcast mode can resolve current episode metadata from the cached podcast ID,
+but none of these modes reloads the Sonos Favorites inventory before acting.
+A Favorite changed or removed on Sonos after the last Favorites refresh is
+therefore not guaranteed to be rejected at activation. This describes existing
+cache behavior, not a new provider-revalidation safeguard.
 
 ---
 

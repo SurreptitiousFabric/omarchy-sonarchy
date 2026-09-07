@@ -66,7 +66,14 @@ The source determines which transitions are legal.
 ```mermaid
 stateDiagram-v2
     [*] --> NoTarget
-    NoTarget --> Stopped: select reachable room
+    NoTarget --> Stopped: selected target reports STOPPED
+    NoTarget --> Playing: selected target reports PLAYING
+    NoTarget --> Paused: selected target reports PAUSED_PLAYBACK
+    NoTarget --> OtherObserved: target projection is transitional or unknown
+    OtherObserved --> Stopped: later projection reports STOPPED
+    OtherObserved --> Playing: later projection reports PLAYING
+    OtherObserved --> Paused: later projection reports PAUSED_PLAYBACK
+    OtherObserved --> NoTarget: selected room disappears
     Stopped --> Playing: play exact supported item
     Playing --> Paused: pause supported
     Paused --> Playing: play
@@ -78,6 +85,18 @@ stateDiagram-v2
     Playing --> NoTarget: selected room disappears
     Paused --> NoTarget: selected room disappears
 ```
+
+Target acquisition is observation, not a stop/play/pause command. Selecting a
+different room likewise projects that coordinator's existing state without
+changing its group or transport. The command-labelled arrows above require
+separate user actions and the corresponding capability.
+
+This is a simplified projection model, not an exhaustive device transport
+enum. `TRANSITIONING`, `UNKNOWN` and other nonsettled observations are not
+coerced to Stopped. The backend can retain last-known playback with a stale
+marker when fresh evidence is unavailable or uncertain; freshness is separate
+from the displayed transport state. Later snapshots or another controller's
+actions can update the projection without a local transport command.
 
 ### Typical source capability matrix
 
@@ -141,9 +160,12 @@ stateDiagram-v2
     Error --> SourceRoot: choose another source
 ```
 
-A displayed list is not an authority grant. Before a mutation, the backend
-re-reads bounded path segments, the claimed absolute index, and the exact item
+A displayed list is not an authority grant. Hierarchical library mutations
+re-read bounded path segments, the claimed absolute index and the exact item
 identifier so an updated Sonos index cannot redirect an old click to a new item.
+Other sources follow their own lookup/validation contracts. In particular,
+Favorite activation uses a cached ID and does not re-read the Favorites
+inventory; the library guarantee must not be applied to that cached path.
 
 ## 6. Destructive-action confirmation
 

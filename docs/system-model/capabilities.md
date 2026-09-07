@@ -58,7 +58,7 @@ mindmap
 | Now | Change each room's volume or mute within the current group | Current | Exact room identity is preserved; group and room controls are different actions. |
 | Now | Change shuffle, repeat, and crossfade | Capability-dependent | Enabled only when the Sonos queue is the active transport and the option is supported. |
 | Now | Set or cancel a sleep timer | Capability-dependent | Requires a reachable selected room. |
-| Browse | Browse and play Sonos Favorites | Current | Items remain provider-owned and are revalidated before playback. |
+| Browse | Browse and play Sonos Favorites | Current | Activation looks up a cached Favorite ID. Direct/queue modes reuse cached URI, metadata or item data; the Favorites inventory is not re-read before play, so later Sonos-side changes may not yet be reflected. |
 | Browse | Create, save, play, reorder, edit, and delete Sonos playlists | Current | Destructive actions require the same focused action twice within five seconds. |
 | Browse | Browse/search the Sonos-indexed local music library and request re-indexing | Current | Categories, hierarchy, paging, and playability come from Sonos rather than a fixed universal list. |
 | Browse | Search the public Apple Music catalogue by artist, album, and song | Current | This is public catalogue data, not the user's private Apple Music library. |
@@ -100,8 +100,9 @@ These rules apply across the capability map:
 
 1. **Capability before control.** A control is rendered or enabled from backend
    evidence, not from a speaker model-name guess.
-2. **Exact identity before mutation.** Queue, playlist, library, provider, room,
-   and alarm items are revalidated before acting.
+2. **Operation-specific identity checks.** Queue, playlist, library, room and
+   alarm mutations use their declared identity checks; provider validation is
+   source-specific. Favorites check a cached ID, not a fresh Favorites inventory.
 3. **Authoritative state wins.** Bounded optimistic QML values can improve
    responsiveness, but a newer backend snapshot replaces them.
 4. **Destructive intent is explicit.** Queue clearing and playlist, alarm, or
