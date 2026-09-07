@@ -46,6 +46,8 @@ no platform pass implied by skipped host tests in generic Python CI.
   It also requires the ADR 0004 type-contract probes: actual declaration lint,
   live font-role bindings and readonly behavior, popup text existence/live
   updates/writability with drift negative controls, and the named-role prototype.
+  The [spacing-role probes](spacing-role-contract.md) also require real-import
+  reproduction, actual live scaling/override/readonly semantics and drift controls.
   A failing contract probe fails the required control stage. These isolated
   probes do not instantiate the live theme singleton or claim theme-reload acceptance.
 
