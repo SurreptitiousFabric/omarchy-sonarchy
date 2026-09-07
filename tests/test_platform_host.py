@@ -138,6 +138,39 @@ def test_bar_widget_uses_actual_focus_in_a_real_quickshell_window(tmp_path, priv
     assert "ERROR" not in output
 
 
+def test_native_keyboard_focus_scrolls_the_production_page(tmp_path, imports, private_qml_env):
+    for module in ("Commons", "Ui"):
+        (tmp_path / module).symlink_to(gate.SHELL / module, target_is_directory=True)
+    source = (gate.ROOT / "BarWidget.qml").read_text()
+    functions = [
+        _bar_function(source, name) for name in ("effectivelyUsable", "ensureFocusedVisible")
+    ]
+    # An absent observer is the original failing-before production state.
+    if "function revealActiveFocus(" in source:
+        functions.append(_bar_function(source, "revealActiveFocus"))
+    connections = re.findall(
+        r"^  Connections \{\n    target: keyCatcher.Window.window\n.*?^  \}",
+        source,
+        re.M | re.S,
+    )
+    assert len(connections) <= 1
+    fixture = (gate.ROOT / "tests/qml/bar-widget/FocusScrollProbe.qml.in").read_text()
+    fixture = fixture.replace("// PRODUCTION_FUNCTIONS", "\n".join(functions))
+    fixture = fixture.replace("// PRODUCTION_FOCUS_CONNECTION", "\n".join(connections))
+    page = (gate.ROOT / "SonarchyNowPage.qml").read_text()
+    fixture = fixture.replace("// PRODUCTION_PAGE_SCROLL", _bar_function(page, "ensureVisible"))
+    shutil.copy2(gate.ROOT / "SonarchyDropdown.qml", tmp_path / "SonarchyDropdown.qml")
+    (tmp_path / "shell.qml").write_text(fixture)
+    result = gate.run(
+        ["/usr/bin/qs", "--no-color", "-p", str(tmp_path / "shell.qml")],
+        cwd=tmp_path,
+        env={**private_qml_env, "QML_IMPORT_PATH": str(imports)},
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0 and "BAR_FOCUS_SCROLL_PASS" in output, output
+    assert "BAR_FOCUS_SCROLL_FAIL" not in output and "ERROR" not in output, output
+
+
 def test_bar_widget_components_keep_their_owner_in_the_installed_hero_loaders(
     tmp_path, private_qml_env
 ):
