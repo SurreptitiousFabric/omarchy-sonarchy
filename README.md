@@ -219,6 +219,11 @@ Sonos household. The plugin never receives their passwords or access tokens.
 
 ## Security and privacy
 
+Report suspected vulnerabilities using the
+[private reporting form](https://github.com/SurreptitiousFabric/omarchy-sonarchy/security/advisories/new)
+(GitHub sign-in required). See [reporting instructions](SECURITY.md#reporting);
+do not post sensitive details in public issues.
+
 There is no HTTP control API and nothing listens on port 8000. The persistent
 backend accepts QML commands over its private stdin pipe and a narrow MCP
 allowlist over an owner-only Unix socket. The MCP adapter adds no HTTP or LAN

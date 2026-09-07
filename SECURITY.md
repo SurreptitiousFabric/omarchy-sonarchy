@@ -181,11 +181,18 @@ speakers themselves; use this plugin only on a trusted home network.
 
 ## Reporting
 
-Use the public repository's **Security → Report a vulnerability** form so the
-report remains private. If private vulnerability reporting is unavailable,
-contact the marketplace maintainer privately before sharing details. Never put
-tokens, passwords, pairing codes, private room metadata, or raw diagnostics in
-a public issue.
+Report suspected vulnerabilities through GitHub's
+[private vulnerability reporting form](https://github.com/SurreptitiousFabric/omarchy-sonarchy/security/advisories/new).
+Sign in to GitHub, or open the repository's
+[Security page](https://github.com/SurreptitiousFabric/omarchy-sonarchy/security)
+and choose **Report a vulnerability**. Private reporting is enabled for this
+repository; the form sends the report privately to its maintainers.
+
+If the form is temporarily unavailable, wait until it is accessible before
+sending sensitive details. Public issues are not a private fallback. Never put
+exploit details, tokens, passwords, pairing codes, private room metadata, or raw
+diagnostics in a public issue.
+
 ## Local MCP threat model
 
 - A second backend fails its non-blocking process lock before controller

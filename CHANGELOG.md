@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Enable GitHub private vulnerability reporting and link its form from the
+  security policy and README; remove the unspecified marketplace-contact fallback.
 - Check browse routing, normalized requests and Apple song fields with a locked
   development-only type checker on both supported Python CI targets; keep
   independent runtime input validation and the existing wire behavior.
