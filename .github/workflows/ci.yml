@@ -57,6 +57,10 @@ jobs:
         run: |
           mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m ruff check .
           mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m ruff format --check .
+      - name: Check typed browse boundary
+        # The same locked checker runs on the exact floor and current target.
+        # Negative controls run as part of pytest, not just a green sample.
+        run: mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m mypy --config-file pyproject.toml
       - name: Run tests with branch coverage
         run: |
           mise exec "python@$SONARCHY_TEST_VERSION" -- "$SONARCHY_CI_PYTHON" -m coverage run -m pytest -q

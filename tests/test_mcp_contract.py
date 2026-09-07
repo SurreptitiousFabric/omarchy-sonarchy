@@ -313,5 +313,5 @@ def test_neutral_contract_import_boundary_is_standard_library_only():
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and node.module != "__future__"
     }
-    assert imports == {"tomllib", "dataclasses", "types"}
+    assert imports == {"tomllib", "collections", "dataclasses", "types", "typing"}
     assert not {"soco", "sonarchy_backend", "sonarchy_mcp"} & imports

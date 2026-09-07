@@ -33,3 +33,23 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "N", "BLE", "S"]
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.14"
+files = [
+  "sonarchy_mcp_contract.py",
+  "sonarchy_mcp/browse.py",
+  "sonarchy_backend/domains/browse.py",
+  "sonarchy_backend/domains/apple_browse.py",
+  "sonarchy_backend/domains/ports.py",
+]
+# Keep imported signatures, but report diagnostics only for the selected slice.
+# Unlike skip/ignore_missing_imports, this does not replace our imports with Any.
+follow_imports = "silent"
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_any_generics = true
+warn_return_any = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true

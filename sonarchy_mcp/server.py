@@ -35,9 +35,10 @@ from sonarchy_mcp_contract import (
     MCP_TOOL_PLAY_PREFLIGHT,
     MCP_TOOL_ROOM_STATE_GET,
     MCP_TOOL_ROOMS_LIST,
-    normalize_browse_storefront,
     parse_mcp_permissions,
 )
+
+from .browse import READ_KINDS, browse_arguments
 
 MAX_LINE = 64 * 1024
 MAX_REQUEST_ID_BYTES = 256
@@ -45,18 +46,6 @@ MAX_PENDING_MCP_HANDLES = 256
 UNAVAILABLE = (
     "Sonarchy is unavailable. Ensure the Omarchy Sonarchy plugin is enabled and "
     "Quickshell is running."
-)
-READ_KINDS = frozenset(
-    {
-        "queue",
-        "playlists",
-        "playlist",
-        "library",
-        "global",
-        "apple",
-        "apple-album",
-        "apple-artist",
-    }
 )
 
 
@@ -602,25 +591,11 @@ class SonarchyMcp:
                 )
             return {"revision": projected["revision"], "room": matches[0]}
         if name == MCP_TOOL_CONTENT_BROWSE:
-            kind = str(arguments["kind"])
-            if kind not in READ_KINDS:
-                raise ToolError("invalid_argument", "Unsupported content kind")
-            arguments = dict(arguments)
-            if "storefront" in arguments:
-                try:
-                    arguments["storefront"] = normalize_browse_storefront(
-                        kind, arguments["storefront"]
-                    )
-                except ValueError as exc:
-                    raise ToolError("invalid_argument", str(exc)) from exc
-            room_uid = arguments.get("roomUid", "")
-            if not isinstance(room_uid, str) or (room_uid and not room_uid.strip()):
-                raise ToolError("invalid_argument", "roomUid must be an exact room UID or empty")
-            if not room_uid and kind not in {"apple", "apple-artist", "apple-album"}:
-                raise ToolError("invalid_argument", "roomUid is required for Sonos-backed content")
-            return self._backend_call(
-                MCP_OPERATION_CONTENT_BROWSE, {**arguments, "roomUid": room_uid}
-            )
+            try:
+                browse_args = browse_arguments(arguments)
+            except ValueError as exc:
+                raise ToolError("invalid_argument", str(exc)) from exc
+            return self._backend_call(MCP_OPERATION_CONTENT_BROWSE, dict(browse_args))
         if name == MCP_TOOL_APPLE_PREFLIGHT:
             self._prepare_handle_issue()
             handle = self._new_handle()

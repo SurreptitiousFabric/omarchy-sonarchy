@@ -35,6 +35,7 @@ Run verification:
 mise exec -- python -m pytest -q
 mise exec -- python -m ruff check .
 mise exec -- python -m ruff format --check .
+mise exec -- python -m mypy --config-file pyproject.toml
 mise exec -- python -m coverage run -m pytest -q
 mise exec -- python -m coverage report
 omarchy plugin validate .
@@ -63,6 +64,12 @@ The component interaction tests run offscreen. The slider test uses the
 installed Omarchy `PanelSlider.qml` with minimal visual-only theme stubs and
 proves wheel/drag routing. The error-state test proves that only an owning
 request or explicit user dismissal can clear a correlated request error.
+
+The [checked browse pilot](docs/typed-browse.md) uses a hash-locked development-only
+Mypy on both Python CI targets. Its gate checks the selected production slice;
+pytest also checks typed consumers and deliberate production-source regressions
+using temporary shadow files. Static checking does not replace runtime validation
+of client JSON, provider data or source-specific library context.
 
 ## Dependency updates
 

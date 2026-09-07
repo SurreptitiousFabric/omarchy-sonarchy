@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Check browse routing, normalized requests and Apple song fields with a locked
+  development-only type checker on both supported Python CI targets; keep
+  independent runtime input validation and the existing wire behavior.
 - Return event-handler capacity when worker construction or startup fails;
   preserve normal request cleanup and the existing bounded listener limit.
 - Expose bounded structured artist/album, exact millisecond duration and distinct
