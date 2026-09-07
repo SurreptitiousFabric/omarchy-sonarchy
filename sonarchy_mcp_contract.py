@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Literal, NotRequired, TypedDict
 
 MCP_PERMISSION_READ = "read"
 MCP_PERMISSION_PLAYLIST_CREATE = "playlist-create"
@@ -13,7 +15,86 @@ MCP_PERMISSIONS = frozenset(
     {MCP_PERMISSION_READ, MCP_PERMISSION_PLAYLIST_CREATE, MCP_PERMISSION_PLAYLIST_PLAY}
 )
 MCP_DEFAULT_PERMISSIONS = frozenset({MCP_PERMISSION_READ})
-MCP_DISABLED_PERMISSIONS = frozenset()
+MCP_DISABLED_PERMISSIONS: frozenset[str] = frozenset()
+
+
+class BrowseWireArguments(TypedDict):
+    """MCP-validated routing; the backend still validates the opaque arguments."""
+
+    roomUid: str
+    kind: str
+    term: object
+    limit: object
+    context: object
+    storefront: NotRequired[str]
+
+
+@dataclass(frozen=True)
+class BrowseRequest:
+    """Backend-normalized scalars; context still needs source-specific validation."""
+
+    room_uid: str
+    kind: str
+    term: str
+    limit: int
+    context: object = None
+    storefront: str | None = None
+
+
+type SongExplicitness = Literal["cleaned", "explicit", "notExplicit", "unknown"]
+
+
+class AppleSongResult(TypedDict):
+    id: str
+    title: str
+    subtitle: str
+    artist: str | None
+    album: str | None
+    durationMs: int | None
+    explicitness: SongExplicitness
+    section: Literal["SONGS"]
+    media_kind: Literal["song"]
+    album_art: str
+    url: str
+    album_url: str
+    playable: Literal[True]
+    browsable: Literal[False]
+
+
+class AppleArtistResult(TypedDict):
+    id: str
+    title: str
+    subtitle: str
+    section: Literal["ARTISTS"]
+    media_kind: Literal["artist"]
+    browse_kind: Literal["apple-artist"]
+    album_art: str
+    playable: Literal[False]
+    browsable: Literal[True]
+
+
+class AppleAlbumResult(TypedDict):
+    id: str
+    title: str
+    subtitle: str
+    section: Literal["ALBUMS"]
+    media_kind: Literal["album"]
+    browse_kind: Literal["apple-album"]
+    album_art: str
+    album_url: str
+    playable: bool
+    browsable: Literal[True]
+
+
+type AppleBrowseItem = AppleSongResult | AppleArtistResult | AppleAlbumResult
+
+
+class AppleBrowseResult(TypedDict):
+    ok: Literal[True]
+    kind: Literal["apple", "apple-artist", "apple-album"]
+    items: list[AppleBrowseItem]
+    total: int
+    current_title: str
 
 
 def normalize_browse_storefront(kind: str, value: object) -> str:
@@ -97,8 +178,8 @@ class ArgumentFields:
     def allowed(self) -> frozenset[str]:
         return self.required | self.optional
 
-    def accepts(self, keys: object) -> bool:
-        received = frozenset(keys)  # type: ignore[arg-type]
+    def accepts(self, keys: Iterable[str]) -> bool:
+        received = frozenset(keys)
         return self.required <= received <= self.allowed
 
 

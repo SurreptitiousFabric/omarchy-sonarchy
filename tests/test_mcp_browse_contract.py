@@ -298,6 +298,50 @@ def test_structured_song_metadata_survives_real_socket(browse_contract, kind):
     assert song["subtitle"] == "Song · Artist · Album · 3:00"
 
 
+@pytest.mark.parametrize("duration", ["180123", True, 1.5, -1, 1 << 53])
+def test_untrusted_song_fields_are_normalized_before_typed_result_crosses_socket(
+    browse_contract, duration
+):
+    mcp, _, state, discovery, http = browse_contract
+    response = http.return_value
+    payload = json.loads(b"".join(response.iter_content(chunk_size=65536)))
+    payload["results"][0].update(
+        trackTimeMillis=duration,
+        trackExplicitness={"untrusted": "explicit"},
+        artistName=["not text"],
+    )
+    encoded = json.dumps(payload).encode()
+    response.iter_content = lambda **_kwargs: iter([encoded])
+    result = mcp.call_tool(
+        "content_browse", {"kind": "apple", "term": "song", "limit": 1, "context": {}}
+    )
+    song = result["items"][0]
+    assert song["id"] == "123"
+    assert song["durationMs"] is None
+    assert song["explicitness"] == "unknown"
+    assert song["artist"] is None
+    assert song["album"] == "Album"
+    assert song["subtitle"] == "Song · Album"
+    discovery.assert_not_called()
+    state.save.assert_not_called()
+    assert state.selected_room_uid == "selected-room"
+
+
+@pytest.mark.parametrize("limit", [None, True, "1", {}, []])
+@pytest.mark.parametrize("direct", [False, True])
+def test_runtime_limit_validation_still_rejects_before_provider(browse_contract, limit, direct):
+    mcp, _, state, discovery, http = browse_contract
+    args = {"roomUid": "", "kind": "apple", "term": "song", "limit": limit, "context": {}}
+    with pytest.raises(ToolError, match="finite number"):
+        if direct:
+            mcp.backend.call("content.browse", args)
+        else:
+            mcp.call_tool("content_browse", args)
+    http.assert_not_called()
+    discovery.assert_not_called()
+    state.save.assert_not_called()
+
+
 @pytest.mark.parametrize("kind", ("apple", "apple-artist", "apple-album"))
 @pytest.mark.parametrize(
     "fields", [("artistName",), ("collectionName",), ("artistName", "collectionName")]

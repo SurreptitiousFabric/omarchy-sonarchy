@@ -75,7 +75,7 @@ class BrowsePort(Protocol):
         kind: str,
         term: str,
         limit: int,
-        context: dict[str, Any] | None = None,
+        context: object = None,
         storefront: str | None = None,
     ) -> dict[str, Any]: ...
 

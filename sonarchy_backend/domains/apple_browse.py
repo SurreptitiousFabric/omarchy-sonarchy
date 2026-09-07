@@ -1,8 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any
+
+from sonarchy_mcp_contract import (
+    AppleAlbumResult,
+    AppleArtistResult,
+    AppleBrowseItem,
+    AppleBrowseResult,
+    AppleSongResult,
+    SongExplicitness,
+)
 
 from ..apple_catalog import (
     apple_artwork_url,
@@ -17,15 +27,12 @@ from .common import clean
 MAX_EXACT_DURATION_MS = (1 << 53) - 1
 
 
-def _duration(milliseconds: Any) -> str:
-    try:
-        seconds = max(0, int(milliseconds) // 1000)
-    except TypeError, ValueError:
-        seconds = 0
+def _duration(milliseconds: int | None) -> str:
+    seconds = max(0, milliseconds // 1000) if milliseconds is not None else 0
     return f"{seconds // 60}:{seconds % 60:02d}" if seconds else ""
 
 
-def _artist(item: dict[str, Any]) -> dict[str, Any] | None:
+def _artist(item: Mapping[str, object]) -> AppleArtistResult | None:
     identifier = clean(item.get("artistId"))
     title = clean(item.get("artistName"))
     if not identifier or not title:
@@ -43,7 +50,7 @@ def _artist(item: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _album(item: dict[str, Any]) -> dict[str, Any] | None:
+def _album(item: Mapping[str, object]) -> AppleAlbumResult | None:
     identifier = clean(item.get("collectionId"))
     title = clean(item.get("collectionName"))
     url = public_apple_album_url(item.get("collectionViewUrl"), identifier)
@@ -65,7 +72,18 @@ def _album(item: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _track(item: dict[str, Any]) -> dict[str, Any] | None:
+def _explicitness(value: object) -> SongExplicitness:
+    if isinstance(value, str):
+        if value == "cleaned":
+            return "cleaned"
+        if value == "explicit":
+            return "explicit"
+        if value == "notExplicit":
+            return "notExplicit"
+    return "unknown"
+
+
+def _track(item: Mapping[str, object]) -> AppleSongResult | None:
     identifier = clean(item.get("trackId"))
     title = clean(item.get("trackName"))
     url = public_apple_music_url(item.get("trackViewUrl"))
@@ -79,13 +97,6 @@ def _track(item: dict[str, Any]) -> dict[str, Any] | None:
         if type(raw_duration) is int and 0 <= raw_duration <= MAX_EXACT_DURATION_MS
         else None
     )
-    raw_explicitness = item.get("trackExplicitness")
-    explicitness = (
-        raw_explicitness
-        if isinstance(raw_explicitness, str)
-        and raw_explicitness in {"cleaned", "explicit", "notExplicit"}
-        else "unknown"
-    )
     return {
         "id": identifier,
         "title": title,
@@ -95,7 +106,7 @@ def _track(item: dict[str, Any]) -> dict[str, Any] | None:
         "artist": artist,
         "album": album,
         "durationMs": duration_ms,
-        "explicitness": explicitness,
+        "explicitness": _explicitness(item.get("trackExplicitness")),
         "section": "SONGS",
         "media_kind": "song",
         "album_art": apple_artwork_url(item.get("artworkUrl100")),
@@ -108,8 +119,8 @@ def _track(item: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _unique(items: list[dict[str, Any] | None]) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
+def _unique(items: Iterable[AppleBrowseItem | None]) -> list[AppleBrowseItem]:
+    result: list[AppleBrowseItem] = []
     seen: set[tuple[str, str]] = set()
     for item in items:
         if item is None:
@@ -134,7 +145,7 @@ def search_apple(
     *,
     request_get: Callable[..., Any] | None = None,
     country: str | None = None,
-) -> dict[str, Any]:
+) -> AppleBrowseResult:
     args: dict[str, Any] = {"country": country}
     if request_get is not None:
         args["request_get"] = request_get
@@ -151,11 +162,7 @@ def search_apple(
         if not entity_limit:
             continue
         kinds.append(entity)
-        calls.append(
-            lambda entity=entity, entity_limit=entity_limit: apple_search_results(
-                term, entity_limit, entity=entity, **args
-            )
-        )
+        calls.append(partial(apple_search_results, term, entity_limit, entity=entity, **args))
     grouped = dict(zip(kinds, _parallel(calls), strict=True))
     artists = grouped.get("musicArtist", [])
     albums = grouped.get("album", [])
@@ -180,7 +187,7 @@ def browse_apple_artist(
     *,
     request_get: Callable[..., Any] | None = None,
     country: str | None = None,
-) -> dict[str, Any]:
+) -> AppleBrowseResult:
     args: dict[str, Any] = {"country": country}
     if request_get is not None:
         args["request_get"] = request_get
@@ -219,7 +226,7 @@ def browse_apple_album(
     *,
     request_get: Callable[..., Any] | None = None,
     country: str | None = None,
-) -> dict[str, Any]:
+) -> AppleBrowseResult:
     args: dict[str, Any] = {"country": country}
     if request_get is not None:
         args["request_get"] = request_get

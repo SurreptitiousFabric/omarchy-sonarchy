@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import ipaddress
+from functools import partial
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from sonarchy_mcp_contract import (
     MCP_BACKEND_FIELDS,
     MCP_OPERATION_CONTENT_BROWSE,
+    BrowseRequest,
     normalize_browse_storefront,
 )
 
@@ -131,7 +133,7 @@ def favorites_content(coordinator: Any, limit: int) -> dict[str, Any]:
     coordinator_ip = clean(getattr(coordinator, "ip_address", ""))
     items = []
     for item in result:
-        playable = bool(safe_call(lambda item=item: favorite_reference(item), None))
+        playable = bool(safe_call(partial(favorite_reference, item), None))
         items.append(
             {
                 "id": clean(item_attr(item, "item_id")),
@@ -163,7 +165,7 @@ def library_content(
     coordinator: Any,
     term: str,
     limit: int,
-    context: dict[str, Any] | None = None,
+    context: object = None,
 ) -> dict[str, Any]:
     query = validate_identifier(term, "search text", 120) if clean(term) else ""
     library = coordinator.music_library
@@ -279,7 +281,7 @@ def browse_content(
     kind: str,
     term: str,
     limit: int,
-    context: dict[str, Any] | None = None,
+    context: object = None,
     storefront: str | None = None,
 ) -> dict[str, Any]:
     if kind not in CONTENT_KINDS:
@@ -308,24 +310,40 @@ def browse_content(
     return global_content(coordinator, term, bounded_limit)
 
 
+def parse_browse_request(args: dict[str, object]) -> BrowseRequest:
+    """Keep runtime validation before handing normalized scalars to BrowsePort."""
+    if not MCP_BACKEND_FIELDS[MCP_OPERATION_CONTENT_BROWSE].accepts(args):
+        raise ValueError("Content browse contains unsupported or missing arguments")
+    room_uid = args["roomUid"]
+    if not isinstance(room_uid, str) or (room_uid and not room_uid.strip()):
+        raise ValueError("roomUid must be an exact room UID or empty")
+    storefront = (
+        normalize_browse_storefront(string_arg(args, "kind"), args["storefront"])
+        if "storefront" in args
+        else None
+    )
+    return BrowseRequest(
+        room_uid=room_uid,
+        kind=string_arg(args, "kind"),
+        term=str(args.get("term", "")),
+        limit=int(number_arg(args, "limit")),
+        context=args.get("context"),
+        storefront=storefront,
+    )
+
+
 def browse_service(backend: BrowsePort) -> DomainService:
     def browse(args: dict[str, Any]) -> dict[str, Any]:
-        if not MCP_BACKEND_FIELDS[MCP_OPERATION_CONTENT_BROWSE].accepts(args):
-            raise ValueError("Content browse contains unsupported or missing arguments")
-        room_uid = args["roomUid"]
-        if not isinstance(room_uid, str) or (room_uid and not room_uid.strip()):
-            raise ValueError("roomUid must be an exact room UID or empty")
-        options = {}
-        if "storefront" in args:
-            options["storefront"] = normalize_browse_storefront(
-                string_arg(args, "kind"), args["storefront"]
-            )
+        request = parse_browse_request(args)
+        options: dict[str, str] = {}
+        if request.storefront is not None:
+            options["storefront"] = request.storefront
         return backend.browse_content(
-            room_uid,
-            string_arg(args, "kind"),
-            str(args.get("term", "")),
-            int(number_arg(args, "limit")),
-            args.get("context"),
+            request.room_uid,
+            request.kind,
+            request.term,
+            request.limit,
+            request.context,
             **options,
         )
 
