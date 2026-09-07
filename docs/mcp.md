@@ -91,6 +91,15 @@ only to stderr and never include the raw input.
   as session state. Non-Apple kinds reject this field. This selects a public
   catalog region, not an Apple account region, and does not change desktop
   configuration or guarantee availability of an individual recording.
+  Song rows retain their existing IDs, URLs and display subtitle, and add
+  `artist` and `album` (nullable, control-free text bounded to 512 UTF-8 bytes,
+  with an ellipsis on truncation), `durationMs` (exact nonnegative integer up to
+  the JSON/JavaScript safe-integer limit, otherwise `null`), and `explicitness`
+  (`cleaned`, `explicit`, `notExplicit`, or `unknown`). Missing or malformed
+  metadata is not inferred from titles or the subtitle. A whitespace-trimmed
+  `NOT_IMPLEMENTED` artist or album is `null`, not literal metadata or subtitle
+  text. These are public
+  provider claims, not independent verification of a recording's content.
 - `apple_playlist_preflight`: exact 1–25 track review and opaque `planHandle`.
 - `sonos_playlist_play_preflight`: read-only review of one exact existing
   `SQ:<id>`, exact room UID, complete bounded playlist and queue state, and

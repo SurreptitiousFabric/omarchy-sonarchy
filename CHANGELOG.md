@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Expose bounded structured artist/album, exact millisecond duration and distinct
+  explicitness classifications for Apple song browse results; retain unknown
+  values and the existing QML subtitle and action identities.
 - Keep the navigation keyboard cursor aligned with the selected value when options
   are replaced. If that value disappears, target the first option (or none for
   an empty list) without changing the selection or emitting an action.

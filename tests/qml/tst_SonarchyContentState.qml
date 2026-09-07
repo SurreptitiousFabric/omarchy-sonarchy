@@ -244,4 +244,20 @@ TestCase {
     compare(subject.openItem({ id: "30", browsable: false, playable: true }), false)
     compare(subject.openItem({ id: "40", browsable: true, browse_kind: "bad" }), false)
   }
+
+  function test_structured_song_fields_preserve_existing_playable_row_contract() {
+    subject.kind = "apple"
+    var song = {
+      id: "123", title: "Song", subtitle: "Song · Artist · Album · 3:00",
+      url: "https://music.apple.com/gb/album/album/456?i=123",
+      media_kind: "song", playable: true, browsable: false,
+      artist: "Artist", album: "Album", durationMs: 180123, explicitness: "cleaned"
+    }
+    subject.items = [song]
+    compare(subject.items[0].title, "Song")
+    compare(subject.items[0].subtitle, "Song · Artist · Album · 3:00")
+    compare(subject.openItem(song), false) // Remains a play action, not navigation.
+    compare(fakeLive.calls.length, 0)
+    compare(subject.kind, "apple")
+  }
 }
