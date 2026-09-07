@@ -51,8 +51,16 @@ The required `mise run validate-platform` job includes this module alongside
 The targeted command above is for development, not a substitute for the full
 clean-candidate platform gate.
 
-The first probe lints real installed modules without instantiating them.
-The runtime probe extracts the actual font-role declaration expressions from
+The first probe lints real installed modules without instantiating them, then
+checks popup text at runtime using the actual `Color.qml` popup declaration and
+pure `pick` lookup helper. Deterministic palette/dictionary inputs verify that
+text exists, follows fallback and theme-value changes, and remains writable.
+The unrelated composed background/border colors use fixture inputs; this does
+not test their composition algorithms. Removed/renamed text, readonly text and
+a frozen text value must fail the same probe, even when the static diagnostic
+categories are unchanged. The live Color singleton is never instantiated.
+
+The font runtime probe extracts the actual font-role declaration expressions from
 installed Style.qml and supplies only deterministic underlying theme inputs.
 It verifies existing roles, a genuinely absent property, live family/size
 updates and readonly assignment rejection. It deliberately does not instantiate

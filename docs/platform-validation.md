@@ -44,7 +44,8 @@ no platform pass implied by skipped host tests in generic Python CI.
   The control subprocess clears inherited `PYTEST_ADDOPTS` so host collection
   or selection preferences cannot skip these required checks.
   It also requires the ADR 0004 type-contract probes: actual declaration lint,
-  live font-role bindings and readonly behavior, and the named-role prototype.
+  live font-role bindings and readonly behavior, popup text existence/live
+  updates/writability with drift negative controls, and the named-role prototype.
   A failing contract probe fails the required control stage. These isolated
   probes do not instantiate the live theme singleton or claim theme-reload acceptance.
 
