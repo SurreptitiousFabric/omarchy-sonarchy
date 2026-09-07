@@ -140,7 +140,7 @@ def test_apple_results_offer_a_keyboard_reachable_whole_album_action():
 
     assert "function playAppleAlbum(item)" in service
     assert "live.playAppleAlbum(" in service
-    assert "root.service.playAppleAlbum(modelData)" in browse_page
+    assert "root.service.playAppleAlbum(resultCard.modelData)" in browse_page
     assert 'text: "Album"' in browse_page
     assert "focusable: true" in browse_page
 
@@ -229,7 +229,7 @@ def test_queue_insertion_controls_include_confirmed_replace():
     service = service_implementation()
 
     for mode in ("play", "next", "end", "replace"):
-        assert f'root.service.enqueueContent(modelData, "{mode}")' in browse_page
+        assert f'root.service.enqueueContent(resultCard.modelData, "{mode}")' in browse_page
     assert 'readonly property string replaceKey: "replace:" + rowKey' in browse_page
     assert '"Press again to play if queue empty"' in browse_page
     assert "root.arm(resultCard.replaceKey)" in browse_page

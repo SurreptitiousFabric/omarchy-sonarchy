@@ -4,3 +4,5 @@ OpticalGlyph 1.0 OpticalGlyph.qml
 BorderSurface 1.0 BorderSurface.qml
 Button 1.0 Button.qml
 PanelSectionHeader 1.0 PanelSectionHeader.qml
+Dropdown 1.0 Dropdown.qml
+TextField 1.0 TextField.qml

@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls as QQC
 import qs.Commons
@@ -5,6 +7,10 @@ import qs.Ui
 
 Item {
   id: root
+
+  component QueueRow: BorderSurface {
+    required property var modelData
+  }
 
   property var service: null
   property var device: null
@@ -66,7 +72,7 @@ Item {
 
   function dropItemAt(item, contentY) {
     for (var index = 0; index < queueRepeater.count; index++) {
-      var target = queueRepeater.itemAt(index)
+      var target = queueRepeater.itemAt(index) as QueueRow
       if (!target || String(target.modelData.id) === String(item.id)) continue
       var targetTop = target.mapToItem(queueColumn, 0, 0).y
       if (contentY >= targetTop && contentY <= targetTop + target.height) {
@@ -175,9 +181,8 @@ Item {
           model: root.service && root.service.contentKind === "queue"
             ? root.service.contentItems : []
 
-          delegate: BorderSurface {
+          delegate: QueueRow {
             id: queueCard
-            required property var modelData
             objectName: "queueCard:" + String(modelData.index)
             readonly property string rowKey: "queue:" + String(modelData.index)
               + ":" + String(modelData.id)
@@ -196,13 +201,13 @@ Item {
             Shortcut {
               sequence: "Alt+Up"
               enabled: queueCard.rowFocused && moveUpButton.enabled
-              onActivated: root.moveBy(modelData, -1)
+              onActivated: root.moveBy(queueCard.modelData, -1)
             }
 
             Shortcut {
               sequence: "Alt+Down"
               enabled: queueCard.rowFocused && moveDownButton.enabled
-              onActivated: root.moveBy(modelData, 1)
+              onActivated: root.moveBy(queueCard.modelData, 1)
             }
 
             Rectangle {
@@ -210,7 +215,7 @@ Item {
               anchors.top: parent.top
               anchors.bottom: parent.bottom
               width: Style.space(3)
-              color: modelData.current === true ? Color.accent : "transparent"
+              color: queueCard.modelData.current === true ? Color.accent : "transparent"
 
               Behavior on color { ColorAnimation { duration: 140 } }
             }
@@ -242,7 +247,7 @@ Item {
               Image {
                 id: queueArtwork
                 anchors.fill: parent
-                source: String(modelData.album_art || "")
+                source: String(queueCard.modelData.album_art || "")
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
                 cache: true
@@ -286,7 +291,7 @@ Item {
 
                 MouseArea {
                   id: dragArea
-                  objectName: "queueDragHandle:" + String(modelData.index)
+                  objectName: "queueDragHandle:" + String(queueCard.modelData.index)
                   property bool dragging: false
                   property real pressContentY: 0
                   property real currentContentY: 0
@@ -324,29 +329,29 @@ Item {
 
               Button {
                 id: moveUpButton
-                objectName: "queueMoveUp:" + String(modelData.index)
+                objectName: "queueMoveUp:" + String(queueCard.modelData.index)
                 iconText: "󰁝"
                 tooltipText: "Move up (Alt+Up)"
                 foreground: root.foreground
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
-                  && root.can("queue.item.move") && Number(modelData.index) > 0
+                  && root.can("queue.item.move") && Number(queueCard.modelData.index) > 0
                 opacity: enabled ? 1.0 : 0.3
-                onClicked: root.moveBy(modelData, -1)
+                onClicked: root.moveBy(queueCard.modelData, -1)
               }
 
               Button {
                 id: moveDownButton
-                objectName: "queueMoveDown:" + String(modelData.index)
+                objectName: "queueMoveDown:" + String(queueCard.modelData.index)
                 iconText: "󰁅"
                 tooltipText: "Move down (Alt+Down)"
                 foreground: root.foreground
                 focusable: true
                 enabled: root.service && !root.service.actionBusy
-                  && root.can("queue.item.move") && Number(modelData.index) + 1
+                  && root.can("queue.item.move") && Number(queueCard.modelData.index) + 1
                     < root.service.contentItems.length
                 opacity: enabled ? 1.0 : 0.3
-                onClicked: root.moveBy(modelData, 1)
+                onClicked: root.moveBy(queueCard.modelData, 1)
               }
 
               Button {
@@ -355,11 +360,11 @@ Item {
                 tooltipText: "Play now"
                 foreground: root.foreground
                 focusable: true
-                selected: modelData.current === true
+                selected: queueCard.modelData.current === true
                 enabled: root.service && !root.service.actionBusy
-                  && root.can("queue.item.play") && modelData.playable !== false
+                  && root.can("queue.item.play") && queueCard.modelData.playable !== false
                 opacity: enabled ? 1.0 : 0.35
-                onClicked: root.service.playContent(modelData)
+                onClicked: root.service.playContent(queueCard.modelData)
               }
 
               Button {
@@ -374,7 +379,7 @@ Item {
                   && root.can("queue.item.remove")
                 onClicked: if (root.arm(queueCard.rowKey))
                   root.service.removeQueueItem(
-                    Number(modelData.index), String(modelData.id))
+                    Number(queueCard.modelData.index), String(queueCard.modelData.id))
               }
             }
 
@@ -388,18 +393,18 @@ Item {
 
               Text {
                 width: parent.width
-                text: String(modelData.title || "Untitled")
+                text: String(queueCard.modelData.title || "Untitled")
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
-                font.bold: modelData.current === true
+                font.bold: queueCard.modelData.current === true
                 elide: Text.ElideRight
               }
 
               Text {
                 width: parent.width
                 visible: text !== ""
-                text: String(modelData.subtitle || "")
+                text: String(queueCard.modelData.subtitle || "")
                 color: Qt.darker(root.foreground, 1.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption

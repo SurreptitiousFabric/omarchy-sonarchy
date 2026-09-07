@@ -188,3 +188,33 @@ def test_bar_widget_scroll_dispatch_reaches_only_the_active_page(tmp_path, priva
     )
     result = gate.run([gate.RUNNER, "-input", str(probe)], cwd=tmp_path, env=private_qml_env)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("page", ["SonarchyBrowsePage.qml", "SonarchyQueuePage.qml"])
+def test_content_page_delegate_bindings_are_statically_resolved(imports, page):
+    result = gate.run(
+        [
+            gate.LINTER,
+            "--ignore-settings",
+            "-W",
+            "0",
+            "--import",
+            "error",
+            "-I",
+            str(imports),
+            "--json",
+            "-",
+            page,
+        ]
+    )
+    warnings = json.loads(result.stdout)["files"][0]["warnings"]
+    assert not [warning for warning in warnings if warning["id"] == "unqualified"]
+    assert not [warning for warning in warnings if 'Member "modelData"' in warning["message"]]
+    # Anonymous platform theme properties remain failed in the complete gate.
+
+
+def test_content_pages_do_not_emit_runtime_binding_warnings():
+    result = gate.run(["/bin/bash", str(gate.ROOT / "tests/qml/run-component-tests.sh")])
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert not re.search(r"Sonarchy(?:Browse|Queue)Page\.qml:\d+.*(?:Unable|Error)", output), output

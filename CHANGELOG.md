@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Resolve Browse/Queue delegate bindings and queue-row types while preserving
+  action identities; keep empty library metadata from emitting visibility warnings.
 - Activate the actual focused popup control before considering the cached
   keyboard target; keep hero bindings attached to their owning bar widget.
 - Enable GitHub private vulnerability reporting and link its form from the
