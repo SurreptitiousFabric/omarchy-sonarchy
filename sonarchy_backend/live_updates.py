@@ -47,13 +47,18 @@ def harden_soco_event_listener() -> None:
             if not self._event_slots.acquire(blocking=False):
                 self.shutdown_request(request)
                 return
-            worker = threading.Thread(
-                target=self._bounded_request,
-                args=(request, client_address),
-                daemon=True,
-                name="sonos-event",
-            )
-            worker.start()
+            try:
+                worker = threading.Thread(
+                    target=self._bounded_request,
+                    args=(request, client_address),
+                    daemon=True,
+                    name="sonos-event",
+                )
+                worker.start()
+            except Exception:
+                # No worker owns the slot yet; socketserver still owns request cleanup.
+                self._event_slots.release()
+                raise
 
         def _bounded_request(self, request: socket.socket, client_address: Any) -> None:
             try:
