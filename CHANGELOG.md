@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Activate the actual focused popup control before considering the cached
+  keyboard target; keep hero bindings attached to their owning bar widget.
 - Enable GitHub private vulnerability reporting and link its form from the
   security policy and README; remove the unspecified marketplace-contact fallback.
 - Check browse routing, normalized requests and Apple song fields with a locked

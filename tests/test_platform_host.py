@@ -1,7 +1,10 @@
 """Real-tool negative controls, required by the explicit release-host gate."""
 
+import json
 import os
+import re
 import shutil
+import tempfile
 
 import pytest
 
@@ -58,3 +61,130 @@ def test_failing_component_is_not_success(tmp_path):
         "function test_failure() { verify(false) } }\n"
     )
     assert gate.components(tmp_path)["status"] == "failed"
+
+
+def _bar_function(source, name):
+    matches = re.findall(rf"^  function {name}\([^\n]*\) \{{\n.*?^  \}}", source, re.M | re.S)
+    assert len(matches) == 1, f"Expected one production {name} function"
+    return matches[0]
+
+
+@pytest.fixture
+def private_qml_env(tmp_path):
+    # Keep Quickshell's IPC socket below the Unix socket path-length limit.
+    with tempfile.TemporaryDirectory(prefix="sonarchy-qml-", dir="/tmp") as runtime:
+        yield {
+            "PATH": os.defpath,
+            "HOME": str(tmp_path),
+            "XDG_RUNTIME_DIR": runtime,
+            "XDG_CONFIG_HOME": str(tmp_path / "config"),
+            "XDG_CACHE_HOME": str(tmp_path / "cache"),
+            "XDG_DATA_HOME": str(tmp_path / "data"),
+            "QT_QPA_PLATFORM": "offscreen",
+            "QT_QUICK_BACKEND": "software",
+            "QT_STYLE_OVERRIDE": "Fusion",
+            "QT_QUICK_CONTROLS_STYLE": "Basic",
+        }
+
+
+def test_bar_widget_local_bindings_and_dispatch_are_statically_resolved(imports):
+    result = gate.run(
+        [
+            gate.LINTER,
+            "--ignore-settings",
+            "-W",
+            "0",
+            "--import",
+            "error",
+            "-I",
+            str(imports),
+            "--json",
+            "-",
+            "BarWidget.qml",
+        ],
+    )
+    warnings = json.loads(result.stdout)["files"][0]["warnings"]
+    assert not [warning for warning in warnings if warning["id"] == "unqualified"]
+    assert not [
+        warning
+        for warning in warnings
+        if any(member in warning["message"] for member in ("activeFocusItem", "ensureVisible"))
+    ]
+    # This focused assertion does not permit remaining theme/host diagnostics
+    # in the complete gate, which still requires every root file to pass.
+
+
+def test_bar_widget_uses_actual_focus_in_a_real_quickshell_window(tmp_path, private_qml_env):
+    source = (gate.ROOT / "BarWidget.qml").read_text()
+    functions = "\n".join(
+        _bar_function(source, name)
+        for name in (
+            "activeControl",
+            "keyboardFocusable",
+            "activateControlOrOwner",
+            "activateFocusedControl",
+        )
+    )
+    fixture = (gate.ROOT / "tests/qml/bar-widget/FocusProbe.qml.in").read_text()
+    (tmp_path / "shell.qml").write_text(fixture.replace("// PRODUCTION_FUNCTIONS", functions))
+    result = gate.run(
+        ["/usr/bin/qs", "--no-color", "-p", str(tmp_path / "shell.qml")],
+        cwd=tmp_path,
+        env=private_qml_env,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0 and "BAR_FOCUS_PASS" in output, output
+    assert "BAR_FOCUS_FAIL" not in output
+    assert "ERROR" not in output
+
+
+def test_bar_widget_components_keep_their_owner_in_the_installed_hero_loaders(
+    tmp_path, private_qml_env
+):
+    source = (gate.ROOT / "BarWidget.qml").read_text()
+    components = []
+    for name in ("heroIconComponent", "refreshControlComponent"):
+        matches = re.findall(rf"^  Component \{{\n    id: {name}\n.*?^  \}}", source, re.M | re.S)
+        assert len(matches) == 1
+        components.append(matches[0])
+    pragmas = "\n".join(line for line in source.splitlines() if line.startswith("pragma "))
+    template = (gate.ROOT / "tests/qml/bar-widget/Owner.qml.in").read_text()
+    (tmp_path / "Owner.qml").write_text(
+        pragmas
+        + "\n"
+        + template.replace("// PRODUCTION_COMPONENTS", "\n".join(components)).replace(
+            "// PRODUCTION_REFRESH", _bar_function(source, "refreshPanel")
+        )
+    )
+    shutil.copy2(gate.ROOT / "tests/qml/bar-widget/tst_Hero.qml", tmp_path / "tst_Hero.qml")
+    imports = tmp_path / "imports"
+    shutil.copytree(gate.ROOT / "tests/qml/imports", imports)
+    for name in ("PanelHero", "OpticalGlyph"):
+        (imports / f"qs/Ui/{name}.qml").symlink_to(gate.SHELL / f"Ui/{name}.qml")
+    qmldir = imports / "qs/Ui/qmldir"
+    qmldir.write_text(qmldir.read_text() + "\nPanelHero 1.0 PanelHero.qml\n")
+    style = imports / "qs/Commons/Style.qml"
+    style.write_text(
+        style.read_text().replace(
+            'property string family: "monospace"',
+            'property string family: "monospace"\n'
+            "    property int display: 24\n    property int title: 18",
+        )
+    )
+    result = gate.run(
+        [gate.RUNNER, "-input", str(tmp_path / "tst_Hero.qml"), "-import", str(imports)],
+        cwd=tmp_path,
+        env=private_qml_env,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_bar_widget_scroll_dispatch_reaches_only_the_active_page(tmp_path, private_qml_env):
+    source = (gate.ROOT / "BarWidget.qml").read_text()
+    fixture = (gate.ROOT / "tests/qml/bar-widget/tst_Dispatch.qml.in").read_text()
+    probe = tmp_path / "tst_Dispatch.qml"
+    probe.write_text(
+        fixture.replace("// PRODUCTION_DISPATCH", _bar_function(source, "ensureFocusedVisible"))
+    )
+    result = gate.run([gate.RUNNER, "-input", str(probe)], cwd=tmp_path, env=private_qml_env)
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -394,7 +394,7 @@ def test_queue_is_a_dedicated_capability_driven_keyboard_page():
     assert 'readonly property bool currentPage: root.activePage === "queue"' in widget
     assert '{ value: "queue", label: "Queue"' in widget
     assert 'else if (key === "3") root.activePage = "queue"' in widget
-    assert 'activePage === "queue" ? queuePage' in widget
+    assert 'else if (activePage === "queue") queuePage.ensureVisible(item)' in widget
     assert 'else if (activePage === "queue") service.loadContent("queue", "")' in widget
     assert 'else if (key === "r") root.refreshPanel()' in widget
     assert '{ value: "queue", label: "Current queue" }' not in browse_page

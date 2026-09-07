@@ -1,0 +1,43 @@
+import QtQuick
+import QtTest
+
+Item {
+  id: root
+  property string activePage: "now"
+
+  // PRODUCTION_DISPATCH
+
+  component PageProbe: Item {
+    property int calls: 0
+    property Item target: null
+    function ensureVisible(item) { calls += 1; target = item }
+  }
+  PageProbe { id: nowPage }
+  PageProbe { id: browsePage }
+  PageProbe { id: queuePage }
+  PageProbe { id: roomsPage }
+  PageProbe { id: soundPage }
+  PageProbe { id: systemPage }
+  Item { id: focusedItem }
+
+  TestCase {
+    name: "BarWidgetScrollDispatch"
+    function test_each_page_and_default() {
+      var names = ["now", "browse", "queue", "rooms", "sound", "system", "unknown"]
+      var pages = [nowPage, browsePage, queuePage, roomsPage, soundPage, systemPage]
+      for (var i = 0; i < names.length; i++) {
+        for (var j = 0; j < pages.length; j++) {
+          pages[j].calls = 0
+          pages[j].target = null
+        }
+        root.activePage = names[i]
+        root.ensureFocusedVisible(focusedItem)
+        var expected = i < pages.length ? i : 0
+        for (var j = 0; j < pages.length; j++) {
+          compare(pages[j].calls, j === expected ? 1 : 0, names[i])
+          compare(pages[j].target, j === expected ? focusedItem : null, names[i])
+        }
+      }
+    }
+  }
+}
