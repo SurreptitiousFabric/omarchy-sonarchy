@@ -279,6 +279,25 @@ Item {
     assert "Binding loop" not in output and "WARN qml:" not in output, output
 
 
+def test_room_volume_row_fits_actual_host_controls(tmp_path, imports, private_qml_env):
+    for module in ("Commons", "Ui"):
+        (tmp_path / module).symlink_to(gate.SHELL / module, target_is_directory=True)
+    for name in ("SonarchyRoomVolumeRow", "SonarchySlider"):
+        shutil.copy2(gate.ROOT / f"{name}.qml", tmp_path / f"{name}.qml")
+    shutil.copy2(
+        gate.ROOT / "tests/qml/bar-widget/RoomVolumeLayoutProbe.qml.in", tmp_path / "shell.qml"
+    )
+    result = gate.run(
+        ["/usr/bin/qs", "--no-color", "-p", str(tmp_path / "shell.qml")],
+        cwd=tmp_path,
+        env={**private_qml_env, "QML_IMPORT_PATH": str(imports)},
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0 and "ROOM_VOLUME_LAYOUT_PASS" in output, output
+    assert "ROOM_VOLUME_LAYOUT_FAIL" not in output and "ERROR" not in output, output
+    assert "Binding loop" not in output and "WARN qml:" not in output, output
+
+
 @pytest.mark.parametrize("page", ["SonarchyBrowsePage.qml", "SonarchyQueuePage.qml"])
 def test_content_page_delegate_bindings_are_statically_resolved(imports, page):
     result = gate.run(

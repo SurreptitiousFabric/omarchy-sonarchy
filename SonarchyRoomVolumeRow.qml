@@ -17,11 +17,14 @@ Row {
     ? Number(room.room_volume || 0) : Number(room && room.volume || 0)
   readonly property bool roomMuted: room && room.room_muted !== undefined
     ? room.room_muted === true : room && room.muted === true
+  readonly property real flexibleWidth: Math.max(0, width - decreaseButton.width
+    - increaseButton.width - muteButton.width - spacing * 4)
 
   spacing: Style.space(6)
 
   Text {
-    width: Style.space(100)
+    id: roomName
+    width: Math.min(Style.space(100), Math.max(0, root.flexibleWidth - Style.space(70)))
     anchors.verticalCenter: parent.verticalCenter
     text: String(root.room && root.room.name || "Sonos")
     color: root.foreground
@@ -31,6 +34,7 @@ Row {
   }
 
   Button {
+    id: decreaseButton
     anchors.verticalCenter: parent.verticalCenter
     text: "−"
     foreground: root.foreground
@@ -45,7 +49,7 @@ Row {
     scrollTarget: root.scrollTarget
     bar: root.bar
     anchors.verticalCenter: parent.verticalCenter
-    width: Math.max(Style.space(70), root.width - Style.space(228))
+    width: Math.max(0, root.flexibleWidth - roomName.width)
     minimum: 0
     maximum: 100
     step: Math.max(1, root.volumeStep)
@@ -60,6 +64,7 @@ Row {
   }
 
   Button {
+    id: increaseButton
     anchors.verticalCenter: parent.verticalCenter
     text: "+"
     foreground: root.foreground
@@ -71,6 +76,7 @@ Row {
   }
 
   Button {
+    id: muteButton
     anchors.verticalCenter: parent.verticalCenter
     iconText: root.roomMuted ? "󰝟" : "󰓄"
     tooltipText: root.roomMuted ? "Unmute room" : "Mute room"

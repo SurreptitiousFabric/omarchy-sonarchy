@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fit grouped-room volume controls at narrow popup sizes using their actual
+  button widths, with the room label and slider sharing the remaining space.
 - Scroll page controls into view when native Tab/Shift+Tab traversal changes
   focus, while preserving editor ownership and fixed header/navigation positions.
 - Keep page navigation and messages inside the fitted popup at supported narrow

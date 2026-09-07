@@ -54,6 +54,10 @@ no platform pass implied by skipped host tests in generic Python CI.
   deterministic page body. It checks clipped control recovery, dropdown child
   and editor ownership, and fixed controls without creating a backend or
   sending speaker actions.
+  The room-volume row regression loads the production row and slider with
+  installed controls. It checks narrow/wide content widths, base/font scaling,
+  both mute glyphs, control bounds and usable label/slider space using device
+  fixtures; no speaker actions are sent.
   It also requires the ADR 0004 type-contract probes: actual declaration lint,
   live font-role bindings and readonly behavior, popup text existence/live
   updates/writability with drift negative controls, and the named-role prototype.
