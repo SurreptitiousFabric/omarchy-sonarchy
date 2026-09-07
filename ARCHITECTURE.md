@@ -97,7 +97,8 @@ The intended direction, with current implementation limits, is:
    still import SoCo DIDL, alarm, service and exception types directly. Many
    speaker/service values remain duck-typed rather than fully abstract ports.
 5. Infrastructure adapters implement the extracted boundaries; the remaining
-   deliberate coupling is reviewed and contract-tested, not claimed absent.
+   deliberate coupling has contract evidence and explicitly tracked gaps,
+   rather than being claimed absent.
 
 Domain modules may share immutable protocol models and validation helpers. They
 must not import QML concepts, subprocess launchers, or another domain's private
