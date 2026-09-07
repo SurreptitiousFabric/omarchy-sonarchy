@@ -13,6 +13,179 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("SONARCHY_PLATFORM_TESTS") != "1", reason="Requires recorded Omarchy/Qt host"
 )
 
+SPACING_DEFAULTS = {
+    "hairline": 1,
+    "xxs": 2,
+    "xs": 3,
+    "sm": 4,
+    "md": 6,
+    "lg": 8,
+    "xl": 10,
+    "xxl": 12,
+    "xxxl": 14,
+    "huge": 18,
+    "controlGap": 8,
+    "controlPaddingX": 10,
+    "controlPaddingY": 6,
+    "inputPaddingY": 7,
+    "controlHeight": 28,
+    "popupRowHeight": 28,
+    "dropdownWidth": 240,
+    "searchableDropdownWidth": 260,
+    "numberFieldWidth": 120,
+    "searchablePopupMinHeight": 220,
+    "rowGap": 8,
+    "rowPaddingX": 12,
+    "labelGap": 4,
+    "panelGap": 14,
+    "panelPadding": 18,
+    "popupPadding": 14,
+}
+
+
+def _spacing_fixture(directory, source, named):
+    directory.mkdir()
+    match = re.search(
+        r"  readonly property QtObject spacing: QtObject \{\n(.*?)\n  \}", source, re.S
+    )
+    assert match is not None, "Review changed spacing declaration"
+    body = match[1]
+    roles = re.findall(r"property (\w+) (\w+):", body)
+    assert len(roles) == len(SPACING_DEFAULTS) + 1, "Review changed spacing role inventory"
+    assert dict((name, kind) for kind, name in roles) == {
+        "scale": "real",
+        **dict.fromkeys(SPACING_DEFAULTS, "int"),
+    }, "Review changed spacing role inventory/types"
+    helpers = []
+    for name in ("spaceReal", "space", "spacingToken"):
+        found = re.findall(rf"^  function {name}\([^\n]*\) \{{\n.*?^  \}}", source, re.M | re.S)
+        assert len(found) == 1
+        helpers.append(found[0])
+    declaration = match[0]
+    scale = re.findall(r"^  readonly property real effectiveSpacingScale: .+$", source, re.M)
+    assert len(scale) == 1, "Review changed spacing scale declaration"
+    if named:
+        (directory / "SpacingRoles.qml").write_text(
+            "import QtQuick\nQtObject {\n"
+            + "\n".join(
+                f"required property {kind} input_{name}\n"
+                f"readonly property {kind} {name}: input_{name}"
+                for kind, name in roles
+            )
+            + "\n}\n"
+        )
+        declaration = (
+            "readonly property SpacingRoles spacing: SpacingRoles {\n"
+            + re.sub(r"readonly property \w+ (\w+):", r"input_\1:", body)
+            + "\n}\n"
+        )
+    # Copy actual pure expressions/helpers; never instantiate live Style.
+    (directory / "Provider.qml").write_text(
+        "import QtQuick\nQtObject { id: root\n"
+        "property real spacingScale: 1\nproperty real fontScale: 1\n"
+        "property bool spacingScaleWithFont: true\nproperty var spacingOverrides: ({})\n"
+        + scale[0]
+        + "\n"
+        + "\n".join(helpers)
+        + "\n"
+        + declaration
+        + "\n}\n"
+    )
+    (directory / "Consumer.qml").write_text(
+        "import QtQuick\nQtObject {\nproperty Provider provider: Provider {}\n"
+        + "\n".join(f"property {kind} {name}: provider.spacing.{name}" for kind, name in roles)
+        + "\nreadonly property var defaults: ("
+        + json.dumps(SPACING_DEFAULTS)
+        + ")\n}\n"
+    )
+    shutil.copy2(gate.ROOT / "tests/qml/spacing/tst_Spacing.qml", directory / "tst_Spacing.qml")
+    return directory
+
+
+def _check_spacing_runtime(directory):
+    result = gate.run(
+        [gate.RUNNER, "-input", str(directory / "tst_Spacing.qml")],
+        cwd=directory,
+        env={
+            "PATH": os.defpath,
+            "HOME": str(directory),
+            "QT_QPA_PLATFORM": "offscreen",
+            "QT_QUICK_CONTROLS_STYLE": "Basic",
+            "QT_STYLE_OVERRIDE": "Fusion",
+        },
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0 and "QWARN" not in output, (
+        "Spacing runtime contract failed:\n" + output
+    )
+
+
+@pytest.mark.parametrize("named", [False, True], ids=["actual-anonymous", "named-proposal"])
+def test_spacing_roles_preserve_actual_live_readonly_contract(tmp_path, named):
+    source = (gate.SHELL / "Commons/Style.qml").read_text()
+    directory = _spacing_fixture(tmp_path / "spacing", source, named)
+    result = gate.run(
+        [gate.LINTER, "--ignore-settings", "-W", "0", "--json", "-", "Consumer.qml"], cwd=directory
+    )
+    warnings = json.loads(result.stdout)["files"][0]["warnings"]
+    if named:
+        assert result.returncode == 0 and not warnings, warnings
+    else:
+        assert result.returncode != 0
+        assert len(warnings) == len(SPACING_DEFAULTS) + 1
+        assert all(warning["id"] == "missing-property" for warning in warnings)
+    _check_spacing_runtime(directory)
+
+
+def test_installed_spacing_declaration_loses_static_member_information(tmp_path):
+    (tmp_path / "qs").symlink_to(gate.SHELL, target_is_directory=True)
+    (tmp_path / "Probe.qml").write_text(
+        "import QtQuick\nimport qs.Commons\nQtObject {\n"
+        " property int hairline: Style.spacing.hairline\n"
+        " property int labelGap: Style.spacing.labelGap\n}\n"
+    )
+    result = gate.lint(tmp_path, tmp_path)
+    assert result["status"] == "failed"
+    assert [item["category"] for item in result["diagnostics"]] == [
+        "missing-property",
+        "missing-property",
+    ]
+
+
+@pytest.mark.parametrize("drift", ["removed", "wrong-type", "writable", "frozen"])
+def test_spacing_contract_rejects_role_drift(tmp_path, drift):
+    source = (gate.SHELL / "Commons/Style.qml").read_text()
+    original = '    readonly property int labelGap: root.spacingToken("label-gap", 4)'
+    assert source.count(original) == 1
+    replacements = {
+        "removed": "",
+        "wrong-type": original.replace("property int", "property string"),
+        "writable": original.replace("readonly property", "property"),
+        "frozen": "    readonly property int labelGap: 4",
+    }
+    with pytest.raises(
+        AssertionError, match=r"spacing role inventory|Spacing runtime contract failed"
+    ):
+        directory = _spacing_fixture(
+            tmp_path / "drift", source.replace(original, replacements[drift]), False
+        )
+        _check_spacing_runtime(directory)
+
+
+def test_named_spacing_contract_rejects_a_genuine_consumer_typo(tmp_path):
+    source = (gate.SHELL / "Commons/Style.qml").read_text()
+    directory = _spacing_fixture(tmp_path / "typo", source, True)
+    consumer = directory / "Consumer.qml"
+    consumer.write_text(
+        consumer.read_text().replace("provider.spacing.labelGap", "provider.spacing.labelGpa")
+    )
+    result = gate.run(
+        [gate.LINTER, "--ignore-settings", "-W", "0", "--json", "-", "Consumer.qml"], cwd=directory
+    )
+    warnings = json.loads(result.stdout)["files"][0]["warnings"]
+    assert result.returncode != 0 and len(warnings) == 1
+    assert warnings[0]["id"] == "missing-property" and "labelGpa" in warnings[0]["message"]
+
 
 def test_installed_declarations_lose_static_member_information(tmp_path):
     (tmp_path / "qs").symlink_to(gate.SHELL, target_is_directory=True)

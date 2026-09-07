@@ -121,6 +121,8 @@ a local proposal. No platform upgrade is performed automatically.
 ## Follow-up boundaries
 
 #95 owns accepted theme-role platform adoption and real-build verification.
+#119 separately scopes the [spacing-role contract](../spacing-role-contract.md),
+including its actual-declaration proof and named-type proposal.
 #96 owns only the typed host-context prototype/decision. #87–#89 retain all
 zero-warning acceptance criteria; delegate context, page `ensureVisible`
 dispatch and window-focus typing are distinct from theme/host role types.
