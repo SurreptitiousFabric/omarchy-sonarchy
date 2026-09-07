@@ -17,6 +17,7 @@ of them less useful.
 | How do I connect an AI client to the current narrow MCP surface? | [MCP setup and contract](mcp.md) |
 | How are reviewed Apple songs saved and separately played? | [AI-curated Sonos Playlists](ai-curated-sonos-playlists.md) |
 | What AI functionality remains planned or unproven? | [AI and MCP roadmap](ai-mcp-roadmap.md) |
+| What does the bounded catalogue orchestration evaluation establish? | [Scenario matrix and evidence](public-catalog-evaluation.md) |
 | Why was an architectural choice made? | [Architecture decisions](adr/) |
 | What must pass before release? | [Acceptance tests](../ACCEPTANCE_TESTS.md) |
 | What does the exact-candidate Omarchy gate require? | [Platform validation](platform-validation.md) |

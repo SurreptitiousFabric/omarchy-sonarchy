@@ -57,6 +57,11 @@ one exact attributable partial playlist may be removed after its ownership check
    result. Later PLAYING cannot retrospectively turn failed verification into
    success. Audible confirmation and natural transition are separate observations.
 
+The [bounded catalogue evaluation](public-catalog-evaluation.md) records fixed
+client scenarios, actual deterministic boundary tests, the historical ten-track
+GB case and their limits. A self-reviewed client walkthrough and green fixture
+tests are not an independent LLM benchmark or current physical acceptance.
+
 ## Remaining bounded work
 
 These are tracked requirements, not current tools or permission grants. Follow
