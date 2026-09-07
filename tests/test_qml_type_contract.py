@@ -198,3 +198,127 @@ def test_real_font_declaration_runtime_binding_and_named_proposal(tmp_path, name
         },
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_current_host_read_inventory():
+    """Fail closed when this prototype's observed production surface changes."""
+    widget = (gate.ROOT / "BarWidget.qml").read_text()
+    assert set(re.findall(r"\bbar\.(\w+)", widget)) == {
+        "shell",
+        "fontFamily",
+        "foreground",
+        "barForeground",
+    }
+    assert 'bar.shell.serviceFor("io.github.surreptitiousfabric.sonarchy")' in widget
+    base = (gate.SHELL / "Ui/BarWidget.qml").read_text()
+    assert "property QtObject bar: null" in base
+    assert "readonly property bool vertical: bar ? bar.vertical : false" in base
+    assert "readonly property int barSize: bar ? bar.barSize : Style.bar.sizeHorizontal" in base
+    host = (gate.SHELL / "plugins/bar/Bar.qml").read_text()
+    declarations = set(re.findall(r"\bproperty (\w+) (\w+):", host))
+    assert {
+        ("var", "shell"),
+        ("string", "fontFamily"),
+        ("color", "foreground"),
+        ("color", "barForeground"),
+        ("bool", "vertical"),
+        ("int", "barSize"),
+    } <= declarations
+
+
+def _host_fixture(directory):
+    source = (gate.SHELL / "shell.qml").read_text()
+    lookup = re.search(r"  function serviceFor\(pluginId\) \{\n.*?\n  \}", source, re.S)
+    assert lookup is not None, "Review changed installed service lookup"
+    assert lookup[0].strip() == (
+        "function serviceFor(pluginId) {\n    return _services[String(pluginId)] || null\n  }"
+    ), "Review service lookup purity before extracting changed source"
+    shutil.copytree(gate.ROOT / "tests/qml/host-context", directory)
+    # Reuse only the actual pure lookup, never the live shell/registry or ensureService.
+    (directory / "Registry.qml").write_text(
+        "import QtQuick\nQtObject {\nproperty var _services: ({})\n" + lookup[0] + "\n}\n"
+    )
+    return directory
+
+
+@pytest.mark.parametrize("typo", [False, True], ids=["named-contract", "genuine-typo"])
+def test_named_host_context_strict_lint(tmp_path, typo):
+    directory = _host_fixture(tmp_path / "host")
+    if typo:
+        consumer = directory / "HostConsumer.qml"
+        source = consumer.read_text()
+        assert source.count("root.activeContext.fontFamily") == 1
+        consumer.write_text(
+            source.replace("root.activeContext.fontFamily", "root.activeContext.fontFamliy")
+        )
+    result = gate.run(
+        [
+            gate.LINTER,
+            "--ignore-settings",
+            "-W",
+            "0",
+            "--json",
+            "-",
+            "BarHostContext.qml",
+            "HostConsumer.qml",
+        ],
+        cwd=directory,
+    )
+    diagnostics = [
+        warning for file in json.loads(result.stdout)["files"] for warning in file["warnings"]
+    ]
+    if typo:
+        assert result.returncode != 0
+        assert any(
+            item["id"] == "missing-property" and "fontFamliy" in item["message"]
+            for item in diagnostics
+        )
+    else:
+        assert result.returncode == 0, diagnostics
+        assert not diagnostics
+
+
+def _run_host_fixture(directory):
+    return gate.run(
+        [gate.RUNNER, "-input", str(directory)],
+        cwd=directory,
+        env={
+            "PATH": os.defpath,
+            "HOME": str(directory),
+            "QT_QPA_PLATFORM": "offscreen",
+            "QT_QUICK_CONTROLS_STYLE": "Basic",
+            "QT_STYLE_OVERRIDE": "Fusion",
+        },
+    )
+
+
+def test_named_host_context_runtime(tmp_path):
+    result = _run_host_fixture(_host_fixture(tmp_path / "host"))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "HostContext::test_live_bindings()" in result.stdout
+    assert "QWARN" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("drift", ["fontFamily", "foreground", "barForeground", "ownership"])
+def test_host_context_runtime_rejects_binding_and_ownership_drift(tmp_path, drift):
+    directory = _host_fixture(tmp_path / "host")
+    if drift == "ownership":
+        path = directory / "HostConsumer.qml"
+        original = "&& root.hostContext.host === root.bar "
+        replacement = ""
+        failed_test = "test_bar_replaced_first"
+    else:
+        path = directory / "BarHostContext.qml"
+        original = f"{drift}: root.input{drift[0].upper()}{drift[1:]}"
+        # Preserve the initial value: only an actual live-update check detects this.
+        value = {"fontFamily": "host-a", "foreground": "#123456", "barForeground": "#234567"}[drift]
+        replacement = f'{drift}: "{value}"'
+        failed_test = "test_live_bindings"
+    source = path.read_text()
+    assert source.count(original) == 1
+    path.write_text(source.replace(original, replacement))
+    result = _run_host_fixture(directory)
+    assert result.returncode != 0, "Broken host contract unexpectedly passed"
+    assert re.search(rf"FAIL!\s+:.*HostContext::{failed_test}\(\)", result.stdout), (
+        result.stdout + result.stderr
+    )

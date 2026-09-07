@@ -93,10 +93,12 @@ only establishes feasibility and readonly output behavior. For `PopupRoles`,
 preserve the current writable color-role semantics rather than assuming they
 are readonly because the containing object property is readonly.
 
-The named host-context proposal must preserve null/replacement behavior and
-live font/color bindings, keep legacy `bar` compatibility, and explicitly
-isolate dynamic service lookup. It must not make all values dynamic just to
-silence lint. Exact schema and migration belong to #96.
+The [named host-context prototype](../bar-host-context.md) for #96 specifies
+typed live font/color/geometry views, a generic owner identity and a validated
+dynamic service lookup. It preserves legacy `bar` rather than casting it,
+tests nulls and both replacement orders, and keeps missing-property lint useful.
+It is not a shipped API: platform export, legacy-host migration and production
+adoption need separately authorized scope and an accepted platform contract.
 
 ## Rejected alternatives and ownership
 
