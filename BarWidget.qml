@@ -1,6 +1,7 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
-import Quickshell
 import qs.Commons
 import qs.Ui
 
@@ -123,8 +124,7 @@ BarWidget {
   }
 
   function activeControl() {
-    var window = keyCatcher.QsWindow.window
-    var item = window ? window.activeFocusItem : null
+    var item = keyCatcher.Window.activeFocusItem
     return item && keyboardFocusable(item) ? item : focusedControl
   }
 
@@ -208,12 +208,12 @@ BarWidget {
   }
 
   function ensureFocusedVisible(item) {
-    var page = activePage === "browse" ? browsePage
-      : (activePage === "queue" ? queuePage
-         : (activePage === "rooms" ? roomsPage
-            : (activePage === "sound" ? soundPage
-               : (activePage === "system" ? systemPage : nowPage))))
-    if (page && typeof page.ensureVisible === "function") page.ensureVisible(item)
+    if (activePage === "browse") browsePage.ensureVisible(item)
+    else if (activePage === "queue") queuePage.ensureVisible(item)
+    else if (activePage === "rooms") roomsPage.ensureVisible(item)
+    else if (activePage === "sound") soundPage.ensureVisible(item)
+    else if (activePage === "system") systemPage.ensureVisible(item)
+    else nowPage.ensureVisible(item)
   }
 
   function activateFocusedControl() {

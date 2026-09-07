@@ -1,0 +1,78 @@
+import QtQuick
+import Quickshell
+
+FloatingWindow {
+  id: window
+  implicitWidth: 300
+  implicitHeight: 200
+  visible: true
+
+  Item {
+    id: root
+    anchors.fill: parent
+    property var focusedControl: staleControl
+    property var service: serviceSpy
+    property var device: ({ uid: "fixture-room" })
+    property int actualClicks: 0
+    property int staleClicks: 0
+
+    // PRODUCTION_FUNCTIONS
+
+    QtObject {
+      id: serviceSpy
+      property int actions: 0
+      function runAction(action) { actions += 1 }
+    }
+
+    Item {
+      id: keyCatcher
+      anchors.fill: parent
+      Item {
+        id: actualControl
+        property bool focusable: true
+        signal clicked()
+        onClicked: root.actualClicks += 1
+      }
+      Item {
+        id: staleControl
+        property bool focusable: true
+        signal clicked()
+        onClicked: root.staleClicks += 1
+      }
+      Item { id: unfocusable }
+    }
+
+    function check(condition, label) {
+      if (!condition) throw new Error(label)
+    }
+
+    Timer {
+      interval: 100
+      running: true
+      onTriggered: {
+        try {
+          actualControl.forceActiveFocus()
+          root.check(actualControl.activeFocus, "probe did not acquire real focus")
+          root.check(keyCatcher.QsWindow.window === window, "missing real Quickshell wrapper")
+          root.check(root.activeControl() === actualControl, "stale control chosen over actual focus")
+          root.activateFocusedControl()
+          root.check(root.actualClicks === 1 && root.staleClicks === 0,
+            "activation did not reach the actual focused control")
+          root.check(serviceSpy.actions === 0, "unexpected transport fallback")
+
+          unfocusable.forceActiveFocus()
+          root.check(root.activeControl() === staleControl, "cached fallback changed")
+          root.focusedControl = null
+          root.check(root.activeControl() === null, "null fallback changed")
+          root.activateFocusedControl()
+          root.check(serviceSpy.actions === 1, "existing no-control fallback changed")
+          console.log("BAR_FOCUS_PASS")
+        } catch (error) {
+          console.log("BAR_FOCUS_FAIL", String(error))
+        } finally {
+          Qt.quit()
+        }
+      }
+    }
+  }
+}

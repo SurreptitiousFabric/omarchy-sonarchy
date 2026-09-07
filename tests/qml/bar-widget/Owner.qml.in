@@ -1,0 +1,16 @@
+import QtQuick
+import qs.Commons
+import qs.Ui
+
+Item {
+  id: root
+  property var service: null
+  property var bar: null
+  property color panelForeground: "#aabbcc"
+  property string activePage: "browse"
+  readonly property Component hero: heroIconComponent
+  readonly property Component refresh: refreshControlComponent
+
+  // PRODUCTION_COMPONENTS
+  // PRODUCTION_REFRESH
+}
