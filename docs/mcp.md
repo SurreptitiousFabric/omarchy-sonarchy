@@ -211,6 +211,13 @@ Confirm the plugin is enabled, Quickshell is running, `XDG_RUNTIME_DIR` is
 present, and the socket is owned by the current user with mode `0600`. The
 adapter will reconnect on a later read; it never launches a backend.
 
+Disabling or removing the plugin stops its backend, so an already-running
+adapter reports `unavailable`. Re-enabling the plugin lets that adapter reconnect
+on a later read. An empty `backend.lock` and inert `control.sock` can remain in
+`$XDG_RUNTIME_DIR/sonarchy` after unload; the next backend acquires the lock and
+validates the stale socket before replacing it. Check readiness with a read
+request, since a socket path can outlive its listener.
+
 Remove the Codex entry with `codex mcp remove sonarchy`. Remove the optional
 `mcp.toml` separately if desired. Neither operation deletes playlists or changes
 speakers.

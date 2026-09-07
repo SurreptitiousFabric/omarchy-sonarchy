@@ -278,6 +278,13 @@ gio trash "${XDG_STATE_HOME:-$HOME/.local/state}/io.github.surreptitiousfabric.s
 Those directories contain no credentials. Empty or missing paths may simply be
 skipped by `gio`.
 
+The session-only `$XDG_RUNTIME_DIR/sonarchy` directory can retain an empty
+ownership lock and an inert control socket after the plugin unloads. The next
+backend acquires the lock and validates the stale socket before replacing it.
+These runtime files also disappear when the desktop session's runtime directory
+is cleared. The optional MCP configuration and client entry are removed
+separately; see [MCP diagnostics and removal](docs/mcp.md#diagnostics-and-removal).
+
 ## Development and verification
 
 Runtime dependencies are direct in `requirements.in` and fully pinned with
