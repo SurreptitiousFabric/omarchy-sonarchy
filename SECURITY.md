@@ -198,8 +198,10 @@ a public issue.
 - Same-user clients remain confined to the backend read allowlist plus
   independently permissioned exact playlist-create and exact playlist-play
   writes. `playlist-create` never authorizes playback. There is no generic raw
-  operation/URI/DIDL/SoCo execution or credential-retrieval tool; backend tickets
-  are replaced by opaque client handles. Room snapshots omit speaker IP fields,
+  operation/URI/DIDL/SoCo execution or credential-retrieval tool. Only the stdio
+  MCP adapter replaces backend tickets with opaque handles in AI-client results;
+  direct backend Unix-socket clients receive `planToken` in preflight results.
+  Tickets are not hidden from that backend protocol. Room snapshots omit speaker IP fields,
   but shared browse results can include local artwork addresses, library-share
   paths and provider content identifiers. Normalized/bounded metadata is not
   anonymous or guaranteed free of sensitive user/provider text; see [Privacy](PRIVACY.md).

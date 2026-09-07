@@ -46,13 +46,16 @@ deletion or training policies. Check the chosen client/provider's settings and
 privacy terms before connecting; Sonarchy provides no downstream retention
 guarantee.
 
-Depending on the requested tool, arguments and results can include:
+For tools exposed through the stdio MCP adapter, arguments and results can include:
 
 | Tool family | Data exposed |
 | --- | --- |
 | Room listing and exact-room state | Household identifiers; room/group identifiers and names; coordinator/member relationships; online, transport, volume/mute and Line-In availability facts. Identifiers are not anonymous. |
 | Content browsing | Requested search text, storefront and navigation context; bounded content identifiers, titles/subtitles, playlist names, counts and artwork URLs. Apple song results also include artist/album, duration and explicitness when available. Local-library results can include share paths and browse breadcrumbs. |
 | Playlist preflight and approved results | Exact room/playlist identities, reviewed ordered tracks and metadata, fingerprints, expiry, side effects and bounded verification/failure facts. Playback preflight also exposes queue/item previews, position/source and topology/volume/mute facts. The client sees an opaque plan handle, not the backend ticket. |
+
+Direct clients of the backend Unix socket instead receive backend tickets in
+preflight results; handle substitution is specific to the stdio adapter.
 
 The room-snapshot projection omits speaker IP fields. Content browsing uses the
 shared browse result, however: artwork locations may contain a private speaker
