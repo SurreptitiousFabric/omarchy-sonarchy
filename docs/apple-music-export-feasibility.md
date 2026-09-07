@@ -6,7 +6,26 @@ that an already approved exact Sonos track plan was copied and verified.
 
 ## Observed integration boundary
 
-The Apple Music app exposed these two tools in the assessment session:
+The inspected surface was the **Apple Music** app exposed to this **Codex**
+assessment session on 2026-09-07, not a separately inspected ChatGPT session or
+an arbitrary third-party Apple Music MCP. Its tool declarations explicitly name
+the plugin `Apple Music`; a read-only app-policy lookup also returned that name.
+
+| Provenance field | Observed value or limit |
+| --- | --- |
+| Client surface | Codex session, connected app/MCP tool declarations |
+| Displayed integration name | Apple Music |
+| Exact exposed tool identifiers | `mcp__codex_apps__apple_music_search`; `mcp__codex_apps__apple_music_get_track_details_batch` |
+| Publisher | Not exposed in the available declarations or app-policy response; **unverified**, not inferred from the app name |
+| Connector build/version | Not exposed; unverified |
+| Apple sign-in/OAuth grants and current ChatGPT availability | Not inspected or established by this Codex schema assessment |
+
+This records the identifiable runtime surface, not completed publisher/sign-in
+verification under [the historical identification checklist](apple-music-plugin-test.md#test-0--identify-the-exact-plugin).
+Before carrying the conclusion to another session or implementation, re-identify
+the selected integration, obtain its displayed publisher/build where available,
+and compare the current schemas. The following two tools are the entire Apple
+Music inventory observed here; the limitation applies only to that inventory.
 
 | Tool | Declared inputs and purpose | Limit relevant to export |
 | --- | --- | --- |
