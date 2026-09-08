@@ -171,6 +171,25 @@ def test_native_keyboard_focus_scrolls_the_production_page(tmp_path, imports, pr
     assert "BAR_FOCUS_SCROLL_FAIL" not in output and "ERROR" not in output, output
 
 
+def test_alarm_confirmation_keeps_keyboard_focus_visible(tmp_path, imports, private_qml_env):
+    for module in ("Commons", "Ui"):
+        (tmp_path / module).symlink_to(gate.SHELL / module, target_is_directory=True)
+    for source in gate.ROOT.glob("Sonarchy*.qml"):
+        shutil.copy2(source, tmp_path / source.name)
+    shutil.copy2(
+        gate.ROOT / "tests/qml/bar-widget/ConfirmationFocusProbe.qml", tmp_path / "shell.qml"
+    )
+    result = gate.run(
+        ["/usr/bin/qs", "--no-color", "-p", str(tmp_path / "shell.qml")],
+        cwd=tmp_path,
+        env={**private_qml_env, "QML_IMPORT_PATH": str(imports)},
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0 and "CONFIRM_FOCUS_PASS" in output, output
+    assert "CONFIRM_FOCUS_FAIL" not in output and "ERROR" not in output, output
+    assert "WARN scene:" not in output and "Binding loop" not in output, output
+
+
 def test_bar_widget_components_keep_their_owner_in_the_installed_hero_loaders(
     tmp_path, private_qml_env
 ):
