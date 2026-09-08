@@ -35,8 +35,8 @@ def test_navigation_outer_ids_are_bound_without_suppressing_other_diagnostics(tm
     shutil.copy2(gate.ROOT / "SonarchyNavigation.qml", tmp_path / "SonarchyNavigation.qml")
     result = gate.lint(tmp_path, imports)
     assert not [item for item in result["diagnostics"] if item["category"] == "unqualified"]
-    # The complete platform gate still requires all diagnostics to be resolved;
-    # shared theme type limitations remain tracked in #91, not suppressed here.
+    # The complete gate separately matches documented upstream warnings against
+    # the owner-approved baseline; this test still rejects unqualified accesses.
 
 
 @pytest.mark.parametrize(
@@ -110,8 +110,7 @@ def test_bar_widget_local_bindings_and_dispatch_are_statically_resolved(imports)
         for warning in warnings
         if any(member in warning["message"] for member in ("activeFocusItem", "ensureVisible"))
     ]
-    # This focused assertion does not permit remaining theme/host diagnostics
-    # in the complete gate, which still requires every root file to pass.
+    # Remaining theme/host warnings require exact baseline matches in the full gate.
 
 
 def test_bar_widget_uses_actual_focus_in_a_real_quickshell_window(tmp_path, private_qml_env):

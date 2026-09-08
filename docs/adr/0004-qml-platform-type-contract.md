@@ -1,6 +1,9 @@
 # ADR 0004: preserve real QML platform types
 
-Status: proposed for acceptance with #91. No production API change in this ADR.
+Status: historical proposal. Upstream submission/adoption was cancelled by the
+owner September 7. On September 8 the owner replaced the zero-warning release
+requirement with the documented warning baseline in `docs/platform-validation.md`.
+The upstream-dependent gate requirement below is superseded, not active scope.
 
 ## Decision
 

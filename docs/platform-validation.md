@@ -34,8 +34,15 @@ no platform pass implied by skipped host tests in generic Python CI.
 - The actual `omarchy plugin validate` command checks the manifest/tree.
 - All shipped root QML files are linted with the actual installed `qs` shell
   modules and Qt/Quickshell imports, `--ignore-settings`, `--import error` and
-  `-W 0`. Both exit code and per-file success must agree. No visual stubs, warning
-  baseline or category suppression are used for lint.
+  `-W 0` to retain every diagnostic. The owner-approved September 8 baseline
+  in `scripts/qml-warning-baseline.json` allows the 117 documented upstream
+  type-metadata warnings. Matching requires file, source line, column, category,
+  severity, message and occurrence count; line-number shifts alone are harmless.
+  Removed warnings are allowed. New/changed/additional warnings, all errors,
+  abnormal process exits and unexplained file failures still fail. No category
+  suppression or lint stubs are used. Reports retain diagnostics and separately
+  count accepted warnings and unexpected diagnostics. Baseline changes require
+  explicit review; do not regenerate it automatically to obtain a pass.
 - Existing component tests run offscreen, retaining their narrowly scoped
   visual-only theme stubs and actual installed PanelSlider. These tests do not
   claim full live-shell behavior.
@@ -71,9 +78,15 @@ candidates cannot report success. Each child command has a two-minute timeout.
 The report excludes raw subprocess output and host configuration; lint evidence
 contains only candidate-relative file names, lines, categories and severity.
 
-## Existing blockers
+## Owner-approved warning policy — September 8, 2026
 
-The strict gate exposes pre-existing warnings tracked in #87 (shared UI), #88
-(browse/queue) and #89 (remaining pages/service). Their cleanup is separate from
-gate infrastructure. Do not weaken the gate to obtain green release evidence.
-Until all stages pass on the combined candidate, #64 acceptance remains open.
+Zero warnings is no longer a release requirement. Waiting for upstream type
+metadata fixes is not required. This supersedes the previous strict zero-warning
+policy and the upstream-dependent release requirement in ADR 0004.
+
+The baseline covers existing anonymous font/popup/spacing role and bar-host
+property declarations, plus Quickshell's QProcess::ExitStatus metadata warning.
+The warnings remain visible in reports. Manifest, component and required control
+stages must still pass, as must QML validation under this explicit baseline.
+Final clean exact-candidate acceptance remains required; a local lint-stage pass
+alone is not a complete release-host pass or permission to publish.

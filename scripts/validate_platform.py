@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +53,11 @@ def lint(root, imports):
     checked = report.get("files", [])
     if sorted(item["filename"] for item in checked) != files:
         raise ValueError("Incomplete lint report")
+    if any(
+        not isinstance(item.get("success"), bool) or not isinstance(item.get("warnings"), list)
+        for item in checked
+    ):
+        raise ValueError("Incomplete lint file result")
     diagnostics = [
         {
             "file": item["filename"],
@@ -62,8 +68,52 @@ def lint(root, imports):
         for item in checked
         for warning in item.get("warnings", [])
     ]
-    passed = result.returncode == 0 and all(item.get("success") is True for item in checked)
-    return {"status": "passed" if passed else "failed", "files": files, "diagnostics": diagnostics}
+    baseline_path = root / "scripts/qml-warning-baseline.json"
+    baseline = json.loads(baseline_path.read_text())["entries"] if baseline_path.exists() else []
+    fields = ("file", "category", "severity", "message", "source", "column")
+    allowed = Counter(
+        {tuple(entry[field] for field in fields): entry["count"] for entry in baseline}
+    )
+    accepted = 0
+    informational = 0
+    unexplained_failure = False
+    for item in checked:
+        warnings = item.get("warnings", [])
+        if item.get("success") is not True and not warnings:
+            unexplained_failure = True
+        lines = (root / item["filename"]).read_text().splitlines()
+        for warning in warnings:
+            if warning.get("type") == "info" and item.get("success") is True:
+                informational += 1
+                continue
+            line = warning.get("line", 0)
+            key = (
+                item["filename"],
+                warning.get("id"),
+                warning.get("type"),
+                warning.get("message"),
+                lines[line - 1].strip() if 0 < line <= len(lines) else None,
+                warning.get("column"),
+            )
+            if warning.get("type") == "warning" and allowed[key] > 0:
+                allowed[key] -= 1
+                accepted += 1
+    # qmllint returns 255 for warning-limit failure. Never excuse crashes,
+    # errors, missing reports or unexplained per-file failures with a baseline.
+    passed = (
+        result.returncode in (0, 255)
+        and (result.returncode == 0 or bool(diagnostics))
+        and not unexplained_failure
+        and accepted + informational == len(diagnostics)
+    )
+    return {
+        "status": "passed" if passed else "failed",
+        "files": files,
+        "diagnostics": diagnostics,
+        "acceptedWarnings": accepted,
+        "informationalDiagnostics": informational,
+        "unexpectedDiagnostics": len(diagnostics) - accepted - informational,
+    }
 
 
 def manifest(root):

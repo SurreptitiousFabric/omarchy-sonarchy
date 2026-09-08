@@ -1,0 +1,797 @@
+{
+  "reason": "Owner-approved 2026-09-08: existing Omarchy/Quickshell type metadata warnings do not block publication. No upstream fix required. Exact source/message occurrences only; errors and new warnings fail.",
+  "entries": [
+    {
+      "category": "missing-property",
+      "column": 30,
+      "file": "BarWidget.qml",
+      "message": "Member \"display\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "fontSize: Style.font.display",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 30,
+      "file": "BarWidget.qml",
+      "message": "Member \"fontFamily\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "fontFamily: root.bar.fontFamily",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 30,
+      "file": "SonarchyInfoRow.qml",
+      "message": "Member \"bodySmall\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.bodySmall",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 32,
+      "file": "BarWidget.qml",
+      "message": "Member \"fontFamily\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "fontFamily: root.bar.fontFamily",
+      "count": 3
+    },
+    {
+      "category": "missing-property",
+      "column": 32,
+      "file": "SonarchyRoomVolumeRow.qml",
+      "message": "Member \"bodySmall\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.bodySmall",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 33,
+      "file": "BarWidget.qml",
+      "message": "Member \"fontFamily\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.family: root.bar.fontFamily",
+      "count": 4
+    },
+    {
+      "category": "missing-property",
+      "column": 34,
+      "file": "BarWidget.qml",
+      "message": "Member \"barForeground\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "color: root.bar ? root.bar.barForeground : Color.foreground",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 34,
+      "file": "BarWidget.qml",
+      "message": "Member \"body\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.body",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 34,
+      "file": "BarWidget.qml",
+      "message": "Member \"fontFamily\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "fontFamily: root.bar.fontFamily",
+      "count": 6
+    },
+    {
+      "category": "missing-property",
+      "column": 34,
+      "file": "SonarchyAlarmEditor.qml",
+      "message": "Member \"body\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.body",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 34,
+      "file": "SonarchyAlarmEditor.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 34,
+      "file": "SonarchyNavigation.qml",
+      "message": "Member \"icon\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "fontSize: Style.font.icon",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 34,
+      "file": "SonarchyNowPage.qml",
+      "message": "Member \"displayLarge\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "fontSize: Style.font.displayLarge",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 34,
+      "file": "SonarchyNowPage.qml",
+      "message": "Member \"iconLarge\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "iconSize: Style.font.iconLarge",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 35,
+      "file": "BarWidget.qml",
+      "message": "Member \"fontFamily\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.family: root.bar.fontFamily",
+      "count": 2
+    },
+    {
+      "category": "missing-property",
+      "column": 36,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 5
+    },
+    {
+      "category": "missing-property",
+      "column": 36,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 36,
+      "file": "SonarchyRoomsPage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 36,
+      "file": "SonarchySoundPage.qml",
+      "message": "Member \"bodySmall\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.bodySmall",
+      "count": 2
+    },
+    {
+      "category": "missing-property",
+      "column": 36,
+      "file": "SonarchySoundPage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 36,
+      "file": "SonarchySystemPage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 37,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"hairline\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "height: Style.spacing.hairline",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 37,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"labelGap\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "radius: Style.spacing.labelGap",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 37,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"hairline\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "height: Style.spacing.hairline",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 37,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"labelGap\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "radius: Style.spacing.labelGap",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "BarWidget.qml",
+      "message": "Member \"barForeground\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "color: root.bar ? root.bar.barForeground : Color.foreground",
+      "count": 2
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "BarWidget.qml",
+      "message": "Member \"bodySmall\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.bodySmall",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "BarWidget.qml",
+      "message": "Member \"body\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.body",
+      "count": 2
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "BarWidget.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "BarWidget.qml",
+      "message": "Member \"displayLarge\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.displayLarge",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "BarWidget.qml",
+      "message": "Member \"subtitle\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.subtitle",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"bodySmall\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.bodySmall",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"body\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.body",
+      "count": 2
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"bodySmall\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.bodySmall",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "SonarchyRoomsPage.qml",
+      "message": "Member \"body\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.body",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "SonarchyRoomsPage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 4
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "SonarchySystemPage.qml",
+      "message": "Member \"bodySmall\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.bodySmall",
+      "count": 3
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "SonarchySystemPage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 2
+    },
+    {
+      "category": "missing-property",
+      "column": 38,
+      "file": "SonarchySystemPage.qml",
+      "message": "Member \"subtitle\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.subtitle",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 40,
+      "file": "BarWidget.qml",
+      "message": "Member \"body\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.body",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 40,
+      "file": "BarWidget.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 40,
+      "file": "BarWidget.qml",
+      "message": "Member \"fontFamily\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.family: root.bar ? root.bar.fontFamily : Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 40,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 40,
+      "file": "SonarchyNavigation.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 40,
+      "file": "SonarchyNowPage.qml",
+      "message": "Member \"bodySmall\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.bodySmall",
+      "count": 2
+    },
+    {
+      "category": "missing-property",
+      "column": 40,
+      "file": "SonarchyNowPage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 2
+    },
+    {
+      "category": "missing-property",
+      "column": 40,
+      "file": "SonarchyNowPage.qml",
+      "message": "Member \"heading\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.heading",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 40,
+      "file": "SonarchyNowPage.qml",
+      "message": "Member \"subtitle\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.subtitle",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 40,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchyAlarmEditor.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property string fontFamily: Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property string fontFamily: Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchyInfoRow.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property string fontFamily: Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchyNavigation.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property string fontFamily: Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchyNowPage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchyNowPage.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property string fontFamily: Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property string fontFamily: Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchyRoomVolumeRow.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property string fontFamily: Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchyRoomsPage.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property string fontFamily: Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchySoundPage.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property string fontFamily: Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 42,
+      "file": "SonarchySystemPage.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property string fontFamily: Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 43,
+      "file": "SonarchyAlarmEditor.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property color foreground: Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 43,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property color foreground: Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 43,
+      "file": "SonarchyInfoRow.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property color foreground: Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 43,
+      "file": "SonarchyNavigation.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property color foreground: Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 43,
+      "file": "SonarchyNowPage.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property color foreground: Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 43,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property color foreground: Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 43,
+      "file": "SonarchyRoomVolumeRow.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property color foreground: Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 43,
+      "file": "SonarchyRoomsPage.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property color foreground: Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 43,
+      "file": "SonarchySoundPage.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property color foreground: Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 43,
+      "file": "SonarchySystemPage.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "property color foreground: Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 44,
+      "file": "BarWidget.qml",
+      "message": "Member \"fontFamily\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.family: root.bar ? root.bar.fontFamily : Style.font.family",
+      "count": 2
+    },
+    {
+      "category": "missing-property",
+      "column": 44,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"body\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.body",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 44,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 44,
+      "file": "SonarchyBrowsePage.qml",
+      "message": "Member \"iconLarge\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.iconLarge",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 44,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"body\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.body",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 44,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 44,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"iconLarge\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.iconLarge",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 44,
+      "file": "SonarchySystemPage.qml",
+      "message": "Member \"body\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.body",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 44,
+      "file": "SonarchySystemPage.qml",
+      "message": "Member \"caption\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.caption",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 45,
+      "file": "BarWidget.qml",
+      "message": "Member \"shell\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "readonly property var service: bar && bar.shell ? bar.shell.serviceFor(\"io.github.surreptitiousfabric.sonarchy\") : null",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 46,
+      "file": "SonarchyQueuePage.qml",
+      "message": "Member \"iconSmall\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.pixelSize: Style.font.iconSmall",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 54,
+      "file": "BarWidget.qml",
+      "message": "Member \"foreground\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "readonly property color panelForeground: bar ? bar.foreground : Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 57,
+      "file": "BarWidget.qml",
+      "message": "Member \"shell\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "readonly property var service: bar && bar.shell ? bar.shell.serviceFor(\"io.github.surreptitiousfabric.sonarchy\") : null",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 64,
+      "file": "BarWidget.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.family: root.bar ? root.bar.fontFamily : Style.font.family",
+      "count": 1
+    },
+    {
+      "category": "missing-property",
+      "column": 68,
+      "file": "BarWidget.qml",
+      "message": "Member \"family\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "font.family: root.bar ? root.bar.fontFamily : Style.font.family",
+      "count": 2
+    },
+    {
+      "category": "missing-property",
+      "column": 80,
+      "file": "BarWidget.qml",
+      "message": "Member \"text\" not found on type \"QObject\"",
+      "severity": "warning",
+      "source": "readonly property color panelForeground: bar ? bar.foreground : Color.popups.text",
+      "count": 1
+    },
+    {
+      "category": "signal-handler-parameters",
+      "column": 5,
+      "file": "LiveService.qml",
+      "message": "Type QProcess::ExitStatus of parameter exitStatus in signal called exited was not found, but is required to compile onExited. Did you add all imports and dependencies?",
+      "severity": "warning",
+      "source": "onExited: function(exitCode) {",
+      "count": 1
+    }
+  ]
+}

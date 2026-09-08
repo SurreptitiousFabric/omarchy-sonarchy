@@ -2,6 +2,11 @@
 
 **Marketplace status: HOLD**
 
+**Status reporting:** read the [reconciled acceptance matrix](docs/acceptance-status.md)
+first (updated 2026-09-08). Unchecked composite criteria below retain historical
+requirements; they do not mean every constituent action is untested. Report only
+the remaining subcase. Missing evidence is not proof a test was never performed.
+
 Sonarchy must not be published or submitted merely because its automated tests
 pass. Marketplace release requires every applicable check below, a reviewed
 exact release commit, and explicit owner sign-off. A feature unsupported by the
@@ -25,10 +30,14 @@ run is automated evidence, not Omarchy release-host or physical acceptance.
   coverage gate, and the complete headless QML component suite passes.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash/ShellCheck,
   protocol and security checks pass in the cited automated evidence.
-- [ ] Strict all-shipped-QML validation on the exact clean Omarchy release
+- [ ] Baseline-aware all-shipped-QML validation on the exact clean Omarchy release
   candidate. The [recorded #64 report](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/64#issuecomment-5566579718)
   for `cd2518d498ebbc6918c8449781aed8c6ebc23e46` passed manifest/component
-  checks but failed the zero-warning QML lint gate. Generic Python CI and
+  checks but failed the former zero-warning QML lint gate. Owner amendment on
+  2026-09-08 removes zero warnings as a requirement: the 117 documented upstream
+  metadata warnings are allowed by the reviewed baseline; new warnings and errors
+  still fail. Current local lint passes with 117 accepted / zero unexpected
+  diagnostics. Final clean exact-candidate validation remains required. Generic Python CI and
   offscreen component tests do not satisfy this gate.
 - [x] Headless real-event QML tests load Omarchy's installed `PanelSlider`,
   prove wheel input scrolls without a slider mutation, preserve intentional
@@ -180,10 +189,12 @@ observations; a successful create is not evidence that its failure path ran.
 
 - [ ] Physical playlist-size coverage beyond the exact one-, two- and
   ten-track cases recorded here, including the maximum supported plan size.
-- [ ] AI-orchestration policy for individually rejected catalogue items.
-- [ ] Physical QML/MCP concurrency and lifecycle acceptance under #61/#68.
-  Single-authority ownership is implemented (ADR 0002); the fake-only contract
-  checks below are not a substitute for this physical gate.
+- [x] Public-catalog AI-orchestration evaluation and rejection policy under #61
+  completed (PR #117). This does not claim every physical rejection scenario.
+- [ ] Concurrent physical QML/MCP mutations and event soak remain unverified
+  under the applicable #58/#59/#68 scope. Real backend/MCP lifecycle and
+  ownership acceptance passed under #60; public-catalog evaluation #61 is
+  complete. Do not report those completed portions as pending.
 - [ ] Broader MCP transport, queue, grouping, source, and volume actions under
   issue #14.
 - [ ] General destructive queue restoration under issue #19.
@@ -312,10 +323,30 @@ exact case, not every playlist, device or playback scenario. See the
 - [ ] Complete a keyboard-only tour of every page and every visible control,
   including focus-following scroll, confirmation prompts, error dismissal,
   and narrow/wide configured panel sizes.
+  Partial passes on 2026-09-07: six-page narrow/wide layout checks, native
+  Tab/Shift+Tab focus-scroll checks (PR #129), and grouped-room row bounds
+  checks (PR #130). These completed checks must not be listed as wholly
+  untested. On 2026-09-08, 54 isolated production-panel keyboard interaction
+  cases passed (27 at each size): dropdown open/cancel/selection, six inline
+  confirmation types and five-second expiry, error dismissal, editor Escape,
+  and group-draft Cancel. Zero device dispatches; real host controls with a
+  fake service and in-window Qt keys. See the [exact result and harness limits](docs/keyboard-interaction-acceptance.md).
+  Those interactions are no longer pending. A later [headless Wayland visual
+  check](docs/keyboard-visual-acceptance.md) found a concrete #65 blocker:
+  arming alarm deletion leaves only 5/33 pixels of the focused button visible
+  at 360×520 and 22/33 at 620×820. **Fixed, retested and merged in PR #131 on September 8:**
+  both sizes now retain focus with 33/33 pixels visible in private Wayland.
+  The regression also passes five-second expiry, first/second-press safety and
+  outside-page focus checks. Installed plugin unchanged; this source blocker is resolved.
+  Enumerated visual passes are retained with their fixture/compositor limits;
+  neither this defect nor the open composite row erases earlier passed cases.
 - [x] Adjust and restore Group Volume plus individual grouped-room volume/mute
   controls. Owner-confirmed working on installed checkpoint `4626b3f`.
-- [ ] Test play, pause, stop, previous, next, standalone mute/volume, and
-  supported seeking, restoring the starting state afterward.
+- [ ] Complete remaining transport-control and restoration coverage: pause,
+  previous/next and installed control dispatch lack reconciled physical evidence.
+  Playback has passed in the exact cases above; standalone mute/volume changed
+  and restored. Apple share-link seeking and stop passed on 2026-08-28; see the
+  [handoff result](docs/apple-music-handoff-test-result.md). These are not untested.
 - [ ] Play one Apple track and one whole Apple album. With TV Autoplay
   explicitly disabled by the owner, observe the album advance automatically
   from the first track to the second; pressing Next alone is not sufficient.
@@ -326,34 +357,51 @@ exact case, not every playlist, device or playback scenario. See the
   clear, and stale-item protection have passed without starting playback.
 - [ ] Play the disposable Sonos Playlist; create/save/reorder/remove/delete and
   unrelated-playlist preservation have passed without starting playback.
+  This residual criterion concerns installed QML Play dispatch. Separately
+  reviewed MCP saved-playlist playback and audible confirmation already passed
+  in the September 5 and 6 cases above; do not report all playlist playback pending.
 - [ ] Browse every local-library category reported by the test household,
   traverse at least two nested levels, move forward and backward across a
   multi-page result when available, search and play one track, and confirm a
   deliberately stale path is rejected without playing a different item.
 - [x] Create, edit, disable, re-enable, and delete a disposable alarm; verify
   that unrelated alarms are unchanged.
+- [x] Owner-confirmed on 2026-09-08: a manually configured alarm works.
+  User-reported acceptance; no agent setup or retest was performed for this
+  record. The setup interface and tested software revision were not specified.
+  #4's room-change/field-preservation and physical rejection-recovery subcases
+  have missing evidence; this does not reopen basic alarm setup/function.
 - [x] Change and restore every supported sound and device setting exposed by
   the test household, including home-theater, Sub, surround, and TV Autoplay.
   Trueplay and Sub crossover are not applicable on the recorded products.
   Context-inapplicable play modes are disabled with actionable text.
-- [ ] Rename one room and restore its exact original name in both Sonarchy and
-  the official Sonos app.
+- [ ] Compare renamed/restored room names in the official Sonos app. Temporary
+  rename and exact restoration were already authoritatively confirmed at the
+  speaker; the cross-app comparison is the remaining evidence gap.
 - [x] Group rooms and restore the original topology. Owner-confirmed working on
   the live household with installed checkpoint `7bcb873`.
 - [ ] Test ungroup, group-all, staged membership, playback-session selection,
   and safe room handoff; restore the exact original topology afterward.
 - [ ] Test line-in and TV source switching only on hardware that reports the
   source, then restore the original source.
+- [ ] Compare an active TV audio-format value with the official Sonos app (#5).
+  Idle and unsupported-room reporting already passed.
 - [x] Verify sleep timer, shuffle, repeat-one, repeat-all, crossfade, and every
   supported home-theater mode, restoring original values.
 - [ ] Verify recovery from a temporarily unreachable speaker, stale cached
   state, rejected UPnP actions, and network rediscovery without leaking raw
   private addresses in the popup. Backend-exit recovery has passed.
+  Real backend ownership, duplicate-owner rejection and MCP disconnect/reconnect
+  also passed under #60; these must not be reported as untested recovery.
 - [ ] Leave the event backend running through ordinary playback, grouping, and
   idle periods long enough to detect subscription churn, process leaks,
   repeated errors, or state drift.
-- [ ] Repeat install, upgrade, disable/enable, and removal instructions from a
+- [x] Repeat install, upgrade, disable/enable, and removal instructions from a
   clean test checkout without affecting unrelated Omarchy plugins.
+  Passed locally on 2026-09-07 at `bc9fdb8446d7b1914e4325a6756ce0ccb7bcfc03`:
+  real copied-shell/widget lifecycle, prior-to-current upgrade, fresh bootstrap
+  and removal, backend/MCP reconnect and unrelated-config preservation.
+  See [#60 evidence](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/60#issuecomment-5573954743).
 
 ## Final release gate
 
