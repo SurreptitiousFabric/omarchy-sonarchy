@@ -121,3 +121,98 @@ def test_inherited_options_cannot_skip_controls(
     assert report["stages"]["negativeControls"]["status"] == (
         "failed" if failing_control else "passed"
     )
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ("known", "passed"),
+        ("removed", "passed"),
+        ("new", "failed"),
+        ("duplicate", "failed"),
+        ("error", "failed"),
+        ("crash", "failed"),
+        ("source", "failed"),
+    ],
+)
+def test_warning_baseline_is_specific(tmp_path, monkeypatch, change, expected):
+    source = "Item { property var value: upstream.caption }"
+    (tmp_path / "Probe.qml").write_text(source if change != "source" else source + " // changed")
+    entry = dict(
+        file="Probe.qml",
+        category="missing-property",
+        severity="warning",
+        message="Known upstream member",
+        source=source,
+        column=28,
+        count=1,
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts/qml-warning-baseline.json").write_text(json.dumps({"entries": [entry]}))
+    warning = dict(
+        id=entry["category"], type="warning", message=entry["message"], line=1, column=28
+    )
+    if change == "new":
+        warning["message"] = "Different member"
+    if change == "error":
+        warning["type"] = "error"
+    warnings = [] if change == "removed" else [warning] * (2 if change == "duplicate" else 1)
+    monkeypatch.setattr(
+        gate,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=-11 if change == "crash" else (255 if warnings else 0),
+            stdout=json.dumps(
+                {
+                    "files": [
+                        {"filename": "Probe.qml", "success": not warnings, "warnings": warnings}
+                    ]
+                }
+            ),
+        ),
+    )
+    result = gate.lint(tmp_path, tmp_path)
+    assert result["status"] == expected
+    assert result["acceptedWarnings"] == (1 if change in ("known", "duplicate", "crash") else 0)
+
+
+def test_informational_lint_note_is_not_a_warning(tmp_path, monkeypatch):
+    (tmp_path / "Probe.qml").write_text("import QtQuick\nItem {}")
+    monkeypatch.setattr(
+        gate,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "files": [
+                        {
+                            "filename": "Probe.qml",
+                            "success": True,
+                            "warnings": [{"type": "info", "id": "unused-imports", "line": 1}],
+                        }
+                    ]
+                }
+            ),
+        ),
+    )
+    result = gate.lint(tmp_path, tmp_path)
+    assert result["status"] == "passed"
+    assert result["informationalDiagnostics"] == 1
+    assert result["unexpectedDiagnostics"] == 0
+
+
+@pytest.mark.parametrize("missing", ["success", "warnings"])
+def test_missing_lint_file_fields_are_incomplete(tmp_path, monkeypatch, missing):
+    (tmp_path / "Probe.qml").write_text("Item {}")
+    item = {"filename": "Probe.qml", "success": True, "warnings": []}
+    del item[missing]
+    monkeypatch.setattr(
+        gate,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0, stdout=json.dumps({"files": [item]})
+        ),
+    )
+    with pytest.raises(ValueError, match="Incomplete lint file result"):
+        gate.lint(tmp_path, tmp_path)

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Allow the owner-approved upstream QML metadata warning baseline in release
+  validation while continuing to reject new warnings, errors and tool failures.
+
 - Keep the focused alarm Delete control visible when its confirmation notice
   changes the page layout, preserving the confirmation timeout and action safety.
 
