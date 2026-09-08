@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Keep the focused alarm Delete control visible when its confirmation notice
+  changes the page layout, preserving the confirmation timeout and action safety.
+
 - Fit grouped-room volume controls at narrow popup sizes using their actual
   button widths, with the room label and slider sharing the remaining space.
 - Scroll page controls into view when native Tab/Shift+Tab traversal changes

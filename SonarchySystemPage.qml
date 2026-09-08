@@ -101,6 +101,19 @@ Item {
     anchors.fill: parent
     contentWidth: width
     contentHeight: systemColumn.implicitHeight
+    onContentHeightChanged: {
+      if (root.confirmation === "") return
+      var focused = root.Window.activeFocusItem
+      var owner = focused
+      while (owner && owner !== systemFlick.contentItem) owner = owner.parent
+      if (!owner) return
+      // The confirmation notice moves controls without changing keyboard focus.
+      // Reveal after the Column has applied its new positions.
+      Qt.callLater(function() {
+        if (root.confirmation !== "" && focused && focused.activeFocus)
+          root.ensureVisible(focused)
+      })
+    }
     clip: true
     boundsBehavior: Flickable.StopAtBounds
     flickableDirection: Flickable.VerticalFlick
