@@ -3,7 +3,8 @@
 **Marketplace status: HOLD**
 
 **Status reporting:** read the [reconciled acceptance matrix](docs/acceptance-status.md)
-first (updated 2026-09-08). Unchecked composite criteria below retain historical
+first (owner evidence updated 2026-09-09; full reconciliation 2026-09-08).
+Unchecked composite criteria below retain historical
 requirements; they do not mean every constituent action is untested. Report only
 the remaining subcase. Missing evidence is not proof a test was never performed.
 
@@ -30,14 +31,17 @@ run is automated evidence, not Omarchy release-host or physical acceptance.
   coverage gate, and the complete headless QML component suite passes.
 - [x] Repository-wide Ruff, formatting, compilation, JSON, Bash/ShellCheck,
   protocol and security checks pass in the cited automated evidence.
-- [ ] Baseline-aware all-shipped-QML validation on the exact clean Omarchy release
-  candidate. The [recorded #64 report](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/64#issuecomment-5566579718)
+- [x] Baseline-aware all-shipped-QML validation on the reviewed clean candidate.
+  PR #132 head `ac7f132131f39d72f4187a80b8f61bc7c5e7134c` passed all four
+  platform stages; merged `8dbf652` has the same source tree. #54/#64 complete.
+  [Complete report](https://github.com/SurreptitiousFabric/omarchy-sonarchy/pull/132#issuecomment-5584417422).
+  Historical evidence: the [recorded #64 report](https://github.com/SurreptitiousFabric/omarchy-sonarchy/issues/64#issuecomment-5566579718)
   for `cd2518d498ebbc6918c8449781aed8c6ebc23e46` passed manifest/component
   checks but failed the former zero-warning QML lint gate. Owner amendment on
   2026-09-08 removes zero warnings as a requirement: the 117 documented upstream
   metadata warnings are allowed by the reviewed baseline; new warnings and errors
-  still fail. Current local lint passes with 117 accepted / zero unexpected
-  diagnostics. Final clean exact-candidate validation remains required. Generic Python CI and
+  still fail. The full reviewed candidate gate now passes, with 117 accepted /
+  zero unexpected QML diagnostics. Generic Python CI and
   offscreen component tests do not satisfy this gate.
 - [x] Headless real-event QML tests load Omarchy's installed `PanelSlider`,
   prove wheel input scrolls without a slider mutation, preserve intentional
@@ -105,6 +109,14 @@ These products do not expose Trueplay or Sub crossover through SoCo, so those
 two controls are not applicable to this household. They remain covered by
 automated capability/visibility tests and must be tested on supporting hardware
 before Sonarchy claims real-device coverage for them.
+
+On **2026-09-09**, the owner confirmed that they **do not have a local music
+library**. Real indexed-library acceptance then lacked test data in this
+household. This was a setup limitation, not unsupported speaker hardware or a
+passing test. Later the same day the owner approved a temporary generated test
+library. Its 45 clips and read-only share are now prepared and locally verified;
+Sonos setup/indexing and physical acceptance remain pending. The original lack
+of test files is superseded by preparation, not a physical pass or release waiver.
 
 ## AI-curated Sonos Playlist physical acceptance — direct ordered persistence passed
 
@@ -320,6 +332,15 @@ exact case, not every playlist, device or playback scenario. See the
 
 ## Required real-device acceptance
 
+Reconciled again after PRs #131/#132: see the [exact remaining-result table](docs/acceptance-status.md#reconciliation-outcome-after-prs-131132).
+Unchecked rows below are missing matching acceptance evidence, not instructions
+to repeat already completed actions. No new physical tests ran during this audit.
+
+- [x] Recorded six-page narrow/wide keyboard traversal and focus/geometry checks,
+  54 dropdown/confirmation/error/editor/group-draft interactions, and the repaired
+  alarm confirmation visual regression. Detailed results and fixture limits follow.
+
+
 - [ ] Complete a keyboard-only tour of every page and every visible control,
   including focus-following scroll, confirmation prompts, error dismissal,
   and narrow/wide configured panel sizes.
@@ -347,8 +368,18 @@ exact case, not every playlist, device or playback scenario. See the
   Playback has passed in the exact cases above; standalone mute/volume changed
   and restored. Apple share-link seeking and stop passed on 2026-08-28; see the
   [handoff result](docs/apple-music-handoff-test-result.md). These are not untested.
-- [ ] Play one Apple track and one whole Apple album. With TV Autoplay
-  explicitly disabled by the owner, observe the album advance automatically
+- [x] Apple-track playback has passed through the recorded share-link and
+  exact-playlist paths.
+- [x] **Owner-confirmed 2026-09-09:** the owner reports doing the same described
+  library workflow using Apple Music: category/nested browsing, Back, paging
+  where available, search and playing the selected song. Credit this as
+  user-reported acceptance of the stated Apple Music flow. The exact interface,
+  Apple source subtype and software revision were not specified; do not require
+  a repeat merely for those unknowns. It does not establish #2's local
+  shared-folder/indexed-file behavior, stale-selection rejection, whole-album
+  natural transition or artwork behavior. No agent-operated device test ran.
+- [ ] Whole Apple album: with TV Autoplay explicitly disabled by the owner,
+  observe the album advance automatically
   from the first track to the second; pressing Next alone is not sufficient.
 - [ ] Play a Sonos Favorite and a Global Player result. Confirm its safe station
   logo appears first, a confident title/artist match changes to track artwork,
@@ -364,6 +395,65 @@ exact case, not every playlist, device or playback scenario. See the
   traverse at least two nested levels, move forward and backward across a
   multi-page result when available, search and play one track, and confirm a
   deliberately stale path is rejected without playing a different item.
+  **Owner updates 2026-09-09:** the owner initially confirmed no local library,
+  then approved the proposed temporary test library. The lack of prepared files
+  is now superseded by the setup pass below. Sonos share setup/indexing and
+  physical indexed-content coverage remain pending/unverified. Automated
+  hierarchy/paging/dispatch/error/stale-path coverage and historical live
+  read-only access remain passed. No release-scope waiver was given.
+- [x] **Temporary library preparation 2026-09-09:** 45 generated spoken MP3s
+  (15 seconds, 44.1 kHz stereo, 128 kbps), three named artists/albums,
+  genre/composer tags and one M3U with clips 01/16/31. Every MP3 passed metadata
+  and decoding checks; all 46 shared files were downloaded through the dedicated
+  authenticated SMB2/3 share with matching bytes/hashes. Writes and anonymous
+  access were rejected. The read-only share runs in a separate Docker container;
+  no host packages, active desktop or speaker state were changed. Local setup
+  guide/manifest/evidence: `~/.local/share/sonarchy-test-library/`. Sonos indexing,
+  imported-playlist recognition, physical playback and stale-selection checks
+  have not run; preparation does not satisfy the unchecked criterion above.
+- **Local-library setup diagnostic 2026-09-09:** owner supplied an installed
+  popup screenshot showing root categories, crowded/truncated labels and a
+  generic Sonos rejection. A same-backend read-only browse returned seven root
+  categories but zero artists/tracks for the selected room. Installed checkout
+  is clean at `8d93804`; it is not the latest reviewed source candidate. Existing
+  journal entries at 13:39:07 and 13:39:19 CEST show `add_to_queue` rejected with
+  Sonos code 804. These are **failed enqueue attempts**; the exact item/button
+  and code meaning are not established, and MP3 playback has not been proved
+  attempted. Root/category presentation and read access are credited; populated
+  test-library setup/indexing still needs verification in the official Sonos app.
+  The empty share/indexing fields have fallback handling, so they alone do not
+  establish a successful raw share query. Retained supplied image/journal/read
+  results: `~/.local/share/sonarchy-test-library/evidence/2026-09-09-empty-library/`.
+  No agent write, failure replay or active-desktop interaction occurred. Earlier
+  keyboard and Apple Music passes remain valid for their recorded scope.
+  **Later owner confirmation on September 9:** adding the temporary share in
+  the official Sonos app fails with “no longer available.” Record this as a
+  **failed share-add/setup attempt**, superseding unknown setup status. The
+  running container, unchanged host address and authenticated local read were
+  rechecked successfully. Sonos-side access/indexing remains unresolved; no
+  playback retry was performed during diagnosis.
+  **Next owner attempt September 9:** the app says “scanning for new content.”
+  Credit this observed intermediate state and recorded bidirectional SMB
+  connection traffic. Completion is not confirmed: a concurrent same-backend
+  read still returns zero artists/tracks in the selected room. Preserve the
+  earlier failed setup attempt; scanning alone neither proves a fix nor passes
+  indexed-content acceptance. No agent playback operation was issued.
+  **Outcome confirmed by owner September 9:** the scanning attempt did not add
+  the folder. This supersedes its intermediate progress state with another
+  **failed setup outcome**. Bidirectional TCP access is observed; SMB/login
+  diagnosis and successful indexing remain outstanding. No physical pass.
+  **Scoped server repair September 9:** a local SMB2 client using NTLMv1
+  reproduced rejection despite the correct dedicated test password; Samba
+  explicitly logged NTLMv1 authentication as not permitted. Enabling
+  `ntlm auth = ntlmv1-permitted` only on the temporary container made the same
+  login/list check pass. Normal login also passes; writes and anonymous access
+  are still denied, with SMB2/3 transport and read-only generated data retained.
+  No host firewall, desktop or speaker setting changed. This establishes a local
+  compatibility fix, not the root cause of the owner's attempt or successful
+  Sonos indexing. The next specific retry is justified by the changed server
+  authentication policy. Evidence is in the temporary library's
+  `diagnostics/ntlm-compatibility-result.json`; earlier failures and all unrelated
+  passes remain recorded. The packet-summary monitor has been stopped/removed.
 - [x] Create, edit, disable, re-enable, and delete a disposable alarm; verify
   that unrelated alarms are unchanged.
 - [x] Owner-confirmed on 2026-09-08: a manually configured alarm works.
@@ -405,9 +495,16 @@ exact case, not every playlist, device or playback scenario. See the
 
 ## Final release gate
 
-- [ ] Review the final source diff and dependency audit.
-- [ ] Repeat all automated, security, QML, and exact-commit marketplace checks.
-- [ ] Record the tested Sonos products and any `not applicable` rows.
+- [x] Review the current candidate source diff and dependency audit: PRs #131/#132
+  have green exact-head CI, substantive reviews and completed clean automatic
+  reviews. A changed final release candidate requires the applicable review.
+- [x] Automated/security checks and full platform QML validation passed for
+  reviewed PR #132 head `ac7f132`; merge `8dbf652` has the same source tree.
+- [ ] Final selected-commit marketplace baseline and ID-availability check;
+  refresh other gates only as required by changes to the chosen release candidate.
+- [x] Record the tested Sonos products and any `not applicable` rows: see the
+  existing Test household products section (One, Play:1, Play:5 and Playbar;
+  Trueplay/Sub crossover unavailable on these products).
 - [ ] Owner release sign-off for the exact commit, repository, permanent plugin
   ID, category, tags, preview, and complete marketplace issue body.
 
